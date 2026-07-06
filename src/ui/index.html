@@ -15,11 +15,11 @@
       <button id="stopBtn" disabled>停止切图</button>
     </section>
 
-    <!-- ESC 终止确认（内联，替代 UXP 下不可靠的 <dialog>） -->
+    <!-- ESC 暂停后确认（内联，替代 UXP 下不可靠的 <dialog>） -->
     <section id="stopConfirm" class="block" style="display:none;">
-      <p style="margin:4px 0;">确定要终止切图吗？</p>
-      <button id="stopConfirmYes">终止</button>
-      <button id="stopConfirmNo">继续</button>
+      <p style="margin:4px 0;">已暂停。是否终止任务？<br><small>终止将把 PSD 恢复到切图前</small></p>
+      <button id="stopConfirmYes">终止并恢复</button>
+      <button id="stopConfirmNo">继续切图</button>
     </section>
 
     <section class="block">
