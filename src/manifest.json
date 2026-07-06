@@ -1,0 +1,21 @@
+{
+  "manifestVersion": 5,
+  "id": "com.sliceman.plugin",
+  "name": "Sliceman",
+  "version": "0.0.1",
+  "main": "index.html",
+  "host": [{ "app": "PS", "minVersion": "22.0.0" }],
+  "entrypoints": [
+    {
+      "type": "panel",
+      "id": "sliceman.panel",
+      "label": { "default": "Sliceman" },
+      "minimumSize": { "width": 230, "height": 300 },
+      "preferredDockedSize": { "width": 260, "height": 360 }
+    }
+  ],
+  "requiredPermissions": {
+    "localFileSystem": "request",
+    "localStorage": true
+  }
+}
