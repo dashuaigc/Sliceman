@@ -9,6 +9,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "icons": "node scripts/make-icons.mjs",
     "build": "node esbuild.config.mjs"
   },
   "keywords": [],
