@@ -1,0 +1,8 @@
+body { font-family: sans-serif; padding: 8px; }
+.block { margin-bottom: 12px; }
+h3 { margin: 4px 0; font-size: 13px; }
+label { display: block; margin: 6px 0 2px; font-size: 12px; }
+input { width: 100%; box-sizing: border-box; }
+button { margin-top: 8px; width: 100%; }
+.status { font-size: 12px; color: #4a90d9; min-height: 16px; }
+#previewDialog button { width: auto; margin-left: 8px; }
