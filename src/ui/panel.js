@@ -7,7 +7,7 @@ import { readDocumentTree } from '../ps/layer-tree.js';
 import { exportTask } from '../ps/exporter.js';
 import { buildPreview, applyRename } from '../ps/renamer.js';
 
-const { app, action } = require('photoshop');
+const { app, action, core } = require('photoshop');
 const uxpFs = require('uxp').storage.localFileSystem;
 
 const statusEl = document.getElementById('status');
@@ -34,19 +34,43 @@ const sliceBtn = document.getElementById('sliceBtn');
 const stopBtn = document.getElementById('stopBtn');
 const stopConfirm = document.getElementById('stopConfirm');
 let slicing = false;
-let cancelRequested = false;
+let cancelRequested = false;   // 停止按钮：完成当前张后直接中止
+let escPause = false;          // ESC：完成当前张后暂停并询问
+let pauseDecider = null;       // 暂停时等待用户决定的 Promise resolver
 
 function setSlicing(on) {
   slicing = on;
   sliceBtn.disabled = on;
   stopBtn.disabled = !on;
-  if (!on) stopConfirm.style.display = 'none';   // 结束时收起 ESC 确认块
+  if (!on) {
+    stopConfirm.style.display = 'none';   // 结束时收起确认块
+    escPause = false;
+    pauseDecider = null;
+  }
 }
 
 function requestStop(reason) {
   if (!slicing) return;
   cancelRequested = true;
   setStatus(reason || '正在停止…（当前这张完成后中断）');
+}
+
+// 弹出"是否终止"确认，返回 'terminate' | 'continue'
+function askTerminate() {
+  stopConfirm.style.display = 'block';
+  setStatus('已暂停：是否终止任务？');
+  return new Promise((res) => { pauseDecider = res; });
+}
+
+// 把当前文档恢复到切图前的历史状态（原文档本不被改动，这里是双保险）
+async function restoreOriginal(historyState) {
+  if (!historyState) return;
+  try {
+    await core.executeAsModal(async () => {
+      const doc = app.activeDocument;
+      if (doc) doc.activeHistoryState = historyState;
+    }, { commandName: '恢复到切图前' });
+  } catch { /* 无法恢复时忽略：切图未改动原文档 */ }
 }
 
 // ---- 切图主流程 ----
@@ -71,14 +95,19 @@ async function runSlice() {
     if (e.isFile && e.name.toLowerCase().endsWith('.png')) used.add(e.name.replace(/\.png$/i, '').toLowerCase());
   }
 
+  // 记录切图前的历史快照，供"终止并恢复"回退
+  let originalHistory = null;
+  try { originalHistory = app.activeDocument.activeHistoryState; } catch { /* 读不到就跳过恢复 */ }
+
   cancelRequested = false;
+  escPause = false;
   setSlicing(true);
   let ok = 0, empty = 0, deduped = 0;
   const ps = { docId: app.activeDocument.id, fileName: psdName };
   try {
     for (const task of tasks) {
       await tick();                                    // 让排队的停止/ESC 事件先执行
-      if (cancelRequested) {
+      if (cancelRequested) {                           // 停止按钮：完成上一张后在此中止
         setStatus(`已停止：导出 ${ok} 张后中断（剩余 ${tasks.length - ok - empty} 个未处理）`);
         return;
       }
@@ -89,6 +118,20 @@ async function runSlice() {
       const r = await exportTask(task, ps, folder, unique, { fullBleed, includeHidden });
       if (r === 'ok') ok++; else empty++;
       setStatus(`导出中… ${ok} 张`);
+
+      // ESC：完成当前这张后暂停并询问
+      await tick();                                    // 让 ESC keydown 先登记
+      if (escPause) {
+        escPause = false;
+        const decision = await askTerminate();
+        stopConfirm.style.display = 'none';
+        if (decision === 'terminate') {
+          await restoreOriginal(originalHistory);
+          setStatus(`已终止并恢复 PSD：导出 ${ok} 张后中止`);
+          return;
+        }
+        setStatus('继续切图…');
+      }
     }
     setStatus(`完成：已导出 ${ok} 张，去重 ${deduped} 次，跳过空图层 ${empty} 张`);
   } finally {
@@ -140,24 +183,23 @@ prefixInput.addEventListener('focus', renderPreview);
 sliceBtn.addEventListener('click', () =>
   runSlice().catch(e => { setSlicing(false); setStatus('出错：' + e.message); }));
 
-// 停止按钮：直接停止，无需确认
+// 停止按钮：完成当前这张后直接停止，无需确认
 stopBtn.addEventListener('click', () => requestStop());
 
-// ESC 快捷键：切图中按下 → 弹内联确认块
+// ESC 快捷键：切图中按下 → 标记暂停（当前这张切完后在循环里弹确认）
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && slicing) {
+  if (e.key === 'Escape' && slicing && !escPause && !pauseDecider) {
     e.preventDefault();
-    stopConfirm.style.display = 'block';
-    setStatus('按 ESC：确认是否终止切图？');
+    escPause = true;
+    setStatus('已按 ESC：完成当前图层后暂停…');
   }
 });
+// 确认块两个按钮：解决暂停 Promise
 document.getElementById('stopConfirmYes').onclick = () => {
-  stopConfirm.style.display = 'none';
-  requestStop();
+  if (pauseDecider) { const d = pauseDecider; pauseDecider = null; d('terminate'); }
 };
 document.getElementById('stopConfirmNo').onclick = () => {
-  stopConfirm.style.display = 'none';
-  setStatus('继续切图…');
+  if (pauseDecider) { const d = pauseDecider; pauseDecider = null; d('continue'); }
 };
 
 document.getElementById('renameBtn').addEventListener('click', () =>
