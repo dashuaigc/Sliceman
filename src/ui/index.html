@@ -12,23 +12,27 @@
       <sp-checkbox id="includeHidden">包含隐藏图层</sp-checkbox>
       <sp-checkbox id="fullBleed" checked>完整切出超出画布部分</sp-checkbox>
       <button id="sliceBtn">开始切图</button>
+      <button id="stopBtn" disabled>停止切图</button>
     </section>
+
     <section class="block">
       <h3>批量前缀重命名</h3>
       <label>前缀</label>
       <input id="prefix" type="text" placeholder="如 图标" />
       <button id="renameBtn">应用前缀</button>
     </section>
-    <p id="status" class="status"></p>
 
-    <dialog id="previewDialog">
+    <!-- 内联预览面板（替代 UXP 下不可靠的 <dialog>） -->
+    <section id="previewPanel" class="block" style="display:none;">
       <h3>重命名预览</h3>
       <div id="previewList" style="max-height:200px;overflow:auto;font-size:12px;"></div>
-      <div style="margin-top:8px;text-align:right;">
-        <button id="previewCancel">取消</button>
+      <div style="margin-top:8px;">
         <button id="previewConfirm">确认</button>
+        <button id="previewCancel">取消</button>
       </div>
-    </dialog>
+    </section>
+
+    <p id="status" class="status"></p>
 
     <script src="panel.js"></script>
   </body>

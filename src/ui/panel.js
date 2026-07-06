@@ -20,10 +20,23 @@ function safeSet(k, v) { try { localStorage.setItem(k, v); } catch { /* 忽略�
 projectInput.value = safeGet('projectName') || '';
 projectInput.addEventListener('change', () => safeSet('projectName', projectInput.value));
 
+// ---- 切图状态与停止控制 ----
+const sliceBtn = document.getElementById('sliceBtn');
+const stopBtn = document.getElementById('stopBtn');
+let slicing = false;
+let cancelRequested = false;
+
+function setSlicing(on) {
+  slicing = on;
+  sliceBtn.disabled = on;
+  stopBtn.disabled = !on;
+}
+
 // ---- 切图主流程 ----
 async function runSlice() {
+  if (slicing) return;                                 // 防重复触发
   if (!app.activeDocument) return setStatus('请先打开一个 PSD 文档');
-  const folder = await uxpFs.getFolder();            // 弹文件夹选择
+  const folder = await uxpFs.getFolder();              // 弹文件夹选择
   if (!folder) return setStatus('已取消');
 
   const includeHidden = document.getElementById('includeHidden').checked;
@@ -41,21 +54,33 @@ async function runSlice() {
     if (e.isFile && e.name.toLowerCase().endsWith('.png')) used.add(e.name.replace(/\.png$/i, '').toLowerCase());
   }
 
+  cancelRequested = false;
+  setSlicing(true);
   let ok = 0, empty = 0, deduped = 0;
   const ps = { docId: app.activeDocument.id, fileName: psdName };
-  for (const task of tasks) {
-    const segments = [project, psdName, ...task.pathSegments].filter(s => s !== '' && s != null);
-    const base = buildBaseName(segments);
-    const unique = makeUniqueName(base, used);
-    if (unique !== base) deduped++;                  // 统计去重次数
-    const r = await exportTask(task, ps, folder, unique, { fullBleed, includeHidden });
-    if (r === 'ok') ok++; else empty++;
-    setStatus(`导出中… ${ok} 张`);
+  try {
+    for (const task of tasks) {
+      if (cancelRequested) {                           // 每张开始前检查停止
+        setStatus(`已停止：导出 ${ok} 张后中断（剩余 ${tasks.length - ok - empty} 个未处理）`);
+        return;
+      }
+      const segments = [project, psdName, ...task.pathSegments].filter(s => s !== '' && s != null);
+      const base = buildBaseName(segments);
+      const unique = makeUniqueName(base, used);
+      if (unique !== base) deduped++;                  // 统计去重次数
+      const r = await exportTask(task, ps, folder, unique, { fullBleed, includeHidden });
+      if (r === 'ok') ok++; else empty++;
+      setStatus(`导出中… ${ok} 张`);
+    }
+    setStatus(`完成：已导出 ${ok} 张，去重 ${deduped} 次，跳过空图层 ${empty} 张`);
+  } finally {
+    setSlicing(false);
   }
-  setStatus(`完成：已导出 ${ok} 张，去重 ${deduped} 次，跳过空图层 ${empty} 张`);
 }
 
-// ---- 批量前缀重命名流程 ----
+// ---- 批量前缀重命名流程（内联预览，不用 <dialog>） ----
+const previewPanel = document.getElementById('previewPanel');
+
 async function runRename() {
   const layers = await getSelectedLayers();
   if (!layers.length) return setStatus('请先在图层面板选中图层或组');
@@ -67,22 +92,31 @@ async function runRename() {
   listEl.innerHTML = rows.map(r =>
     `<div>${r.from} &nbsp;→&nbsp; <b>${r.to}</b>${r.dup ? ' <span style="color:#d9534f">⚠同名</span>' : ''}</div>`
   ).join('');
+  previewPanel.style.display = 'block';
+  setStatus('请确认重命名预览');
 
-  const dlg = document.getElementById('previewDialog');
   document.getElementById('previewConfirm').onclick = async () => {
-    dlg.close();
-    const n = await applyRename(layers, rawPrefix);
-    setStatus(`已重命名 ${n} 个图层`);
+    previewPanel.style.display = 'none';
+    try {
+      const n = await applyRename(layers, rawPrefix);
+      setStatus(`已重命名 ${n} 个图层`);
+    } catch (e) {
+      setStatus('出错：' + e.message);
+    }
   };
-  document.getElementById('previewCancel').onclick = () => { dlg.close(); setStatus('已取消'); };
-
-  // UXP 版本差异：优先 uxpShowModal，回退 showModal
-  if (dlg.uxpShowModal) await dlg.uxpShowModal();
-  else dlg.showModal();
+  document.getElementById('previewCancel').onclick = () => {
+    previewPanel.style.display = 'none';
+    setStatus('已取消');
+  };
 }
 
-document.getElementById('sliceBtn').addEventListener('click', () =>
-  runSlice().catch(e => setStatus('出错：' + e.message)));
+sliceBtn.addEventListener('click', () =>
+  runSlice().catch(e => { setSlicing(false); setStatus('出错：' + e.message); }));
+stopBtn.addEventListener('click', () => {
+  if (!slicing) return;
+  cancelRequested = true;
+  setStatus('正在停止…（当前这张完成后中断）');
+});
 document.getElementById('renameBtn').addEventListener('click', () =>
   runRename().catch(e => setStatus('出错：' + e.message)));
 
