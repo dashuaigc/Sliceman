@@ -9,11 +9,10 @@ body {
 .block { margin-bottom: 10px; }
 h3 { margin: 4px 0; font-size: 13px; }
 label { display: block; margin: 4px 0 2px; font-size: 12px; }
-input {
+/* UXP 原生 <input> 单行文本会贴顶，改用自带垂直居中的 sp-textfield */
+sp-textfield {
   width: 100%;
-  box-sizing: border-box;
-  padding: 9px 8px;             /* 上下相等 → 文字垂直居中；同时保证足够高度 */
-  font-size: 13px;
+  margin-top: 4px;
 }
 
 /* 两个勾选各占一行、保持间距；不改 sp-checkbox 自身排版，方框与文字仍同一行 */
@@ -29,20 +28,37 @@ button {
   border-radius: 20px;          /* = height / 2 */
   cursor: pointer;
 }
-#sliceBtn  { background: #2680eb; color: #ffffff; }             /* 开始切图：蓝 */
-#stopBtn   { background: #e34850; color: #ffffff; }             /* 停止切图：红 */
-#renameBtn { background: #2d9d78; color: #ffffff; }             /* 应用前缀：绿 */
-#sliceBtn:disabled, #stopBtn:disabled { opacity: 0.45; }
+#sliceBtn          { background: #2680eb; color: #ffffff; }    /* 空闲：开始切图=蓝 */
+#sliceBtn.slicing  { background: #e34850; }                    /* 进行中：停止切图=红 */
+#renameBtn         { background: #2d9d78; color: #ffffff; }    /* 应用前缀：绿 */
 
-/* 成对的确认/取消按钮并排、不占满整行 */
-#stopConfirm button {
+/* 确认区：整体居中、提示文字醒目 */
+.confirm { text-align: center; }
+.confirm-msg {
+  margin: 6px 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffd54a;              /* 琥珀色，在深底上明显 */
+  line-height: 1.5;
+}
+.confirm-msg small { font-weight: 400; font-size: 12px; color: #e0e0e0; }
+.confirm-msg b { color: #ffffff; }
+
+/* 成对的确认按钮并排、不占满整行 */
+.confirm button {
   width: auto;
   height: auto;
   padding: 6px 14px;
-  margin-right: 8px;
-  background: #6d6d6d;
+  margin: 0 4px 6px;
   color: #ffffff;
 }
+#stopConfirmYes { background: #e34850; }   /* 终止本次切图：红 */
+#stopConfirmNo  { background: #2d9d78; }   /* 继续切图：绿 */
+.confirm-row { text-align: center; }       /* 两行按钮各自居中 */
+#ovwYes    { background: #e34850; }        /* 覆盖：红 */
+#ovwNo     { background: #999999; }        /* 跳过：浅灰 */
+#ovwYesAll { background: #b0343b; }        /* 全部覆盖：深红 */
+#ovwNoAll  { background: #999999; }        /* 全部跳过：浅灰 */
 
 /* 预览区：浅底深字的独立卡片，与面板底色区分、文字对比明显 */
 .preview {
@@ -53,7 +69,7 @@ button {
   padding: 8px;
   font-size: 12px;
   line-height: 1.6;
-  background: #ffffff;          /* 与深色面板底色形成区分 */
+  background: #999999;          /* 浅灰底，与深色面板底色区分 */
   color: #222222;              /* 深字，对比清晰 */
   border: 1px solid #b0b0b0;
   border-radius: 4px;
