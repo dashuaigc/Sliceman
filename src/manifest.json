@@ -4,7 +4,7 @@
   "name": "Sliceman",
   "version": "0.0.1",
   "main": "index.html",
-  "host": [{ "app": "PS", "minVersion": "22.0.0" }],
+  "host": { "app": "PS", "minVersion": "23.3.0" },
   "entrypoints": [
     {
       "type": "panel",
