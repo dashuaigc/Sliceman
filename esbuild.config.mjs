@@ -22,4 +22,9 @@ await copyFile('src/manifest.json', `${OUT}/manifest.json`);
 await copyFile('src/ui/index.html', `${OUT}/index.html`);
 await copyFile('src/ui/styles.css', `${OUT}/styles.css`);
 
+// 4) 拷贝图标（打包 .ccx 时 manifest.icons 引用，路径相对插件根目录）
+await mkdir(`${OUT}/icons`, { recursive: true });
+await copyFile('src/icons/icon.png', `${OUT}/icons/icon.png`);
+await copyFile('src/icons/icon@2x.png', `${OUT}/icons/icon@2x.png`);
+
 console.log(`build ok → ${OUT}/ (load this folder's manifest.json in UXP Developer Tool)`);
