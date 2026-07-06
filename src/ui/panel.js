@@ -13,6 +13,9 @@ const uxpFs = require('uxp').storage.localFileSystem;
 const statusEl = document.getElementById('status');
 function setStatus(msg) { statusEl.textContent = msg; }
 
+// 让出事件循环一拍：使切图循环中排队的点击/按键（停止、ESC）得以处理
+function tick() { return new Promise((r) => setTimeout(r, 0)); }
+
 // ---- 项目名称持久化（记住上次输入），localStorage 不可用时降级为不持久化 ----
 const projectInput = document.getElementById('projectName');
 function safeGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
@@ -23,6 +26,7 @@ projectInput.addEventListener('change', () => safeSet('projectName', projectInpu
 // ---- 切图状态与停止控制 ----
 const sliceBtn = document.getElementById('sliceBtn');
 const stopBtn = document.getElementById('stopBtn');
+const stopConfirm = document.getElementById('stopConfirm');
 let slicing = false;
 let cancelRequested = false;
 
@@ -30,6 +34,13 @@ function setSlicing(on) {
   slicing = on;
   sliceBtn.disabled = on;
   stopBtn.disabled = !on;
+  if (!on) stopConfirm.style.display = 'none';   // 结束时收起 ESC 确认块
+}
+
+function requestStop(reason) {
+  if (!slicing) return;
+  cancelRequested = true;
+  setStatus(reason || '正在停止…（当前这张完成后中断）');
 }
 
 // ---- 切图主流程 ----
@@ -60,7 +71,8 @@ async function runSlice() {
   const ps = { docId: app.activeDocument.id, fileName: psdName };
   try {
     for (const task of tasks) {
-      if (cancelRequested) {                           // 每张开始前检查停止
+      await tick();                                    // 让排队的停止/ESC 事件先执行
+      if (cancelRequested) {
         setStatus(`已停止：导出 ${ok} 张后中断（剩余 ${tasks.length - ok - empty} 个未处理）`);
         return;
       }
@@ -110,13 +122,30 @@ async function runRename() {
   };
 }
 
+// ---- 事件绑定 ----
 sliceBtn.addEventListener('click', () =>
   runSlice().catch(e => { setSlicing(false); setStatus('出错：' + e.message); }));
-stopBtn.addEventListener('click', () => {
-  if (!slicing) return;
-  cancelRequested = true;
-  setStatus('正在停止…（当前这张完成后中断）');
+
+// 停止按钮：直接停止，无需确认
+stopBtn.addEventListener('click', () => requestStop());
+
+// ESC 快捷键：切图中按下 → 弹内联确认块
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && slicing) {
+    e.preventDefault();
+    stopConfirm.style.display = 'block';
+    setStatus('按 ESC：确认是否终止切图？');
+  }
 });
+document.getElementById('stopConfirmYes').onclick = () => {
+  stopConfirm.style.display = 'none';
+  requestStop();
+};
+document.getElementById('stopConfirmNo').onclick = () => {
+  stopConfirm.style.display = 'none';
+  setStatus('继续切图…');
+};
+
 document.getElementById('renameBtn').addEventListener('click', () =>
   runRename().catch(e => setStatus('出错：' + e.message)));
 

@@ -15,6 +15,13 @@
       <button id="stopBtn" disabled>停止切图</button>
     </section>
 
+    <!-- ESC 终止确认（内联，替代 UXP 下不可靠的 <dialog>） -->
+    <section id="stopConfirm" class="block" style="display:none;">
+      <p style="margin:4px 0;">确定要终止切图吗？</p>
+      <button id="stopConfirmYes">终止</button>
+      <button id="stopConfirmNo">继续</button>
+    </section>
+
     <section class="block">
       <h3>批量前缀重命名</h3>
       <label>前缀</label>
@@ -22,7 +29,7 @@
       <button id="renameBtn">应用前缀</button>
     </section>
 
-    <!-- 内联预览面板（替代 UXP 下不可靠的 <dialog>） -->
+    <!-- 重命名预览（内联） -->
     <section id="previewPanel" class="block" style="display:none;">
       <h3>重命名预览</h3>
       <div id="previewList" style="max-height:200px;overflow:auto;font-size:12px;"></div>
