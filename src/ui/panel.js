@@ -16,10 +16,29 @@ function setStatus(msg) { statusEl.textContent = msg; }
 // 让出事件循环一拍：使切图循环中排队的点击/按键（停止、ESC）得以处理
 function tick() { return new Promise((r) => setTimeout(r, 0)); }
 
-// 当前文档中选中的图层/组（同步读取）
+// 收集一个组的所有后代 id（递归，用 .layers 子集合）
+function collectDescendantIds(group, out) {
+  for (const child of group.layers || []) {
+    out.add(child.id);
+    collectDescendantIds(child, out);
+  }
+}
+
+// 当前文档中选中的图层/组（同步读取）。
+// 只保留"最外层被选中"的项：选中组时排除其组内子图层，
+// 使预览/改名只作用于选中的组名或图层名本身。
 function selectedLayers() {
   const doc = app.activeDocument;
-  return doc ? doc.activeLayers : [];
+  if (!doc) return [];
+  const sel = Array.from(doc.activeLayers || []);
+  if (sel.length <= 1) return sel;
+  // 汇总所有"被选中的组"的后代 id
+  const descendantIds = new Set();
+  for (const l of sel) {
+    if (l.kind === 'group') collectDescendantIds(l, descendantIds);
+  }
+  // 剔除掉"是某个选中组的后代"的项，只留最外层选中项
+  return sel.filter((l) => !descendantIds.has(l.id));
 }
 
 // ---- 项目名称持久化（记住上次输入），localStorage 不可用时降级为不持久化 ----
