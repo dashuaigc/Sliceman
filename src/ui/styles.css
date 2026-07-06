@@ -13,12 +13,13 @@ input {
   width: 100%;
   box-sizing: border-box;
   height: 34px;                 /* 输入框加高 */
-  padding: 4px 8px;
+  padding: 0 8px;
+  line-height: 34px;            /* 文字垂直居中 */
   font-size: 13px;
 }
 
-/* 两个勾选各占一行并保持间距，避免挤在一起 */
-sp-checkbox { display: block; margin: 8px 0; }
+/* 两个勾选各占一行、保持间距；不改 sp-checkbox 自身排版，方框与文字仍同一行 */
+.checkrow { margin: 8px 0; }
 
 /* 主操作按钮：加高、更大圆角 */
 button {
@@ -27,7 +28,7 @@ button {
   height: 40px;
   font-size: 14px;
   border: none;
-  border-radius: 12px;          /* 圆角更大 */
+  border-radius: 9999px;        /* 两端半圆（胶囊形） */
   cursor: pointer;
 }
 #sliceBtn { background: #2680eb; color: #ffffff; }              /* 开始切图：蓝 */
