@@ -12,6 +12,7 @@ label { display: block; margin: 4px 0 2px; font-size: 12px; }
 input { width: 100%; box-sizing: border-box; }
 button { margin-top: 6px; width: 100%; }
 /* 成对的确认/取消按钮并排、不占满整行 */
-#stopConfirm button,
-#previewPanel button { width: auto; margin-right: 8px; }
+#stopConfirm button { width: auto; margin-right: 8px; }
+.preview { max-height: 220px; overflow: auto; font-size: 12px; margin-top: 6px; opacity: 0.9; }
+.preview .dup { color: #d9534f; }
 .status { font-size: 12px; color: #4a90d9; min-height: 16px; }

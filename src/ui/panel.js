@@ -5,9 +5,9 @@ import { buildBaseName, makeUniqueName } from '../lib/naming.js';
 import { normalize } from '../lib/normalize.js';
 import { readDocumentTree } from '../ps/layer-tree.js';
 import { exportTask } from '../ps/exporter.js';
-import { buildPreview, getSelectedLayers, applyRename } from '../ps/renamer.js';
+import { buildPreview, applyRename } from '../ps/renamer.js';
 
-const { app } = require('photoshop');
+const { app, action } = require('photoshop');
 const uxpFs = require('uxp').storage.localFileSystem;
 
 const statusEl = document.getElementById('status');
@@ -15,6 +15,12 @@ function setStatus(msg) { statusEl.textContent = msg; }
 
 // 让出事件循环一拍：使切图循环中排队的点击/按键（停止、ESC）得以处理
 function tick() { return new Promise((r) => setTimeout(r, 0)); }
+
+// 当前文档中选中的图层/组（同步读取）
+function selectedLayers() {
+  const doc = app.activeDocument;
+  return doc ? doc.activeLayers : [];
+}
 
 // ---- 项目名称持久化（记住上次输入），localStorage 不可用时降级为不持久化 ----
 const projectInput = document.getElementById('projectName');
@@ -90,37 +96,45 @@ async function runSlice() {
   }
 }
 
-// ---- 批量前缀重命名流程（内联预览，不用 <dialog>） ----
-const previewPanel = document.getElementById('previewPanel');
+// ---- 批量前缀重命名：输入即预览 ----
+const prefixInput = document.getElementById('prefix');
+const previewList = document.getElementById('previewList');
+
+function renderPreview() {
+  const layers = selectedLayers();
+  if (!layers.length) { previewList.innerHTML = '<i>未选中图层或组</i>'; return; }
+  const rawPrefix = prefixInput.value;
+  if (!normalize(rawPrefix)) {
+    // 前缀为空/无效：预览就是原名（不变）
+    previewList.innerHTML = layers.map(l => `<div>${l.name}</div>`).join('');
+    return;
+  }
+  const rows = buildPreview(layers.map(l => l.name), rawPrefix);
+  previewList.innerHTML = rows.map(r =>
+    `<div>${r.from} &nbsp;→&nbsp; <b>${r.to}</b>${r.dup ? ' <span class="dup">⚠同名</span>' : ''}</div>`
+  ).join('');
+}
 
 async function runRename() {
-  const layers = await getSelectedLayers();
+  const layers = selectedLayers();
   if (!layers.length) return setStatus('请先在图层面板选中图层或组');
-  const rawPrefix = document.getElementById('prefix').value;
-  const rows = buildPreview(layers.map(l => l.name), rawPrefix);
-  if (!rows) return setStatus('前缀无效（规范化后为空）');
-
-  const listEl = document.getElementById('previewList');
-  listEl.innerHTML = rows.map(r =>
-    `<div>${r.from} &nbsp;→&nbsp; <b>${r.to}</b>${r.dup ? ' <span style="color:#d9534f">⚠同名</span>' : ''}</div>`
-  ).join('');
-  previewPanel.style.display = 'block';
-  setStatus('请确认重命名预览');
-
-  document.getElementById('previewConfirm').onclick = async () => {
-    previewPanel.style.display = 'none';
-    try {
-      const n = await applyRename(layers, rawPrefix);
-      setStatus(`已重命名 ${n} 个图层`);
-    } catch (e) {
-      setStatus('出错：' + e.message);
-    }
-  };
-  document.getElementById('previewCancel').onclick = () => {
-    previewPanel.style.display = 'none';
-    setStatus('已取消');
-  };
+  const rawPrefix = prefixInput.value;
+  if (!normalize(rawPrefix)) return setStatus('前缀无效（规范化后为空）');
+  const n = await applyRename(layers, rawPrefix);
+  setStatus(`已重命名 ${n} 个图层/组`);
+  renderPreview();                                     // 刷新为新名
 }
+
+// 输入前缀即时预览；聚焦时也刷新一次
+prefixInput.addEventListener('input', renderPreview);
+prefixInput.addEventListener('focus', renderPreview);
+
+// 图层选择变化时，实时刷新预览（best-effort，不支持则忽略）
+(async () => {
+  try {
+    await action.addNotificationListener(['select'], () => renderPreview());
+  } catch { /* 某些版本不触发 select 通知，靠输入/聚焦刷新 */ }
+})();
 
 // ---- 事件绑定 ----
 sliceBtn.addEventListener('click', () =>
@@ -149,4 +163,5 @@ document.getElementById('stopConfirmNo').onclick = () => {
 document.getElementById('renameBtn').addEventListener('click', () =>
   runRename().catch(e => setStatus('出错：' + e.message)));
 
+renderPreview();                                       // 初始渲染一次
 setStatus('插件已加载');

@@ -24,19 +24,10 @@
 
     <section class="block">
       <h3>批量前缀重命名</h3>
-      <label>前缀</label>
+      <label>前缀（输入即预览，对选中的组/图层生效）</label>
       <input id="prefix" type="text" placeholder="如 图标" />
+      <div id="previewList" class="preview"></div>
       <button id="renameBtn">应用前缀</button>
-    </section>
-
-    <!-- 重命名预览（内联） -->
-    <section id="previewPanel" class="block" style="display:none;">
-      <h3>重命名预览</h3>
-      <div id="previewList" style="max-height:200px;overflow:auto;font-size:12px;"></div>
-      <div style="margin-top:8px;">
-        <button id="previewConfirm">确认</button>
-        <button id="previewCancel">取消</button>
-      </div>
     </section>
 
     <p id="status" class="status"></p>
