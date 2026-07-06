@@ -13,10 +13,12 @@ const uxpFs = require('uxp').storage.localFileSystem;
 const statusEl = document.getElementById('status');
 function setStatus(msg) { statusEl.textContent = msg; }
 
-// ---- 项目名称持久化（记住上次输入） ----
+// ---- 项目名称持久化（记住上次输入），localStorage 不可用时降级为不持久化 ----
 const projectInput = document.getElementById('projectName');
-projectInput.value = localStorage.getItem('projectName') || '';
-projectInput.addEventListener('change', () => localStorage.setItem('projectName', projectInput.value));
+function safeGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function safeSet(k, v) { try { localStorage.setItem(k, v); } catch { /* 忽略：不支持持久化 */ } }
+projectInput.value = safeGet('projectName') || '';
+projectInput.addEventListener('change', () => safeSet('projectName', projectInput.value));
 
 // ---- 切图主流程 ----
 async function runSlice() {
