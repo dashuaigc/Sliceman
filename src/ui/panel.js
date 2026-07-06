@@ -2,7 +2,7 @@
 // 由 esbuild 打包（本地模块内联，photoshop/uxp 作为宿主注入保持 external）。
 import { walk } from '../lib/traversal.js';
 import { buildBaseName, makeUniqueName } from '../lib/naming.js';
-import { normalize, normalizePrefix } from '../lib/normalize.js';
+import { normalize } from '../lib/normalize.js';
 import { readDocumentTree } from '../ps/layer-tree.js';
 import { exportTask } from '../ps/exporter.js';
 import { buildPreview, applyRename } from '../ps/renamer.js';
@@ -15,6 +15,14 @@ function setStatus(msg) { statusEl.textContent = msg; }
 
 // 让出事件循环一拍：使切图循环中排队的点击/按键（停止、ESC）得以处理
 function tick() { return new Promise((r) => setTimeout(r, 0)); }
+
+// 判断错误是否为"用户取消 modal"：PS 会用 ESC 取消正在运行的 executeAsModal。
+// 把它识别出来，转成我们自己的暂停/询问流程，而不是当成真错误直接停。
+function isUserCancel(err) {
+  if (!err) return false;
+  const msg = String(err.message ?? err).toLowerCase();
+  return err.number === 9 || err.code === 9 || /cancel/.test(msg);
+}
 
 // 收集一个组的所有后代 id（递归，用 .layers 子集合）
 function collectDescendantIds(group, out) {
@@ -50,22 +58,39 @@ projectInput.addEventListener('change', () => safeSet('projectName', projectInpu
 
 // ---- 切图状态与停止控制 ----
 const sliceBtn = document.getElementById('sliceBtn');
-const stopBtn = document.getElementById('stopBtn');
 const stopConfirm = document.getElementById('stopConfirm');
+const overwriteConfirm = document.getElementById('overwriteConfirm');
 let slicing = false;
 let cancelRequested = false;   // 停止按钮：完成当前张后直接中止
 let escPause = false;          // ESC：完成当前张后暂停并询问
 let pauseDecider = null;       // 暂停时等待用户决定的 Promise resolver
+let overwriteDecider = null;   // 同名覆盖询问的 Promise resolver
+let overwriteAll = null;       // 记忆"全部覆盖/全部跳过"：null | 'overwrite' | 'skip'
 
 function setSlicing(on) {
   slicing = on;
-  sliceBtn.disabled = on;
-  stopBtn.disabled = !on;
-  if (!on) {
-    stopConfirm.style.display = 'none';   // 结束时收起确认块
+  // 同一按钮：空闲显示蓝色"开始切图"，进行中变红色"停止切图"
+  if (on) {
+    sliceBtn.textContent = '按ESC键停止切图';
+    sliceBtn.classList.add('slicing');
+  } else {
+    sliceBtn.textContent = '开始切图';
+    sliceBtn.classList.remove('slicing');
+    stopConfirm.style.display = 'none';       // 结束时收起确认块
+    overwriteConfirm.style.display = 'none';
     escPause = false;
     pauseDecider = null;
+    overwriteDecider = null;
+    overwriteAll = null;
   }
+}
+
+// 弹出"同名文件"确认，返回 'overwrite' | 'skip' | 'overwriteAll' | 'skipAll'
+function askOverwrite(name) {
+  document.getElementById('overwriteName').textContent = name + '.png';
+  overwriteConfirm.style.display = 'block';
+  setStatus(`发现同名文件：${name}.png`);
+  return new Promise((res) => { overwriteDecider = res; });
 }
 
 function requestStop(reason) {
@@ -81,15 +106,27 @@ function askTerminate() {
   return new Promise((res) => { pauseDecider = res; });
 }
 
-// 把当前文档恢复到切图前的历史状态（原文档本不被改动，这里是双保险）
-async function restoreOriginal(historyState) {
-  if (!historyState) return;
+// 终止时清理并恢复：关闭 ESC 取消导出后可能遗留的临时文档，
+// 再按 id 切回原文档并恢复其切图前的历史状态。
+async function cleanupAndRestore(originalDocId, historyState) {
   try {
     await core.executeAsModal(async () => {
-      const doc = app.activeDocument;
-      if (doc) doc.activeHistoryState = historyState;
+      // 关闭遗留的 __sliceman_ 临时文档（ESC 中断导出时可能没走到 finally 的关闭）
+      for (const d of Array.from(app.documents)) {
+        if (d.name && d.name.startsWith('__sliceman_')) {
+          try { await d.closeWithoutSaving(); } catch { /* 忽略单个关闭失败 */ }
+        }
+      }
+      // 切回原文档并恢复历史（原文档本未被切图改动，这里是双保险）
+      const orig = Array.from(app.documents).find(d => d.id === originalDocId);
+      if (orig) {
+        app.activeDocument = orig;
+        if (historyState) {
+          try { orig.activeHistoryState = historyState; } catch { /* 历史不可用则忽略 */ }
+        }
+      }
     }, { commandName: '恢复到切图前' });
-  } catch { /* 无法恢复时忽略：切图未改动原文档 */ }
+  } catch { /* 整体失败也忽略：原文档本未被切图改动 */ }
 }
 
 // ---- 切图主流程 ----
@@ -108,10 +145,10 @@ async function runSlice() {
   const tree = await readDocumentTree();
   const tasks = walk(tree, { includeHidden });
 
-  // 预塞目标文件夹已有 png 名，避免覆盖磁盘旧文件
-  const used = new Set();
+  const used = new Set();            // 仅本次运行内部去重（同名自动加 _2/_3）
+  const existingFiles = new Set();   // 目标文件夹已存在的 png 基名（小写），命中则询问覆盖/跳过
   for (const e of await folder.getEntries()) {
-    if (e.isFile && e.name.toLowerCase().endsWith('.png')) used.add(e.name.replace(/\.png$/i, '').toLowerCase());
+    if (e.isFile && e.name.toLowerCase().endsWith('.png')) existingFiles.add(e.name.replace(/\.png$/i, '').toLowerCase());
   }
 
   // 记录切图前的历史快照，供"终止并恢复"回退
@@ -121,38 +158,78 @@ async function runSlice() {
   cancelRequested = false;
   escPause = false;
   setSlicing(true);
-  let ok = 0, empty = 0, deduped = 0;
+  let ok = 0, empty = 0, deduped = 0, skipped = 0;
   const ps = { docId: app.activeDocument.id, fileName: psdName };
+  // 用 index 遍历：被 ESC 取消的那张要能重做，故文件名算一次后缓存复用（避免重试误加 _2）
+  let i = 0;
+  let currentName = null, currentDeduped = false;
   try {
-    for (const task of tasks) {
+    while (i < tasks.length) {
+      const task = tasks[i];
       await tick();                                    // 让排队的停止/ESC 事件先执行
       if (cancelRequested) {                           // 停止按钮：完成上一张后在此中止
-        setStatus(`已停止：导出 ${ok} 张后中断（剩余 ${tasks.length - ok - empty} 个未处理）`);
+        setStatus(`已停止：导出 ${ok} 张后中断（剩余 ${tasks.length - i} 个未处理）`);
         return;
       }
-      const segments = [project, psdName, ...task.pathSegments].filter(s => s !== '' && s != null);
-      const base = buildBaseName(segments);
-      const unique = makeUniqueName(base, used);
-      if (unique !== base) deduped++;                  // 统计去重次数
-      const r = await exportTask(task, ps, folder, unique, { fullBleed, includeHidden });
-      if (r === 'ok') ok++; else empty++;
-      setStatus(`导出中… ${ok} 张`);
 
-      // ESC：完成当前这张后暂停并询问
+      // 文件名：仅在没有"上一次被取消而保留的名字"时才重新计算并登记去重
+      if (currentName == null) {
+        const segments = [project, psdName, ...task.pathSegments].filter(s => s !== '' && s != null);
+        const base = buildBaseName(segments);
+        currentName = makeUniqueName(base, used);
+        currentDeduped = currentName !== base;
+      }
+
+      // 目标文件夹已存在同名文件 → 询问覆盖/跳过（"全部"决定记忆到本次运行结束）
+      if (existingFiles.has(currentName.toLowerCase())) {
+        let action = overwriteAll;
+        if (!action) {
+          const d = await askOverwrite(currentName);
+          overwriteConfirm.style.display = 'none';
+          if (d === 'overwriteAll') { overwriteAll = 'overwrite'; action = 'overwrite'; }
+          else if (d === 'skipAll') { overwriteAll = 'skip'; action = 'skip'; }
+          else action = d;
+        }
+        if (action === 'skip') {
+          skipped++;
+          setStatus(`跳过同名：${currentName}`);
+          currentName = null;
+          i++;
+          continue;
+        }
+        // action === 'overwrite'：照常导出（exportTask 用 overwrite:true 覆盖）
+      }
+
+      let userCancelled = false;
+      try {
+        const r = await exportTask(task, ps, folder, currentName, { fullBleed, includeHidden });
+        if (r === 'ok') ok++; else empty++;
+        if (currentDeduped) deduped++;                 // 成功后再计入去重
+        setStatus(`导出中… ${ok} 张`);
+      } catch (err) {
+        if (isUserCancel(err)) userCancelled = true;   // ESC 取消了导出 modal → 转入暂停询问
+        else throw err;                                // 真错误交给外层 catch
+      }
+
+      // ESC / 取消：完成或中断当前这张后暂停并询问
       await tick();                                    // 让 ESC keydown 先登记
-      if (escPause) {
+      if (escPause || userCancelled) {
         escPause = false;
         const decision = await askTerminate();
         stopConfirm.style.display = 'none';
         if (decision === 'terminate') {
-          await restoreOriginal(originalHistory);
+          await cleanupAndRestore(ps.docId, originalHistory);
           setStatus(`已终止并恢复 PSD：导出 ${ok} 张后中止`);
           return;
         }
         setStatus('继续切图…');
+        if (userCancelled) continue;                   // 继续：重做被取消的这张（currentName 保留，i 不变）
       }
+
+      currentName = null;                              // 这张已完成，进入下一张
+      i++;
     }
-    setStatus(`完成：已导出 ${ok} 张，去重 ${deduped} 次，跳过空图层 ${empty} 张`);
+    setStatus(`完成：已导出 ${ok} 张，去重 ${deduped} 次，跳过空图层 ${empty} 张，跳过同名 ${skipped} 张`);
   } finally {
     setSlicing(false);
   }
@@ -166,8 +243,8 @@ function renderPreview() {
   const layers = selectedLayers();
   if (!layers.length) { previewList.innerHTML = '<i>未选中图层或组</i>'; return; }
   const rawPrefix = prefixInput.value;
-  if (!normalizePrefix(rawPrefix)) {
-    // 前缀为空/无效：预览就是原名（不变）
+  if (!rawPrefix) {
+    // 前缀为空：预览就是原名（不变）
     previewList.innerHTML = layers.map(l => `<div>${l.name}</div>`).join('');
     return;
   }
@@ -181,7 +258,7 @@ async function runRename() {
   const layers = selectedLayers();
   if (!layers.length) return setStatus('请先在图层面板选中图层或组');
   const rawPrefix = prefixInput.value;
-  if (!normalizePrefix(rawPrefix)) return setStatus('前缀无效（规范化后为空）');
+  if (!rawPrefix) return setStatus('请先输入前缀');
   const n = await applyRename(layers, rawPrefix);
   setStatus(`已重命名 ${n} 个图层/组`);
   renderPreview();                                     // 刷新为新名
@@ -199,11 +276,11 @@ prefixInput.addEventListener('focus', renderPreview);
 })();
 
 // ---- 事件绑定 ----
-sliceBtn.addEventListener('click', () =>
-  runSlice().catch(e => { setSlicing(false); setStatus('出错：' + e.message); }));
-
-// 停止按钮：完成当前这张后直接停止，无需确认
-stopBtn.addEventListener('click', () => requestStop());
+// 同一按钮：进行中点击=停止（完成当前这张后中断），空闲点击=开始
+sliceBtn.addEventListener('click', () => {
+  if (slicing) { requestStop(); return; }
+  runSlice().catch(e => { setSlicing(false); setStatus('出错：' + e.message); });
+});
 
 // ESC 快捷键：切图中按下 → 标记暂停（当前这张切完后在循环里弹确认）
 document.addEventListener('keydown', (e) => {
@@ -220,6 +297,15 @@ document.getElementById('stopConfirmYes').onclick = () => {
 document.getElementById('stopConfirmNo').onclick = () => {
   if (pauseDecider) { const d = pauseDecider; pauseDecider = null; d('continue'); }
 };
+
+// 同名覆盖确认：四个按钮解决 askOverwrite 的 Promise
+function resolveOverwrite(v) {
+  if (overwriteDecider) { const d = overwriteDecider; overwriteDecider = null; d(v); }
+}
+document.getElementById('ovwYes').onclick    = () => resolveOverwrite('overwrite');
+document.getElementById('ovwNo').onclick     = () => resolveOverwrite('skip');
+document.getElementById('ovwYesAll').onclick = () => resolveOverwrite('overwriteAll');
+document.getElementById('ovwNoAll').onclick  = () => resolveOverwrite('skipAll');
 
 document.getElementById('renameBtn').addEventListener('click', () =>
   runRename().catch(e => setStatus('出错：' + e.message)));

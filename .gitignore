@@ -1,3 +1,10 @@
+# 依赖与构建产物（可由 npm install / npm run build 还原）
 node_modules/
 dist/
 *.ccx
+
+# 本地测试素材（含大体积 PSD，勿入库）
+测试/
+
+# 编辑器 / 工具本地目录
+.claude/
