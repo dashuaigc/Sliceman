@@ -10,8 +10,8 @@
       "type": "panel",
       "id": "sliceman.panel",
       "label": { "default": "Sliceman" },
-      "minimumSize": { "width": 230, "height": 300 },
-      "preferredDockedSize": { "width": 260, "height": 360 }
+      "minimumSize": { "width": 200, "height": 120 },
+      "preferredDockedSize": { "width": 260, "height": 420 }
     }
   ],
   "requiredPermissions": {
