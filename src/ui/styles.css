@@ -10,9 +10,46 @@ body {
 h3 { margin: 4px 0; font-size: 13px; }
 label { display: block; margin: 4px 0 2px; font-size: 12px; }
 input { width: 100%; box-sizing: border-box; }
-button { margin-top: 6px; width: 100%; }
+
+/* 主操作按钮：加高、圆角 */
+button {
+  margin-top: 8px;
+  width: 100%;
+  height: 38px;
+  font-size: 14px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+#sliceBtn { background: #2680eb; color: #ffffff; }              /* 开始切图：蓝 */
+#stopBtn  { background: #e34850; color: #ffffff; }              /* 停止切图：红 */
+#sliceBtn:disabled, #stopBtn:disabled { opacity: 0.45; }
+
 /* 成对的确认/取消按钮并排、不占满整行 */
-#stopConfirm button { width: auto; margin-right: 8px; }
-.preview { max-height: 220px; overflow: auto; font-size: 12px; margin-top: 6px; opacity: 0.9; }
-.preview .dup { color: #d9534f; }
-.status { font-size: 12px; color: #4a90d9; min-height: 16px; }
+#stopConfirm button {
+  width: auto;
+  height: auto;
+  padding: 6px 14px;
+  margin-right: 8px;
+  background: #6d6d6d;
+  color: #ffffff;
+}
+
+/* 预览区：浅底深字的独立卡片，与面板底色区分、文字对比明显 */
+.preview {
+  max-height: 220px;
+  min-height: 40px;
+  overflow: auto;
+  margin-top: 6px;
+  padding: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  background: #ffffff;          /* 与深色面板底色形成区分 */
+  color: #222222;              /* 深字，对比清晰 */
+  border: 1px solid #b0b0b0;
+  border-radius: 4px;
+}
+.preview b { color: #0b5cad; }   /* 新名高亮 */
+.preview .dup { color: #d9534f; }/* 同名警告 */
+
+.status { font-size: 12px; color: #4a90d9; min-height: 16px; margin-top: 8px; }
