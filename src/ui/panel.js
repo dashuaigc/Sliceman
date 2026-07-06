@@ -2,7 +2,7 @@
 // 由 esbuild 打包（本地模块内联，photoshop/uxp 作为宿主注入保持 external）。
 import { walk } from '../lib/traversal.js';
 import { buildBaseName, makeUniqueName } from '../lib/naming.js';
-import { normalize } from '../lib/normalize.js';
+import { normalize, normalizePrefix } from '../lib/normalize.js';
 import { readDocumentTree } from '../ps/layer-tree.js';
 import { exportTask } from '../ps/exporter.js';
 import { buildPreview, applyRename } from '../ps/renamer.js';
@@ -166,7 +166,7 @@ function renderPreview() {
   const layers = selectedLayers();
   if (!layers.length) { previewList.innerHTML = '<i>未选中图层或组</i>'; return; }
   const rawPrefix = prefixInput.value;
-  if (!normalize(rawPrefix)) {
+  if (!normalizePrefix(rawPrefix)) {
     // 前缀为空/无效：预览就是原名（不变）
     previewList.innerHTML = layers.map(l => `<div>${l.name}</div>`).join('');
     return;
@@ -181,7 +181,7 @@ async function runRename() {
   const layers = selectedLayers();
   if (!layers.length) return setStatus('请先在图层面板选中图层或组');
   const rawPrefix = prefixInput.value;
-  if (!normalize(rawPrefix)) return setStatus('前缀无效（规范化后为空）');
+  if (!normalizePrefix(rawPrefix)) return setStatus('前缀无效（规范化后为空）');
   const n = await applyRename(layers, rawPrefix);
   setStatus(`已重命名 ${n} 个图层/组`);
   renderPreview();                                     // 刷新为新名

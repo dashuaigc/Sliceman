@@ -10,11 +10,17 @@ describe('buildPreview', () => {
       { from: 'Group 1', to: 'tbGroup 1', dup: false },
     ]);
   });
+  it('前缀保留下划线等符号（不再被删除）', () => {
+    expect(buildPreview(['home'], 'abc_00211_')).toEqual([
+      { from: 'home', to: 'abc_00211_home', dup: false },
+    ]);
+  });
   it('新名相同的行标注 dup=true（spec §5 同名提示）', () => {
     const rows = buildPreview(['图', '图'], 'a');   // 两行都变 a图
     expect(rows.every(r => r.dup)).toBe(true);
   });
-  it('前缀规范化后为空 → 返回 null（调用方中止）', () => {
-    expect(buildPreview(['a'], '！@#')).toBeNull();
+  it('前缀为空或纯空格 → 返回 null（调用方中止）', () => {
+    expect(buildPreview(['a'], '')).toBeNull();
+    expect(buildPreview(['a'], '   ')).toBeNull();
   });
 });
