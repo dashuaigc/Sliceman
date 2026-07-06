@@ -11,7 +11,9 @@
       "id": "sliceman.panel",
       "label": { "default": "Sliceman" },
       "minimumSize": { "width": 200, "height": 120 },
-      "preferredDockedSize": { "width": 260, "height": 420 }
+      "maximumSize": { "width": 2000, "height": 2000 },
+      "preferredDockedSize": { "width": 260, "height": 420 },
+      "preferredFloatingSize": { "width": 260, "height": 420 }
     }
   ],
   "requiredPermissions": {
