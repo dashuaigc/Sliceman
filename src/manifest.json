@@ -15,7 +15,6 @@
     }
   ],
   "requiredPermissions": {
-    "localFileSystem": "request",
-    "localStorage": true
+    "localFileSystem": "request"
   }
 }
