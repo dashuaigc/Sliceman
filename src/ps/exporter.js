@@ -38,12 +38,6 @@ function findLayerById(container, id) {
   return null;
 }
 
-/** 遍历纯数据节点子树。 */
-function eachNode(node, fn) {
-  fn(node);
-  for (const c of node.children ?? []) eachNode(c, fn);
-}
-
 /**
  * 导出单个任务到 PNG。
  * @param {object} task {type:'layer'|'merged', node, pathSegments}
@@ -76,15 +70,19 @@ export async function exportTask(task, ps, folder, fileName, opts) {
       if (task.type === 'layer') {
         target.visible = true;
       } else {
-        // 合并组：显示非红、原本可见（或 includeHidden）的后代
+        // 合并组：显示非红、原本可见（或 includeHidden）的后代。
+        // 遇到红色节点直接停止下探（不进入其子树），使排除不依赖 PS 的组可见性门控。
         target.visible = true;
-        eachNode(task.node, (n) => {
-          if (n.id === task.node.id) return;         // 组本身已处理
-          const live = findLayerById(tempDoc, n.id);
-          if (!live) return;
-          if (n.label === 'red') { live.visible = false; return; }  // 红色排除
-          if (n.visible || opts.includeHidden) live.visible = true;
-        });
+        const prune = (n) => {
+          if (n.id !== task.node.id) {               // 组本身已在上面置为可见
+            const live = findLayerById(tempDoc, n.id);
+            if (!live) return;
+            if (n.label === 'red') { live.visible = false; return; }  // 红色排除，且不下探
+            if (n.visible || opts.includeHidden) live.visible = true;
+          }
+          for (const c of n.children ?? []) prune(c);
+        };
+        prune(task.node);
       }
 
       // 4) 合并可见图层为一层（渲染图层样式）

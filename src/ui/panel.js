@@ -2,6 +2,7 @@
 // 由 esbuild 打包（本地模块内联，photoshop/uxp 作为宿主注入保持 external）。
 import { walk } from '../lib/traversal.js';
 import { buildBaseName, makeUniqueName } from '../lib/naming.js';
+import { normalize } from '../lib/normalize.js';
 import { readDocumentTree } from '../ps/layer-tree.js';
 import { exportTask } from '../ps/exporter.js';
 import { buildPreview, getSelectedLayers, applyRename } from '../ps/renamer.js';
@@ -25,7 +26,8 @@ async function runSlice() {
 
   const includeHidden = document.getElementById('includeHidden').checked;
   const fullBleed = document.getElementById('fullBleed').checked;
-  const project = projectInput.value;
+  // 项目名规范化后为空（如纯符号）视为未填，避免污染出 seg1_ 前缀
+  const project = normalize(projectInput.value) ? projectInput.value : '';
   const psdName = app.activeDocument.name.replace(/\.[^.]+$/, '');
 
   const tree = await readDocumentTree();
@@ -34,7 +36,7 @@ async function runSlice() {
   // 预塞目标文件夹已有 png 名，避免覆盖磁盘旧文件
   const used = new Set();
   for (const e of await folder.getEntries()) {
-    if (e.isFile && e.name.toLowerCase().endsWith('.png')) used.add(e.name.replace(/\.png$/i, ''));
+    if (e.isFile && e.name.toLowerCase().endsWith('.png')) used.add(e.name.replace(/\.png$/i, '').toLowerCase());
   }
 
   let ok = 0, empty = 0, deduped = 0;
