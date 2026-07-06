@@ -1,0 +1,25 @@
+{
+  "name": "sliceman",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "node esbuild.config.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "pinyin-pro": "^3.28.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1",
+    "vitest": "^4.1.10"
+  }
+}
