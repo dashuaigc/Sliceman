@@ -1,6 +1,6 @@
 // 面板入口：把纯逻辑（traversal/naming）与 PS 封装（layer-tree/exporter/renamer）接到 UI。
 // 由 esbuild 打包（本地模块内联，photoshop/uxp 作为宿主注入保持 external）。
-import { walk } from '../lib/traversal.js';
+import { walk, filterTasksBySelection } from '../lib/traversal.js';
 import { buildBaseName, makeUniqueName } from '../lib/naming.js';
 import { normalize } from '../lib/normalize.js';
 import { readDocumentTree } from '../ps/layer-tree.js';
@@ -69,6 +69,9 @@ let overwriteAll = null;       // 记忆"全部覆盖/全部跳过"：null | 'ov
 
 function setSlicing(on) {
   slicing = on;
+  // 导出选中按钮在切图进行中禁用，避免并发
+  const exportSelBtn = document.getElementById('exportSelBtn');
+  if (exportSelBtn) exportSelBtn.disabled = on;
   // 同一按钮：空闲显示蓝色"开始切图"，进行中变红色"停止切图"
   if (on) {
     sliceBtn.textContent = '按ESC键停止切图';
@@ -130,11 +133,31 @@ async function cleanupAndRestore(originalDocId, historyState) {
 }
 
 // ---- 切图主流程 ----
-async function runSlice() {
+// 「开始切图」：导出全部图层
+function runSliceAll() {
+  return runExport(
+    (tree, includeHidden) => walk(tree, { includeHidden }),
+    '没有可导出的图层',
+  );
+}
+
+// 「导出选中」：只导出选中的组/图层，各自一张，沿用颜色规则与命名
+function runExportSelected() {
+  const ids = selectedLayers().map((l) => l.id);
+  if (!ids.length) { setStatus('请先在图层面板选中图层或组'); return Promise.resolve(); }
+  return runExport(
+    (tree, includeHidden) => filterTasksBySelection(walk(tree, { includeHidden }), tree, ids),
+    '选中项无可导出内容（可能均为红色或隐藏）',
+  );
+}
+
+// 通用导出引擎：给定"如何生成任务列表"，跑完整流水线。
+// 去重 / 同名覆盖询问 / 停止 / ESC 暂停恢复 全部在此统一继承。
+// @param makeTasks (tree, includeHidden) => Array<task>
+// @param emptyMsg  任务为空时的提示
+async function runExport(makeTasks, emptyMsg) {
   if (slicing) return;                                 // 防重复触发
   if (!app.activeDocument) return setStatus('请先打开一个 PSD 文档');
-  const folder = await uxpFs.getFolder();              // 弹文件夹选择
-  if (!folder) return setStatus('已取消');
 
   const includeHidden = document.getElementById('includeHidden').checked;
   const fullBleed = document.getElementById('fullBleed').checked;
@@ -143,7 +166,11 @@ async function runSlice() {
   const psdName = app.activeDocument.name.replace(/\.[^.]+$/, '');
 
   const tree = await readDocumentTree();
-  const tasks = walk(tree, { includeHidden });
+  const tasks = makeTasks(tree, includeHidden);
+  if (!tasks.length) return setStatus(emptyMsg);       // 空任务：不弹文件夹，直接提示
+
+  const folder = await uxpFs.getFolder();              // 弹文件夹选择
+  if (!folder) return setStatus('已取消');
 
   const used = new Set();            // 仅本次运行内部去重（同名自动加 _2/_3）
   const existingFiles = new Set();   // 目标文件夹已存在的 png 基名（小写），命中则询问覆盖/跳过
@@ -276,10 +303,17 @@ prefixInput.addEventListener('focus', renderPreview);
 })();
 
 // ---- 事件绑定 ----
-// 同一按钮：进行中点击=停止（完成当前这张后中断），空闲点击=开始
+// 同一按钮：进行中点击=停止（完成当前这张后中断），空闲点击=开始（全部导出）
 sliceBtn.addEventListener('click', () => {
   if (slicing) { requestStop(); return; }
-  runSlice().catch(e => { setSlicing(false); setStatus('出错：' + e.message); });
+  runSliceAll().catch(e => { setSlicing(false); setStatus('出错：' + e.message); });
+});
+
+// 导出选中：只导出选中的组/图层（进行中禁用，避免并发）
+const exportSelBtn = document.getElementById('exportSelBtn');
+exportSelBtn.addEventListener('click', () => {
+  if (slicing) return;
+  runExportSelected().catch(e => { setSlicing(false); setStatus('出错：' + e.message); });
 });
 
 // ESC 快捷键：切图中按下 → 标记暂停（当前这张切完后在循环里弹确认）
