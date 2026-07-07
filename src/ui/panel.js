@@ -1,10 +1,11 @@
 // 面板入口：把纯逻辑（traversal/naming）与 PS 封装（layer-tree/exporter/renamer）接到 UI。
 // 由 esbuild 打包（本地模块内联，photoshop/uxp 作为宿主注入保持 external）。
 import { walk, filterTasksBySelection } from '../lib/traversal.js';
+import { findSymbols } from '../lib/symbols.js';
 import { buildBaseName, makeUniqueName } from '../lib/naming.js';
 import { normalize } from '../lib/normalize.js';
 import { readDocumentTree } from '../ps/layer-tree.js';
-import { exportTask } from '../ps/exporter.js';
+import { exportTask, exportSymbol } from '../ps/exporter.js';
 import { buildPreview, applyRename } from '../ps/renamer.js';
 
 const { app, action, core } = require('photoshop');
@@ -75,6 +76,9 @@ function updateSliceLabel() {
 
 function setSlicing(on) {
   slicing = on;
+  // Symbols 按钮在切图进行中禁用，避免并发
+  const symBtn = document.getElementById('symbolsBtn');
+  if (symBtn) symBtn.disabled = on;
   // 同一按钮：空闲显示蓝色"开始/导出"，进行中变红色"停止切图"
   if (on) {
     sliceBtn.textContent = '按ESC键停止切图';
@@ -156,6 +160,14 @@ function runExportSelected() {
   );
 }
 
+// 「Symbols 切图」：自动检测含「定位格」的组，各导一张（以定位格为基准框）
+function runExportSymbols() {
+  return runExport(
+    (tree) => findSymbols(tree),
+    '未找到含「定位格」的图层，无法识别 Symbol',
+  );
+}
+
 // 通用导出引擎：给定"如何生成任务列表"，跑完整流水线。
 // 去重 / 同名覆盖询问 / 停止 / ESC 暂停恢复 全部在此统一继承。
 // @param makeTasks (tree, includeHidden) => Array<task>
@@ -234,7 +246,9 @@ async function runExport(makeTasks, emptyMsg) {
 
       let userCancelled = false;
       try {
-        const r = await exportTask(task, ps, folder, currentName, { fullBleed, includeHidden });
+        const r = task.type === 'symbol'
+          ? await exportSymbol(task, ps, folder, currentName, { includeHidden })
+          : await exportTask(task, ps, folder, currentName, { fullBleed, includeHidden });
         if (r === 'ok') ok++; else empty++;
         if (currentDeduped) deduped++;                 // 成功后再计入去重
         setStatus(`导出中… ${ok} 张`);
@@ -319,6 +333,13 @@ sliceBtn.addEventListener('click', () => {
 
 // 勾选框变化时更新按钮文字（导出选中 / 开始切图）
 document.getElementById('selectedOnly').addEventListener('change', updateSliceLabel);
+
+// Symbols 切图：自动检测定位格并导出（进行中禁用，避免并发）
+const symbolsBtn = document.getElementById('symbolsBtn');
+symbolsBtn.addEventListener('click', () => {
+  if (slicing) return;
+  runExportSymbols().catch(e => { setSlicing(false); setStatus('出错：' + e.message); });
+});
 
 // ESC 快捷键：切图中按下 → 标记暂停（当前这张切完后在循环里弹确认）
 document.addEventListener('keydown', (e) => {

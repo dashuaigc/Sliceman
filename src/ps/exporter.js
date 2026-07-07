@@ -14,6 +14,8 @@
 //   6) 按透明度 trim；全透明则判为空、跳过
 //   7) 存 PNG，关闭临时文档
 
+import { computeSymbolFrame } from '../lib/symbols.js';
+
 const { app, action, core } = require('photoshop');
 const uxpFs = require('uxp').storage.localFileSystem;
 
@@ -117,4 +119,95 @@ export async function exportTask(task, ps, folder, fileName, opts) {
       await tempDoc.closeWithoutSaving();
     }
   }, { commandName: `导出 ${fileName}` });
+}
+
+/** 取多个矩形的并集。 */
+function unionBounds(a, b) {
+  return {
+    left: Math.min(a.left, b.left),
+    top: Math.min(a.top, b.top),
+    right: Math.max(a.right, b.right),
+    bottom: Math.max(a.bottom, b.bottom),
+  };
+}
+
+/**
+ * 导出单个 Symbol 到 PNG（以「定位格」为基准框，四边对称外扩最大超出量）。
+ * @param {object} task {type:'symbol', node, dinweigeIds, pathSegments}
+ *        node 为 symbol 范围节点：组节点（有 id）或根伪节点（id 为空 → 整张画布）。
+ * @param {object} ps   {docId, fileName}
+ * @param {object} folder UXP folder entry
+ * @param {string} fileName 已去重的最终文件名（不含扩展名）
+ * @param {{includeHidden:boolean}} opts
+ * @returns {Promise<'ok'|'empty'>}
+ */
+export async function exportSymbol(task, ps, folder, fileName, opts) {
+  return core.executeAsModal(async () => {
+    const srcDoc = app.activeDocument;
+    const tempDoc = await srcDoc.duplicate(`__sliceman_${fileName}`);
+    try {
+      const dinweige = new Set(task.dinweigeIds);
+
+      // 1) 读定位格边界 G（可见性无关；多个定位格取并集）
+      let G = null;
+      for (const id of task.dinweigeIds) {
+        const dl = findLayerById(tempDoc, id);
+        if (!dl) continue;
+        const b = dl.bounds;
+        const r = { left: b.left, top: b.top, right: b.right, bottom: b.bottom };
+        G = G ? unionBounds(G, r) : r;
+      }
+      if (!G) return 'empty';                       // 找不到定位格（异常），跳过
+
+      // 2) 全部隐藏
+      for (const l of allLayers(tempDoc)) l.visible = false;
+
+      // 3) 组范围：先显示范围组及其祖先；根范围无需（根恒可见）
+      if (task.node.id != null) {
+        const scope = findLayerById(tempDoc, task.node.id);
+        if (scope) {
+          scope.visible = true;
+          let p = scope.parent;
+          while (p && p.id !== tempDoc.id && p.layers) { p.visible = true; p = p.parent; }
+        }
+      }
+
+      // 4) 显示内容：范围内除定位格外，遵守 红=排除、隐藏跳过（除非 includeHidden）
+      const prune = (n) => {
+        if (dinweige.has(n.id)) return;             // 定位格：永远不显示、不合并
+        if (n.label === 'red') return;              // 红色：排除且不下探
+        if (!(n.visible || opts.includeHidden)) return; // 隐藏跳过
+        const live = findLayerById(tempDoc, n.id);
+        if (live) live.visible = true;
+        for (const c of n.children ?? []) prune(c);
+      };
+      for (const c of task.node.children ?? []) prune(c);
+
+      // 5) 合并可见内容为一层
+      await action.batchPlay([{ _obj: 'mergeVisible' }], {});
+
+      // 6) 读内容边界 C；无内容判空跳过
+      const merged = tempDoc.activeLayers[0];
+      const cb = merged?.bounds;
+      if (!cb || cb.right - cb.left <= 0 || cb.bottom - cb.top <= 0) return 'empty';
+      const C = { left: cb.left, top: cb.top, right: cb.right, bottom: cb.bottom };
+
+      // 7) 以定位格为基准算导出框（E=0 时即定位格原尺寸），裁到该固定框（补透明、不 trim）
+      const f = computeSymbolFrame(G, C);
+      const rect = {
+        left: Math.round(f.left),
+        top: Math.round(f.top),
+        right: Math.round(f.right),
+        bottom: Math.round(f.bottom),
+      };
+      await tempDoc.crop(rect);   // DOM 裁切：超出画布处补透明
+
+      // 8) 存 PNG
+      const file = await folder.createFile(`${fileName}.png`, { overwrite: true });
+      await tempDoc.saveAs.png(file, {}, true);
+      return 'ok';
+    } finally {
+      await tempDoc.closeWithoutSaving();
+    }
+  }, { commandName: `导出 Symbol ${fileName}` });
 }
