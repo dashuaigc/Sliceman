@@ -168,12 +168,27 @@ function runExportSymbols() {
   );
 }
 
+// 关闭上次遗留的 __sliceman_ 临时文档，避免它成为活动文档、被误当作原文档来源
+async function closeLeftoverTempDocs() {
+  try {
+    await core.executeAsModal(async () => {
+      for (const d of Array.from(app.documents)) {
+        if (d.name && d.name.startsWith('__sliceman_')) {
+          try { await d.closeWithoutSaving(); } catch { /* 忽略单个关闭失败 */ }
+        }
+      }
+    }, { commandName: '清理临时文档' });
+  } catch { /* 忽略 */ }
+}
+
 // 通用导出引擎：给定"如何生成任务列表"，跑完整流水线。
 // 去重 / 同名覆盖询问 / 停止 / ESC 暂停恢复 全部在此统一继承。
 // @param makeTasks (tree, includeHidden) => Array<task>
 // @param emptyMsg  任务为空时的提示
 async function runExport(makeTasks, emptyMsg) {
   if (slicing) return;                                 // 防重复触发
+  if (!app.activeDocument) return setStatus('请先打开一个 PSD 文档');
+  await closeLeftoverTempDocs();                        // 先清理遗留临时文档，确保源文档正确
   if (!app.activeDocument) return setStatus('请先打开一个 PSD 文档');
 
   const includeHidden = document.getElementById('includeHidden').checked;

@@ -51,7 +51,8 @@ function findLayerById(container, id) {
  */
 export async function exportTask(task, ps, folder, fileName, opts) {
   return core.executeAsModal(async () => {
-    const srcDoc = app.activeDocument;
+    // 按原文档 id 精确取源，避免误取到遗留的临时文档
+    const srcDoc = Array.from(app.documents).find((d) => d.id === ps.docId) || app.activeDocument;
 
     // 1) 复制整个文档
     const tempDoc = await srcDoc.duplicate(`__sliceman_${fileName}`);
@@ -143,7 +144,8 @@ function unionBounds(a, b) {
  */
 export async function exportSymbol(task, ps, folder, fileName, opts) {
   return core.executeAsModal(async () => {
-    const srcDoc = app.activeDocument;
+    // 按原文档 id 精确取源，避免误取到遗留的临时文档
+    const srcDoc = Array.from(app.documents).find((d) => d.id === ps.docId) || app.activeDocument;
     const tempDoc = await srcDoc.duplicate(`__sliceman_${fileName}`);
     try {
       const dinweige = new Set(task.dinweigeIds);
@@ -186,11 +188,20 @@ export async function exportSymbol(task, ps, folder, fileName, opts) {
       // 5) 合并可见内容为一层
       await action.batchPlay([{ _obj: 'mergeVisible' }], {});
 
-      // 6) 读内容边界 C；无内容判空跳过
-      const merged = tempDoc.activeLayers[0];
-      const cb = merged?.bounds;
-      if (!cb || cb.right - cb.left <= 0 || cb.bottom - cb.top <= 0) return 'empty';
-      const C = { left: cb.left, top: cb.top, right: cb.right, bottom: cb.bottom };
+      // 6) 读内容边界 C = 合并后"仍可见的像素图层"的并集（跳过组容器）。
+      //    不用 activeLayers[0]：它可能取到隐藏的其它组，导致 C 落到别处、裁框错乱。
+      //    跳过组容器：组的 bounds 可能含隐藏子层（如定位格/辅助层），会污染 C。
+      let C = null;
+      for (const l of allLayers(tempDoc)) {
+        if (!l.visible) continue;
+        if (l.layers) continue;                      // 组容器不算，只取像素图层（合并结果）
+        const b = l.bounds;
+        if (!b) continue;
+        const r = { left: b.left, top: b.top, right: b.right, bottom: b.bottom };
+        if (r.right - r.left <= 0 || r.bottom - r.top <= 0) continue;
+        C = C ? unionBounds(C, r) : r;
+      }
+      if (!C) return 'empty';                        // 无可见内容，跳过
 
       // 7) 以定位格为基准算导出框（E=0 时即定位格原尺寸），裁到该固定框（补透明、不 trim）
       const f = computeSymbolFrame(G, C);
