@@ -2,46 +2,111 @@
   "manifestVersion": 5,
   "id": "com.sliceman.plugin",
   "name": "Sliceman",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "main": "index.html",
-  "host": { "app": "PS", "minVersion": "23.3.0" },
+  "host": {
+    "app": "PS",
+    "minVersion": "23.3.0"
+  },
   "icons": [
     {
-      "width": 24, "height": 24, "path": "icons/icon.png",
-      "scale": [1],
-      "theme": ["darkest", "dark", "medium", "lightest", "light"],
-      "species": ["generic"]
+      "width": 24,
+      "height": 24,
+      "path": "icons/icon.png",
+      "scale": [
+        1
+      ],
+      "theme": [
+        "darkest",
+        "dark",
+        "medium",
+        "lightest",
+        "light"
+      ],
+      "species": [
+        "generic"
+      ]
     },
     {
-      "width": 48, "height": 48, "path": "icons/icon@2x.png",
-      "scale": [2],
-      "theme": ["darkest", "dark", "medium", "lightest", "light"],
-      "species": ["generic"]
+      "width": 48,
+      "height": 48,
+      "path": "icons/icon@2x.png",
+      "scale": [
+        2
+      ],
+      "theme": [
+        "darkest",
+        "dark",
+        "medium",
+        "lightest",
+        "light"
+      ],
+      "species": [
+        "generic"
+      ]
     }
   ],
   "entrypoints": [
     {
       "type": "panel",
       "id": "sliceman.panel",
-      "label": { "default": "Sliceman" },
+      "label": {
+        "default": "Sliceman"
+      },
       "icons": [
         {
-          "width": 24, "height": 24, "path": "icons/icon.png",
-          "scale": [1],
-          "theme": ["darkest", "dark", "medium", "lightest", "light"],
-          "species": ["generic"]
+          "width": 24,
+          "height": 24,
+          "path": "icons/icon.png",
+          "scale": [
+            1
+          ],
+          "theme": [
+            "darkest",
+            "dark",
+            "medium",
+            "lightest",
+            "light"
+          ],
+          "species": [
+            "generic"
+          ]
         },
         {
-          "width": 48, "height": 48, "path": "icons/icon@2x.png",
-          "scale": [2],
-          "theme": ["darkest", "dark", "medium", "lightest", "light"],
-          "species": ["generic"]
+          "width": 48,
+          "height": 48,
+          "path": "icons/icon@2x.png",
+          "scale": [
+            2
+          ],
+          "theme": [
+            "darkest",
+            "dark",
+            "medium",
+            "lightest",
+            "light"
+          ],
+          "species": [
+            "generic"
+          ]
         }
       ],
-      "minimumSize": { "width": 200, "height": 120 },
-      "maximumSize": { "width": 2000, "height": 2000 },
-      "preferredDockedSize": { "width": 260, "height": 420 },
-      "preferredFloatingSize": { "width": 260, "height": 420 }
+      "minimumSize": {
+        "width": 200,
+        "height": 120
+      },
+      "maximumSize": {
+        "width": 2000,
+        "height": 2000
+      },
+      "preferredDockedSize": {
+        "width": 260,
+        "height": 420
+      },
+      "preferredFloatingSize": {
+        "width": 260,
+        "height": 420
+      }
     }
   ],
   "requiredPermissions": {
