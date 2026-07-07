@@ -5,9 +5,28 @@ body {
   margin: 0;
   overflow-y: auto;      /* 内容超出面板高度时可滚动，避免下方功能被截断 */
   box-sizing: border-box;
+  display: flex;         /* 纵向排布，便于把状态栏推到底部 */
+  flex-direction: column;
+  min-height: 100%;
 }
 .block { margin-bottom: 10px; }
 h3 { margin: 4px 0; font-size: 13px; }
+
+/* 两大功能各成一张卡片，视觉上清晰分区 */
+.card {
+  border: 1px solid #555555;
+  border-radius: 8px;
+  padding: 10px 10px 6px;
+  margin-bottom: 12px;
+  flex-shrink: 0;         /* 面板变矮时不压缩、不重叠，改为整体滚动 */
+}
+.card-title {
+  margin: 0 0 8px;
+  padding-bottom: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  border-bottom: 1px solid #555555;
+}
 label { display: block; margin: 4px 0 2px; font-size: 12px; }
 /* UXP 原生 <input> 单行文本会贴顶，改用自带垂直居中的 sp-textfield */
 sp-textfield {
@@ -30,8 +49,6 @@ button {
 }
 #sliceBtn          { background: #2680eb; color: #ffffff; }    /* 空闲：开始切图=蓝 */
 #sliceBtn.slicing  { background: #e34850; }                    /* 进行中：停止切图=红 */
-#exportSelBtn      { background: #5a6b7b; color: #ffffff; }    /* 导出选中：石板灰蓝 */
-#exportSelBtn:disabled { opacity: 0.45; cursor: default; }
 #renameBtn         { background: #2d9d78; color: #ffffff; }    /* 应用前缀：绿 */
 
 /* 确认区：整体居中、提示文字醒目 */
@@ -79,4 +96,13 @@ button {
 .preview b { color: #0b5cad; }   /* 新名高亮 */
 .preview .dup { color: #d9534f; }/* 同名警告 */
 
-.status { font-size: 12px; color: #4a90d9; min-height: 16px; margin-top: 8px; }
+/* 状态栏：推到面板底部、居中显示 */
+.status {
+  font-size: 12px;
+  color: #4a90d9;
+  min-height: 16px;
+  flex-shrink: 0;         /* 不被压缩 */
+  margin-top: auto;       /* 占满剩余空间 → 贴到面板底部 */
+  padding-top: 8px;
+  text-align: center;
+}
