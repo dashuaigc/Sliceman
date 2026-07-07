@@ -5,38 +5,40 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <section class="block">
-      <h3>切图</h3>
+    <!-- 功能一：切图 -->
+    <section class="card">
+      <h3 class="card-title">切图</h3>
       <label>项目名称</label>
       <sp-textfield id="projectName" placeholder="可留空"></sp-textfield>
-      <div class="checkrow"><sp-checkbox id="includeHidden">包含隐藏图层</sp-checkbox></div>
+      <div class="checkrow"><sp-checkbox id="includeHidden" checked>包含隐藏图层</sp-checkbox></div>
       <div class="checkrow"><sp-checkbox id="fullBleed" checked>完整切出超出画布部分</sp-checkbox></div>
+      <div class="checkrow"><sp-checkbox id="selectedOnly">只对选中的图层/组切图</sp-checkbox></div>
       <button id="sliceBtn">开始切图</button>
-      <button id="exportSelBtn">导出选中</button>
+
+      <!-- ESC 暂停后确认（内联，替代 UXP 下不可靠的 <dialog>） -->
+      <section id="stopConfirm" class="confirm" style="display:none;">
+        <p class="confirm-msg">已暂停，是否终止任务？<br><small>终止将把 PSD 恢复到切图前</small></p>
+        <button id="stopConfirmYes">终止本次切图</button>
+        <button id="stopConfirmNo">继续切图</button>
+      </section>
+
+      <!-- 目标文件夹存在同名文件时询问 覆盖/跳过 -->
+      <section id="overwriteConfirm" class="confirm" style="display:none;">
+        <p class="confirm-msg">目标文件夹已存在同名文件：<br><b id="overwriteName"></b><br>覆盖还是跳过？</p>
+        <div class="confirm-row">
+          <button id="ovwYes">覆盖</button>
+          <button id="ovwNo">跳过</button>
+        </div>
+        <div class="confirm-row">
+          <button id="ovwYesAll">全部覆盖</button>
+          <button id="ovwNoAll">全部跳过</button>
+        </div>
+      </section>
     </section>
 
-    <!-- ESC 暂停后确认（内联，替代 UXP 下不可靠的 <dialog>） -->
-    <section id="stopConfirm" class="block confirm" style="display:none;">
-      <p class="confirm-msg">已暂停，是否终止任务？<br><small>终止将把 PSD 恢复到切图前</small></p>
-      <button id="stopConfirmYes">终止本次切图</button>
-      <button id="stopConfirmNo">继续切图</button>
-    </section>
-
-    <!-- 目标文件夹存在同名文件时询问 覆盖/跳过 -->
-    <section id="overwriteConfirm" class="block confirm" style="display:none;">
-      <p class="confirm-msg">目标文件夹已存在同名文件：<br><b id="overwriteName"></b><br>覆盖还是跳过？</p>
-      <div class="confirm-row">
-        <button id="ovwYes">覆盖</button>
-        <button id="ovwNo">跳过</button>
-      </div>
-      <div class="confirm-row">
-        <button id="ovwYesAll">全部覆盖</button>
-        <button id="ovwNoAll">全部跳过</button>
-      </div>
-    </section>
-
-    <section class="block">
-      <h3>批量前缀重命名</h3>
+    <!-- 功能二：批量前缀重命名 -->
+    <section class="card">
+      <h3 class="card-title">批量前缀重命名</h3>
       <label>前缀（输入即预览，对选中的组/图层生效）</label>
       <sp-textfield id="prefix" placeholder="如 图标"></sp-textfield>
       <div id="previewList" class="preview"></div>

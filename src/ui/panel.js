@@ -67,18 +67,22 @@ let pauseDecider = null;       // 暂停时等待用户决定的 Promise resolve
 let overwriteDecider = null;   // 同名覆盖询问的 Promise resolver
 let overwriteAll = null;       // 记忆"全部覆盖/全部跳过"：null | 'overwrite' | 'skip'
 
+// 勾选「只对选中的图层/组切图」时，空闲按钮显示"导出选中"，否则"开始完整切图"
+function selectedOnly() { return document.getElementById('selectedOnly').checked; }
+function updateSliceLabel() {
+  if (!slicing) sliceBtn.textContent = selectedOnly() ? '导出选中的图层/组' : '开始完整切图';
+}
+
 function setSlicing(on) {
   slicing = on;
-  // 导出选中按钮在切图进行中禁用，避免并发
-  const exportSelBtn = document.getElementById('exportSelBtn');
-  if (exportSelBtn) exportSelBtn.disabled = on;
-  // 同一按钮：空闲显示蓝色"开始切图"，进行中变红色"停止切图"
+  // 同一按钮：空闲显示蓝色"开始/导出"，进行中变红色"停止切图"
   if (on) {
     sliceBtn.textContent = '按ESC键停止切图';
     sliceBtn.classList.add('slicing');
   } else {
-    sliceBtn.textContent = '开始切图';
     sliceBtn.classList.remove('slicing');
+    sliceBtn.style.display = '';               // 确保结束后按钮恢复显示
+    updateSliceLabel();
     stopConfirm.style.display = 'none';       // 结束时收起确认块
     overwriteConfirm.style.display = 'none';
     escPause = false;
@@ -105,6 +109,7 @@ function requestStop(reason) {
 // 弹出"是否终止"确认，返回 'terminate' | 'continue'
 function askTerminate() {
   stopConfirm.style.display = 'block';
+  sliceBtn.style.display = 'none';   // 已暂停：隐藏"停止切图"，它只在任务进行中显示
   setStatus('已暂停：是否终止任务？');
   return new Promise((res) => { pauseDecider = res; });
 }
@@ -244,6 +249,7 @@ async function runExport(makeTasks, emptyMsg) {
         escPause = false;
         const decision = await askTerminate();
         stopConfirm.style.display = 'none';
+        sliceBtn.style.display = '';        // 恢复显示（继续则重新进入进行中状态）
         if (decision === 'terminate') {
           await cleanupAndRestore(ps.docId, originalHistory);
           setStatus(`已终止并恢复 PSD：导出 ${ok} 张后中止`);
@@ -303,18 +309,16 @@ prefixInput.addEventListener('focus', renderPreview);
 })();
 
 // ---- 事件绑定 ----
-// 同一按钮：进行中点击=停止（完成当前这张后中断），空闲点击=开始（全部导出）
+// 同一按钮：进行中点击=停止（完成当前这张后中断）；
+// 空闲点击=按勾选框决定：勾选→仅导出选中，未勾选→全部导出
 sliceBtn.addEventListener('click', () => {
   if (slicing) { requestStop(); return; }
-  runSliceAll().catch(e => { setSlicing(false); setStatus('出错：' + e.message); });
+  const run = selectedOnly() ? runExportSelected : runSliceAll;
+  run().catch(e => { setSlicing(false); setStatus('出错：' + e.message); });
 });
 
-// 导出选中：只导出选中的组/图层（进行中禁用，避免并发）
-const exportSelBtn = document.getElementById('exportSelBtn');
-exportSelBtn.addEventListener('click', () => {
-  if (slicing) return;
-  runExportSelected().catch(e => { setSlicing(false); setStatus('出错：' + e.message); });
-});
+// 勾选框变化时更新按钮文字（导出选中 / 开始切图）
+document.getElementById('selectedOnly').addEventListener('change', updateSliceLabel);
 
 // ESC 快捷键：切图中按下 → 标记暂停（当前这张切完后在循环里弹确认）
 document.addEventListener('keydown', (e) => {
@@ -345,4 +349,5 @@ document.getElementById('renameBtn').addEventListener('click', () =>
   runRename().catch(e => setStatus('出错：' + e.message)));
 
 renderPreview();                                       // 初始渲染一次
+updateSliceLabel();                                    // 按勾选框初始化按钮文字
 setStatus('插件已加载');
