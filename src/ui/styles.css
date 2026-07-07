@@ -30,6 +30,8 @@ button {
 }
 #sliceBtn          { background: #2680eb; color: #ffffff; }    /* 空闲：开始切图=蓝 */
 #sliceBtn.slicing  { background: #e34850; }                    /* 进行中：停止切图=红 */
+#exportSelBtn      { background: #5a6b7b; color: #ffffff; }    /* 导出选中：石板灰蓝 */
+#exportSelBtn:disabled { opacity: 0.45; cursor: default; }
 #renameBtn         { background: #2d9d78; color: #ffffff; }    /* 应用前缀：绿 */
 
 /* 确认区：整体居中、提示文字醒目 */
