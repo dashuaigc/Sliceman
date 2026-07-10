@@ -5,54 +5,255 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <!-- 功能一：切图 -->
-    <section class="card">
-      <h3 class="card-title">切图</h3>
-      <label>项目名称</label>
-      <sp-textfield id="projectName" placeholder="可留空"></sp-textfield>
-      <div class="checkrow"><sp-checkbox id="includeHidden" checked>包含隐藏图层</sp-checkbox></div>
-      <div class="checkrow"><sp-checkbox id="fullBleed" checked>完整切出超出画布部分</sp-checkbox></div>
-      <div class="checkrow"><sp-checkbox id="selectedOnly">只对选中的图层/组切图</sp-checkbox></div>
-      <button id="sliceBtn">开始切图</button>
+    <div class="app">
+      <!-- 顶部栏（视觉，仅品牌与入口图标） -->
+      <header class="topbar">
+        <div class="brand">
+          <span class="ps-logo">PS</span>
+          <span class="brand-name">Sliceman</span>
+          <span class="version" id="version">v0.0.5</span>
+        </div>
+        <div class="topbar-actions">
+          <svg class="ic-btn" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="search">
+  <g fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="55" cy="55" r="30"/>
+    <path d="M78 78 L103 103"/>
+  </g>
+</svg>
+          <svg class="ic-btn" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
+  <g>
+    <circle cx="64" cy="64" r="45" fill="none" stroke="#FFFFFF" stroke-width="7"/>
+    <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="66" cy="94" r="4.8" fill="#FFFFFF"/>
+  </g>
+</svg>
+          <svg class="ic-btn" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="settings">
+  <g fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M58 14 H70 L73 27 C77 28 81 30 84 32 L96 25 L104 34 L97 46 C99 50 101 54 102 58 L115 62 V74 L102 77 C101 81 99 85 97 88 L104 100 L96 108 L84 101 C80 103 77 105 73 106 L70 119 H58 L55 106 C51 105 47 103 44 101 L32 108 L24 100 L31 88 C29 84 27 81 26 77 L13 74 V62 L26 58 C27 54 29 50 31 46 L24 34 L32 25 L44 32 C47 30 51 28 55 27 Z"/>
+    <circle cx="64" cy="68" r="17"/>
+  </g>
+</svg>
+        </div>
+      </header>
 
-      <!-- ESC 暂停后确认（内联，替代 UXP 下不可靠的 <dialog>） -->
-      <section id="stopConfirm" class="confirm" style="display:none;">
-        <p class="confirm-msg">已暂停，是否终止任务？<br><small>终止将把 PSD 恢复到切图前</small></p>
-        <button id="stopConfirmYes">终止本次切图</button>
-        <button id="stopConfirmNo">继续切图</button>
+      <!-- 项目名称（三页共用，沿用原持久化输入） -->
+      <section class="card">
+        <div class="card-head">
+          <h3 class="card-title">项目名称</h3>
+          <span class="card-sub">配置本次项目的名称（可选）</span>
+        </div>
+        <sp-textfield id="projectName" placeholder="可留空"></sp-textfield>
       </section>
 
-      <!-- 目标文件夹存在同名文件时询问 覆盖/跳过 -->
-      <section id="overwriteConfirm" class="confirm" style="display:none;">
+      <!-- 功能中心：前三张切换页面，「更多功能」仅视觉 -->
+      <section class="card">
+        <h3 class="card-title">功能中心</h3>
+        <div class="tiles">
+          <div class="tile active" data-page="slice">
+            <svg class="tile-icon" viewBox="0 0 274 276" xmlns="http://www.w3.org/2000/svg"><path d="M0 0 C1 0 1 0 3 0 C6 0 9 0 12 0 C14 0 16 0 18 0 C24 0 30 0 35 0 C39 0 43 0 46 0 C58 0 69 0 81 0 C94 0 107 0 120 0 C130 0 140 0 150 0 C156 0 162 0 168 0 C174 0 180 0 186 0 C188 0 190 0 192 0 C203 -1 212 0 222 6 C223 7 223 7 224 8 C231 12 236 23 237 30 C237 33 237 36 237 39 C237 40 237 41 237 42 C237 44 237 47 237 50 C237 52 237 55 237 57 C237 64 237 71 237 77 C237 80 237 82 237 85 C237 96 237 107 237 118 C237 131 237 144 238 157 C238 167 238 177 238 187 C238 193 238 199 238 205 C238 211 238 216 238 222 C238 224 238 226 238 228 C238 241 238 254 229 265 C220 273 211 276 199 276 C197 276 197 276 196 276 C193 276 190 276 187 276 C185 276 183 276 181 276 C175 276 170 276 164 276 C160 276 157 276 153 276 C142 277 131 277 120 277 C107 277 95 277 82 277 C72 277 62 277 52 277 C46 277 40 277 35 277 C29 277 23 277 18 277 C16 277 14 277 12 277 C-3 277 -15 276 -26 265 C-33 257 -35 248 -35 238 C-35 237 -35 236 -35 235 C-35 232 -35 229 -35 226 C-35 224 -35 222 -35 220 C-35 214 -35 208 -35 203 C-35 198 -35 193 -35 188 C-35 177 -35 165 -35 154 C-35 142 -35 130 -35 118 C-35 108 -35 98 -35 88 C-35 82 -35 76 -35 70 C-35 64 -35 58 -35 53 C-35 51 -35 48 -35 46 C-35 32 -35 21 -24 9 C-21 7 -18 4 -14 2 C-13 2 -12 2 -12 1 C-8 0 -4 0 0 0 Z " fill="#03B0B3" transform="translate(37,0)"/><path d="M0 0 C1 0 2 0 3 0 C5 0 7 0 9 0 C13 0 16 0 19 0 C21 0 23 0 25 0 C27 0 27 0 28 0 C29 0 30 0 31 0 C32 0 32 0 33 0 C35 0 35 0 37 2 C38 5 38 5 38 9 C38 10 37 11 37 12 C37 15 37 15 36 17 C23 18 10 18 -4 18 C-4 32 -4 32 -4 45 C-4 46 -4 48 -4 50 C-4 50 -4 51 -4 52 C-4 58 -4 58 -7 60 C-9 61 -9 61 -13 61 C-14 61 -14 61 -16 61 C-19 60 -19 60 -21 58 C-21 56 -21 56 -21 54 C-21 53 -21 52 -21 51 C-21 50 -21 49 -21 48 C-21 47 -21 46 -21 45 C-21 43 -21 40 -21 38 C-21 35 -21 31 -21 28 C-21 26 -21 24 -21 21 C-21 20 -21 19 -21 18 C-21 13 -21 9 -18 4 C-12 0 -7 0 0 0 Z " fill="#F2FAFA" transform="translate(77,62)"/><path d="M0 0 C2 0 2 0 4 0 C7 0 7 0 9 2 C9 5 9 8 9 11 C9 12 9 13 9 13 C9 16 9 19 9 22 C9 25 9 27 9 30 C9 32 9 33 9 35 C9 39 9 39 11 42 C13 42 16 42 19 42 C21 42 22 42 24 42 C27 43 30 43 32 43 C35 43 37 43 40 43 C41 43 41 43 43 43 C45 43 45 43 49 43 C51 47 51 48 51 52 C51 53 51 54 51 55 C51 58 51 58 50 60 C43 60 36 60 30 60 C28 60 25 60 23 60 C20 60 17 60 13 60 C12 60 11 61 10 61 C2 61 2 61 -2 57 C-6 53 -8 50 -8 44 C-8 43 -8 43 -8 42 C-8 41 -8 39 -8 38 C-8 37 -8 36 -8 35 C-8 33 -8 31 -8 29 C-8 25 -8 22 -8 18 C-8 16 -8 14 -8 12 C-8 11 -8 10 -8 9 C-8 8 -8 7 -8 6 C-8 5 -8 4 -8 3 C-7 -1 -4 0 0 0 Z " fill="#F1FAFA" transform="translate(63,154)"/><path d="M0 0 C1 0 1 0 2 0 C4 0 4 0 5 0 C6 0 7 0 8 0 C9 0 10 0 11 0 C13 0 16 0 18 0 C21 0 24 0 28 0 C30 0 32 0 34 0 C35 0 35 0 37 0 C38 0 39 0 40 0 C40 0 41 0 42 0 C44 0 44 0 47 1 C47 2 47 3 47 3 C48 3 48 4 49 4 C52 6 53 8 54 11 C54 15 54 18 54 22 C54 24 54 24 54 25 C54 27 54 30 54 32 C54 35 54 38 54 42 C54 44 54 46 54 48 C54 49 54 49 54 51 C54 52 54 53 54 54 C54 55 54 55 54 56 C54 58 54 58 52 60 C49 60 49 60 45 60 C44 60 44 60 42 60 C39 60 39 60 38 59 C38 56 38 53 38 50 C38 50 38 49 38 48 C38 44 38 40 37 36 C37 34 37 31 37 28 C37 27 37 26 37 25 C38 22 38 22 36 18 C33 18 30 18 28 18 C26 18 24 18 23 18 C20 18 17 18 14 18 C12 18 9 18 7 18 C6 18 5 18 4 18 C2 18 2 18 -2 17 C-4 14 -4 12 -4 8 C-4 7 -4 6 -4 5 C-4 2 -3 0 0 0 Z " fill="#F3FAFA" transform="translate(166,62)"/><path d="M0 0 C2 0 4 0 6 0 C8 0 9 0 10 0 C13 0 13 0 15 2 C15 4 15 4 15 6 C15 8 15 8 15 9 C15 10 15 11 15 12 C15 13 15 14 15 15 C15 18 15 20 15 22 C15 25 15 29 15 32 C15 34 15 36 15 38 C15 39 15 40 15 41 C15 47 15 50 12 55 C8 59 6 60 1 60 C0 60 -1 60 -2 60 C-4 60 -4 60 -5 60 C-6 60 -7 60 -8 60 C-12 60 -15 60 -18 60 C-20 60 -23 60 -25 60 C-30 60 -36 60 -41 60 C-41 59 -41 59 -41 58 C-42 58 -42 58 -43 58 C-43 56 -43 54 -43 52 C-43 51 -43 50 -43 49 C-43 46 -43 46 -42 44 C-39 42 -35 43 -32 43 C-31 43 -30 42 -29 42 C-27 42 -24 42 -21 42 C-19 42 -16 42 -14 42 C-12 42 -10 42 -9 42 C-5 42 -5 42 -2 41 C-2 38 -2 35 -2 32 C-2 32 -2 31 -2 30 C-2 27 -2 24 -1 22 C-1 18 -1 14 -1 11 C-1 10 -1 9 -1 8 C-1 2 -1 2 0 0 Z " fill="#F3FAFA" transform="translate(205,154)"/><path d="M0 0 C1 0 1 0 3 0 C6 0 9 0 12 0 C14 0 16 0 18 0 C24 0 30 0 35 0 C39 0 43 0 46 0 C58 0 69 0 81 0 C94 0 107 0 120 0 C130 0 140 0 150 0 C156 0 162 0 168 0 C174 0 180 0 186 0 C188 0 190 0 192 0 C203 -1 212 0 222 6 C223 7 223 7 224 8 C231 12 236 23 237 30 C237 33 237 36 237 39 C237 40 237 41 237 42 C237 44 237 47 237 50 C237 52 237 55 237 57 C237 64 237 71 237 77 C237 80 237 82 237 85 C237 96 237 107 237 118 C237 131 237 144 238 157 C238 167 238 177 238 187 C238 193 238 199 238 205 C238 211 238 216 238 222 C238 224 238 226 238 228 C238 239 238 248 233 258 C233 258 232 258 231 258 C231 258 232 257 232 256 C235 246 235 236 235 225 C235 223 235 221 235 219 C235 213 235 207 235 202 C235 196 235 190 235 184 C235 174 235 164 235 154 C235 142 235 130 235 119 C235 109 235 99 235 89 C235 83 235 77 235 71 C235 65 235 60 235 54 C235 52 235 50 235 48 C235 34 234 21 224 10 C221 8 218 7 215 5 C214 5 213 4 212 4 C207 2 203 2 198 2 C197 2 197 2 196 2 C193 2 190 2 187 2 C185 2 183 2 181 2 C175 2 170 2 164 2 C158 2 152 2 146 2 C136 2 127 2 117 2 C105 2 94 2 82 2 C73 2 63 2 53 2 C47 2 41 2 35 2 C30 2 24 2 19 2 C17 2 15 2 13 2 C3 2 -7 2 -17 5 C-12 0 -7 0 0 0 Z " fill="#1BB5B7" transform="translate(37,0)"/><path d="M0 0 C1 0 1 1 2 1 C2 2 1 2 1 3 C-2 8 -3 13 -3 19 C-3 20 -3 21 -3 22 C-3 25 -3 28 -3 31 C-3 33 -3 35 -3 37 C-3 43 -3 49 -3 55 C-2 61 -2 67 -3 73 C-3 84 -2 94 -2 104 C-2 116 -2 128 -2 140 C-2 151 -2 162 -2 174 C-2 179 -2 184 -2 188 C-2 194 -2 200 -2 206 C-2 208 -2 210 -2 212 C-3 226 -3 226 0 239 C1 241 1 241 0 244 C-1 243 -1 241 -2 240 C-2 239 -3 238 -3 237 C-5 232 -5 228 -5 222 C-5 221 -5 220 -5 220 C-5 217 -5 214 -5 211 C-5 208 -5 206 -5 204 C-5 197 -5 190 -5 183 C-5 181 -5 178 -5 176 C-5 164 -5 153 -5 142 C-5 129 -5 115 -5 102 C-5 92 -5 82 -5 72 C-5 66 -5 60 -5 54 C-5 48 -5 42 -5 36 C-5 34 -5 32 -5 30 C-6 9 -6 9 -1 1 C-1 1 0 0 0 0 Z " fill="#10ADB0" transform="translate(7,16)"/><path d="M0 0 C1 0 1 0 3 0 C6 0 9 0 12 0 C14 0 16 0 18 0 C24 0 30 0 35 0 C39 0 43 0 46 0 C58 0 69 0 81 0 C94 0 107 0 120 0 C130 0 140 0 150 0 C156 0 162 0 168 0 C174 0 180 0 186 0 C188 0 190 0 192 0 C207 -1 218 1 229 12 C229 13 228 14 227 14 C226 14 226 13 225 12 C219 6 210 2 201 2 C199 2 199 2 198 2 C197 2 197 2 196 2 C193 2 190 2 187 2 C185 2 183 2 181 2 C175 2 170 2 164 2 C158 2 152 2 146 2 C136 2 127 2 117 2 C105 2 94 2 82 2 C73 2 63 2 53 2 C47 2 41 2 35 2 C30 2 24 2 19 2 C17 2 15 2 13 2 C3 2 -7 2 -17 5 C-12 0 -7 0 0 0 Z " fill="#2DBDC0" transform="translate(37,0)"/><path d="M0 0 C0 0 1 0 1 0 C1 1 1 2 1 3 C1 30 1 56 1 83 C1 96 1 109 1 122 C1 133 1 144 2 155 C2 161 2 167 2 173 C2 178 2 184 2 190 C2 192 2 194 2 196 C2 199 2 201 2 204 C2 205 2 206 2 207 C2 211 2 215 4 219 C4 221 5 222 5 224 C5 225 5 225 6 226 C6 227 6 227 6 228 C0 222 0 214 0 206 C0 205 0 204 0 203 C0 200 0 197 0 194 C0 192 0 190 0 188 C0 182 0 176 0 171 C0 165 0 159 0 153 C0 141 0 130 0 119 C0 106 0 93 0 80 C0 53 0 27 0 0 Z " fill="#1AB4B6" transform="translate(2,32)"/><path d="M0 0 C3 0 5 0 8 0 C8 6 8 13 8 19 C6 19 3 19 1 19 C0 18 0 18 0 16 C0 15 0 15 0 14 C0 13 0 12 0 12 C0 11 0 10 0 9 C0 8 0 7 0 6 C0 4 0 2 0 0 Z " fill="#DEF4F5" transform="translate(134,96)"/><path d="M0 0 C1 0 2 0 3 0 C3 3 4 5 4 7 C4 8 4 8 4 9 C4 13 4 15 1 18 C-3 17 -3 17 -5 16 C-5 14 -5 11 -5 9 C-5 8 -5 7 -5 6 C-5 0 -5 0 0 0 Z " fill="#D4F2F2" transform="translate(139,131)"/><path d="M0 0 C2 0 5 0 7 0 C8 1 8 1 8 4 C8 6 8 7 8 9 C8 9 8 10 8 11 C8 12 8 14 8 16 C6 16 3 17 1 17 C0 16 0 16 0 12 C0 11 0 9 0 8 C0 7 0 6 0 6 C0 4 0 2 0 0 Z " fill="#EEF8F9" transform="translate(134,62)"/><path d="M0 0 C1 0 1 0 3 0 C5 4 5 6 5 10 C5 12 5 13 5 14 C5 16 5 16 5 17 C2 17 -1 17 -3 17 C-3 15 -3 12 -3 9 C-4 9 -4 8 -4 7 C-4 5 -3 3 -3 1 C-2 0 -2 0 0 0 Z " fill="#E0F5F5" transform="translate(137,164)"/><path d="M0 0 C3 0 3 0 4 1 C4 4 4 6 4 9 C4 9 4 10 4 11 C4 13 4 14 4 16 C2 16 -1 16 -3 16 C-4 15 -4 15 -4 12 C-4 11 -4 9 -4 8 C-4 7 -4 6 -4 4 C-4 0 -4 0 0 0 Z " fill="#F0F9F9" transform="translate(138,198)"/><path d="M0 0 C9 1 16 6 22 12 C21 13 21 13 20 14 C19 13 19 13 18 12 C13 7 7 4 0 2 C0 1 0 1 0 0 Z " fill="#18BCC0" transform="translate(244,0)"/><path d="M0 0 C0 0 1 0 1 0 C1 13 1 26 1 40 C1 40 0 40 0 40 C0 27 0 14 0 0 Z " fill="#00FFFF" transform="translate(0,111)"/><path d="M0 0 C0 0 1 0 1 0 C1 8 1 15 1 23 C1 23 0 23 0 23 C0 15 0 8 0 0 Z " fill="#00FFFF" transform="translate(0,60)"/><path d="M0 0 C0 1 0 1 0 2 C-4 3 -8 4 -12 5 C-8 1 -6 0 0 0 Z " fill="#1CB7B9" transform="translate(32,0)"/><path d="M0 0 C0 0 1 0 1 0 C1 6 1 12 1 18 C1 18 0 18 0 18 C0 12 0 6 0 0 Z " fill="#00FFFF" transform="translate(0,87)"/><path d="M0 0 C1 0 1 1 2 1 C0 3 -3 6 -5 8 C-5 7 -6 7 -6 6 C-4 4 -2 2 0 0 Z " fill="#C4EDEE" transform="translate(63,63)"/><path d="M0 0 C0 0 1 0 1 0 C1 4 1 7 1 11 C1 11 0 11 0 11 C0 7 0 4 0 0 Z " fill="#00FFFF" transform="translate(0,228)"/><path d="M0 0 C0 0 1 0 1 0 C1 4 1 7 1 11 C1 11 0 11 0 11 C0 7 0 4 0 0 Z " fill="#00FFFF" transform="translate(0,33)"/><path d="M0 0 C0 0 1 0 1 0 C1 3 1 7 1 10 C1 10 0 10 0 10 C0 7 0 3 0 0 Z " fill="#00FFFF" transform="translate(0,214)"/><path d="M0 0 C0 0 1 0 1 0 C1 2 1 5 1 7 C1 7 0 7 0 7 C0 5 0 2 0 0 Z " fill="#00FFFF" transform="translate(0,164)"/><path d="M0 0 C1 4 1 4 1 4 Z " fill="#00FFFF" transform="translate(0,106)"/><path d="" fill="#00FFFF" transform="translate(0,0)"/><path d="" fill="#00FFFF" transform="translate(0,0)"/><path d="" fill="#00FFFF" transform="translate(0,0)"/><path d="" fill="#00FFFF" transform="translate(0,0)"/><path d="" fill="#00FFFF" transform="translate(0,0)"/><path d="" fill="#00FFFF" transform="translate(0,0)"/><path d="" fill="#00FFFF" transform="translate(0,0)"/><path d="" fill="#00FFFF" transform="translate(0,0)"/></svg>
+            <span class="tile-label">完整切图</span>
+            <svg class="tile-check" xmlns="http://www.w3.org/2000/svg" viewBox="36 36 56 56" role="img" aria-label="check">
+  <circle cx="64" cy="64" r="28" fill="#08C5D5"/>
+  <path d="M49 63 L59 73 L80 51" fill="none" stroke="#073851" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+          </div>
+          <div class="tile" data-page="symbols">
+            <svg class="tile-icon" viewBox="0 0 272 277" xmlns="http://www.w3.org/2000/svg"><path d="M0 0 C23 0 47 0 70 0 C76 0 82 0 88 0 C95 0 102 0 109 0 C112 0 116 0 119 0 C123 0 127 0 131 0 C133 0 133 0 134 0 C144 0 152 4 160 10 C167 19 170 28 170 39 C170 40 170 41 170 42 C170 45 170 48 170 51 C170 53 170 55 170 57 C170 63 170 69 170 74 C170 78 170 82 170 85 C170 98 170 110 170 123 C170 135 170 147 170 158 C170 168 170 179 170 189 C170 195 170 201 170 207 C170 212 170 218 170 224 C170 226 170 228 170 230 C170 245 170 257 159 268 C151 275 142 277 132 277 C131 277 130 277 129 277 C126 277 123 277 120 277 C118 277 116 277 114 277 C108 277 103 277 97 277 C92 277 88 277 83 277 C72 277 60 277 49 277 C38 277 26 277 15 277 C5 278 -5 278 -15 278 C-21 278 -27 278 -33 278 C-38 278 -44 278 -49 278 C-51 278 -53 278 -55 278 C-69 278 -82 277 -92 267 C-100 258 -103 249 -103 238 C-103 237 -103 236 -103 235 C-103 232 -103 229 -103 226 C-103 224 -103 222 -103 220 C-103 214 -103 208 -103 203 C-103 198 -103 193 -103 188 C-103 177 -103 165 -103 154 C-103 142 -103 131 -103 119 C-103 109 -103 99 -103 89 C-103 83 -103 77 -103 71 C-103 65 -103 60 -103 54 C-103 52 -103 50 -103 48 C-103 33 -102 21 -91 9 C-82 2 -74 0 -63 0 C-61 0 -60 0 -59 0 C-55 0 -51 0 -48 0 C-45 0 -41 0 -38 0 C-28 0 -18 0 -8 0 C-5 0 -3 0 0 0 Z " fill="#017EEF" transform="translate(102,0)"/><path d="M0 0 C2 0 2 0 3 0 C4 0 5 0 7 0 C8 0 9 0 10 0 C22 0 33 -1 44 -1 C52 -1 59 -1 67 -1 C73 -1 80 -1 86 -1 C90 -1 93 -1 97 -1 C120 -2 120 -2 125 3 C128 7 130 10 132 14 C133 16 135 17 136 19 C137 20 138 22 139 23 C140 24 140 24 141 26 C145 31 150 37 154 42 C155 44 157 46 158 48 C159 49 160 49 160 50 C161 51 161 52 162 52 C163 54 163 54 163 56 C162 59 160 61 157 63 C154 67 151 70 148 73 C144 77 141 81 137 84 C134 87 131 91 128 94 C126 96 124 98 122 100 C120 103 117 105 115 108 C111 112 108 116 104 120 C101 122 98 125 96 128 C91 134 86 139 80 144 C76 148 72 153 68 158 C66 160 64 161 62 163 C62 164 61 164 60 165 C60 166 60 166 59 166 C56 165 54 163 51 160 C50 160 50 159 49 158 C48 157 47 156 46 156 C46 155 45 154 44 153 C40 149 36 145 32 140 C29 137 25 133 22 130 C18 126 13 121 9 116 C7 113 4 111 2 109 C-1 106 -4 103 -7 99 C-11 95 -15 91 -20 86 C-23 84 -25 81 -28 77 C-32 73 -36 69 -40 65 C-41 64 -42 63 -42 63 C-44 61 -46 59 -48 57 C-46 53 -44 49 -41 46 C-40 45 -39 43 -38 42 C-37 41 -37 41 -36 40 C-34 37 -32 34 -29 31 C-29 31 -28 30 -28 29 C-25 25 -22 21 -19 17 C-5 0 -5 0 0 0 Z " fill="#DCEDFD" transform="translate(79,62)"/><path d="M0 0 C0 1 1 2 1 3 C0 4 0 4 -1 5 C-6 10 -11 15 -16 21 C-19 24 -22 27 -25 30 C-28 33 -31 37 -34 40 C-36 42 -38 44 -40 46 C-43 48 -45 51 -47 54 C-51 58 -55 62 -58 65 C-61 68 -64 71 -66 74 C-71 79 -77 85 -82 90 C-86 94 -91 99 -95 103 C-96 105 -98 107 -100 109 C-101 110 -101 110 -102 111 C-102 111 -103 112 -103 112 C-104 111 -106 111 -107 110 C-107 109 -107 109 -107 108 C-107 105 -108 103 -109 100 C-111 96 -113 91 -115 87 C-117 80 -120 72 -123 65 C-123 64 -124 63 -124 62 C-130 48 -130 48 -136 35 C-139 29 -141 23 -143 18 C-144 14 -145 11 -147 8 C-148 5 -148 5 -148 2 C-99 2 -50 2 0 2 C0 1 0 1 0 0 Z " fill="#7ABCFC" transform="translate(241,116)"/><path d="M0 0 C19 0 39 0 59 0 C70 25 70 25 73 33 C74 37 76 40 78 44 C80 48 81 53 83 57 C84 59 84 60 85 62 C89 71 93 81 96 91 C98 95 99 98 101 101 C102 104 102 104 102 108 C99 107 97 105 95 103 C94 102 93 102 93 101 C92 100 91 100 91 99 C90 98 90 98 89 97 C86 94 82 90 80 87 C76 83 72 79 68 75 C63 70 59 66 55 61 C52 58 50 56 48 54 C44 50 41 47 39 44 C35 40 32 37 28 33 C24 29 20 25 16 20 C14 18 12 16 10 15 C10 14 9 13 9 13 C7 11 6 10 5 9 C4 8 4 8 3 7 C2 7 2 6 1 6 C0 4 0 4 0 0 Z " fill="#F9FBFD" transform="translate(33,117)"/><path d="M0 0 C0 1 0 1 1 3 C0 4 -1 5 -1 5 C-6 10 -11 15 -16 21 C-19 24 -22 27 -25 30 C-28 33 -31 37 -34 40 C-36 42 -38 44 -40 46 C-43 48 -45 51 -47 54 C-51 58 -55 62 -58 65 C-61 68 -64 71 -66 74 C-71 79 -77 85 -82 90 C-86 94 -91 99 -95 103 C-96 105 -98 107 -100 109 C-101 109 -101 109 -102 109 C-101 104 -100 100 -98 95 C-96 90 -96 90 -93 84 C-90 75 -87 67 -83 58 C-81 54 -79 49 -77 44 C-77 43 -77 43 -76 42 C-74 37 -72 32 -70 27 C-67 19 -64 10 -60 2 C-40 2 -20 2 0 2 C0 1 0 1 0 0 Z " fill="#A6D2FC" transform="translate(241,116)"/><path d="M0 0 C3 0 4 1 6 3 C7 4 7 4 8 5 C8 6 9 7 10 8 C11 9 11 10 12 11 C13 13 15 15 16 16 C20 21 24 26 28 31 C32 35 35 40 39 45 C42 48 43 50 45 54 C16 54 -12 54 -42 54 C-38 49 -35 44 -31 39 C-28 36 -26 33 -24 30 C-20 26 -16 21 -12 16 C-8 11 -4 6 0 0 Z " fill="#FCFDFD" transform="translate(135,63)"/><path d="M0 0 C42 0 83 0 126 0 C126 1 126 1 127 2 C126 2 126 3 125 3 C124 5 124 5 124 7 C123 8 123 9 123 10 C123 11 122 12 122 13 C120 20 118 26 116 32 C115 34 115 37 114 39 C113 39 113 39 112 39 C112 40 112 41 112 43 C111 47 110 50 108 54 C105 53 103 51 101 48 C98 44 95 41 92 37 C88 33 85 28 81 24 C78 20 75 16 72 13 C70 10 70 10 69 8 C68 5 66 4 64 2 C59 1 54 1 49 1 C48 1 47 1 45 1 C41 1 38 1 34 1 C30 1 26 1 22 1 C15 1 7 1 0 1 C0 1 0 0 0 0 Z " fill="#AFD7FC" transform="translate(74,62)"/><path d="M0 0 C5 2 7 5 10 9 C10 9 11 10 11 11 C13 13 14 15 16 17 C17 18 17 18 17 19 C20 22 22 25 25 28 C26 30 27 32 29 33 C31 37 34 40 36 43 C37 44 37 44 38 45 C41 50 41 50 41 53 C22 53 3 53 -16 53 C-16 48 -16 46 -14 42 C-14 41 -14 40 -14 39 C-13 38 -13 38 -13 37 C-12 37 -12 37 -11 37 C-11 36 -11 36 -11 35 C-10 30 -9 25 -7 20 C-5 15 -4 11 -3 6 C-1 1 -1 1 0 0 Z " fill="#F9FBFD" transform="translate(199,64)"/><path d="M0 0 C1 0 1 0 3 0 C6 0 9 0 12 0 C14 0 16 0 18 0 C23 0 28 0 32 0 C38 0 44 0 49 0 C54 0 58 0 63 0 C65 0 67 0 69 0 C81 0 93 0 105 1 C104 3 104 3 102 4 C98 4 95 4 91 4 C90 4 90 4 88 4 C85 4 83 4 80 4 C78 4 75 4 73 4 C68 4 62 4 56 4 C50 4 44 4 39 4 C27 4 16 4 5 4 C-8 4 -21 4 -33 4 C-60 4 -86 4 -112 4 C-112 4 -112 4 -112 3 C-111 3 -110 3 -109 3 C-97 3 -86 3 -75 3 C-69 3 -63 3 -57 3 C-52 3 -46 3 -40 3 C-38 3 -36 3 -34 3 C-31 3 -28 3 -25 3 C-24 3 -23 3 -22 3 C-19 3 -16 2 -12 1 C-8 0 -4 0 0 0 Z " fill="#1383EA" transform="translate(143,273)"/><path d="M0 0 C2 1 2 1 3 3 C3 6 3 10 3 14 C3 15 3 15 3 16 C3 19 3 22 3 25 C3 27 3 30 3 32 C3 39 3 46 3 53 C3 55 3 58 3 60 C3 71 3 83 3 94 C3 107 3 120 3 133 C3 143 3 153 3 163 C3 170 3 176 3 182 C3 187 3 193 3 199 C3 201 3 203 3 205 C4 219 3 230 -6 241 C-7 241 -7 241 -8 241 C-8 240 -8 239 -8 238 C-7 237 -7 237 -6 236 C1 230 1 219 1 211 C2 207 1 203 1 200 C1 198 1 196 1 194 C1 188 1 183 1 177 C1 172 1 166 1 160 C1 151 1 141 1 131 C1 119 1 107 1 94 C1 84 1 73 1 63 C1 60 1 58 1 56 C1 49 1 43 1 36 C1 34 1 32 1 30 C1 20 1 10 0 0 Z " fill="#1E88F2" transform="translate(269,25)"/><path d="M0 0 C1 1 2 1 3 2 C6 4 8 5 12 5 C12 6 12 7 12 8 C14 8 15 8 17 9 C18 9 19 9 20 9 C22 9 22 9 24 8 C26 8 27 8 29 8 C30 8 31 8 32 8 C33 8 34 8 35 8 C36 8 38 8 39 8 C41 8 44 8 46 8 C50 8 53 8 57 8 C59 8 62 8 64 8 C65 8 66 8 67 8 C69 8 69 8 70 8 C71 8 72 8 73 8 C75 8 75 8 76 9 C78 9 80 9 82 9 C83 9 83 9 85 9 C88 9 90 8 92 8 C94 8 95 8 96 8 C97 8 98 8 99 8 C102 8 104 8 106 9 C106 10 106 10 106 11 C95 11 84 11 73 12 C67 12 62 12 57 12 C52 12 47 12 42 12 C40 12 38 12 36 12 C23 13 12 12 1 3 C0 2 0 2 0 0 Z " fill="#067AE8" transform="translate(10,265)"/><path d="M0 0 C1 1 2 1 3 2 C6 4 8 5 12 5 C12 6 12 7 12 8 C16 9 19 9 23 9 C24 9 25 9 26 9 C27 9 28 9 30 9 C31 9 32 9 33 9 C37 9 41 10 45 10 C47 10 50 10 53 10 C59 10 66 10 72 10 C72 10 72 11 72 11 C65 11 57 11 50 12 C47 12 45 12 42 12 C39 12 35 12 32 12 C30 12 30 12 28 12 C18 13 10 10 1 3 C0 2 0 2 0 0 Z " fill="#0C81E8" transform="translate(10,265)"/><path d="M0 0 C1 1 2 1 3 2 C6 4 8 5 12 5 C12 6 12 7 12 8 C15 9 17 9 20 10 C20 10 20 11 20 11 C13 11 8 8 2 4 C1 2 1 2 0 0 Z " fill="#1783EE" transform="translate(10,265)"/><path d="M0 0 C1 2 1 2 2 4 C1 7 1 7 -1 10 C-2 11 -2 11 -3 13 C-4 13 -4 14 -5 15 C-6 15 -6 15 -7 15 C-7 14 -7 13 -7 12 C-6 11 -5 11 -5 10 C-1 6 -1 4 0 0 Z " fill="#1580F3" transform="translate(268,251)"/><path d="" fill="#0000FF" transform="translate(0,0)"/><path d="" fill="#0000FF" transform="translate(0,0)"/><path d="" fill="#0000FF" transform="translate(0,0)"/><path d="" fill="#0000FF" transform="translate(0,0)"/><path d="" fill="#0000FF" transform="translate(0,0)"/></svg>
+            <span class="tile-label">Symbols 切图</span>
+            <svg class="tile-check" xmlns="http://www.w3.org/2000/svg" viewBox="36 36 56 56" role="img" aria-label="check">
+  <circle cx="64" cy="64" r="28" fill="#08C5D5"/>
+  <path d="M49 63 L59 73 L80 51" fill="none" stroke="#073851" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+          </div>
+          <div class="tile" data-page="rename">
+            <svg class="tile-icon" viewBox="0 0 270 276" xmlns="http://www.w3.org/2000/svg"><path d="M0 0 C16 0 32 0 48 0 C51 0 54 0 57 0 C62 0 67 0 72 0 C74 0 75 0 77 0 C112 0 112 0 124 10 C131 18 133 26 134 37 C134 38 134 39 134 40 C134 43 134 46 134 49 C134 51 134 53 134 55 C134 62 134 69 134 76 C134 79 134 81 134 84 C134 94 134 104 134 114 C134 129 134 143 134 158 C134 168 134 178 134 189 C134 195 134 201 134 207 C134 213 134 218 134 224 C134 226 134 228 134 231 C134 245 133 257 123 268 C115 275 108 276 99 276 C97 276 97 276 96 276 C93 276 90 276 87 276 C85 276 83 276 81 276 C74 276 67 276 60 276 C57 276 55 276 52 276 C41 276 30 276 18 276 C5 276 -8 276 -21 276 C-31 276 -41 276 -51 276 C-57 276 -63 276 -69 276 C-75 276 -81 276 -86 276 C-88 276 -91 276 -93 277 C-107 277 -117 276 -128 266 C-135 259 -137 250 -137 240 C-137 239 -137 238 -137 237 C-137 234 -137 231 -137 228 C-137 226 -137 224 -137 222 C-137 216 -137 210 -137 204 C-137 199 -137 194 -137 189 C-137 178 -137 166 -137 155 C-137 143 -137 131 -137 119 C-137 109 -137 98 -137 88 C-137 82 -137 76 -137 70 C-137 64 -137 58 -137 52 C-137 50 -137 48 -137 46 C-137 43 -137 40 -137 37 C-137 37 -137 36 -137 35 C-137 25 -134 17 -127 10 C-119 3 -112 1 -102 1 C-102 1 -101 1 -100 1 C-97 1 -94 1 -91 1 C-89 0 -86 0 -84 0 C-79 0 -73 0 -67 0 C-62 0 -57 0 -52 0 C-35 0 -17 0 0 0 Z " fill="#7D55F9" transform="translate(137,0)"/><path d="M0 0 C1 0 2 0 2 0 C5 0 8 0 10 0 C12 0 14 0 15 0 C20 0 25 0 30 0 C34 0 39 0 44 0 C53 0 63 0 72 0 C72 1 72 1 72 2 C72 8 72 14 73 20 C73 23 73 25 73 27 C73 31 73 34 73 37 C73 38 73 39 73 40 C73 41 73 42 73 43 C73 44 73 45 73 46 C73 49 75 50 76 52 C76 53 76 53 76 54 C93 54 110 55 127 55 C127 83 127 83 128 95 C128 103 128 111 128 119 C128 125 128 132 128 138 C128 141 128 143 128 146 C128 149 128 153 128 156 C128 158 128 158 128 159 C128 165 127 169 123 174 C119 178 116 179 110 179 C109 179 109 179 107 179 C106 179 105 179 104 179 C103 179 101 179 100 179 C97 179 94 179 90 179 C88 179 86 179 84 179 C78 179 71 179 65 179 C58 179 50 179 43 179 C37 179 32 179 26 179 C22 179 19 179 16 179 C12 179 8 179 4 179 C3 179 3 179 1 179 C-6 179 -10 179 -15 175 C-19 170 -20 167 -20 161 C-20 160 -20 158 -20 157 C-20 155 -20 154 -20 152 C-20 151 -20 149 -20 148 C-20 144 -20 139 -20 135 C-20 131 -20 127 -20 122 C-20 114 -20 106 -20 97 C-20 88 -20 79 -20 69 C-20 50 -20 30 -20 11 C-19 11 -18 11 -18 11 C-18 10 -18 10 -18 9 C-16 5 -14 4 -11 1 C-7 0 -4 0 0 0 Z " fill="#FBFAFD" transform="translate(81,49)"/><path d="M0 0 C1 0 2 0 2 0 C5 0 7 0 10 0 C12 0 13 0 15 0 C19 0 22 0 26 0 C31 0 35 0 40 0 C43 0 47 0 51 0 C52 0 54 0 56 0 C58 0 61 0 63 0 C64 0 64 0 65 0 C68 0 70 0 73 2 C75 5 75 6 75 9 C75 10 75 11 75 12 C75 13 75 13 75 14 C75 15 75 16 75 17 C75 19 75 21 75 24 C75 27 75 30 75 33 C75 35 75 37 75 39 C75 40 75 41 75 42 C75 43 75 43 75 44 C75 45 75 46 75 47 C75 49 75 49 72 51 C69 51 67 51 64 51 C63 51 62 51 62 51 C59 51 57 51 54 51 C52 51 51 51 49 51 C45 51 41 51 38 51 C33 51 28 51 24 51 C20 51 16 51 13 51 C11 51 9 51 7 51 C5 51 3 51 0 51 C-1 51 -1 51 -2 51 C-6 51 -7 51 -10 49 C-11 47 -11 47 -11 44 C-11 43 -11 43 -11 42 C-11 41 -11 40 -11 39 C-11 38 -11 37 -11 36 C-11 34 -11 32 -11 30 C-11 27 -11 24 -11 20 C-11 18 -11 16 -11 14 C-11 14 -11 13 -11 12 C-11 11 -11 10 -11 9 C-11 8 -11 7 -11 7 C-10 0 -6 0 0 0 Z " fill="#8F68FB" transform="translate(102,145)"/><path d="M0 0 C10 0 21 0 31 0 C36 0 41 -1 45 -1 C50 -1 55 -1 59 -1 C61 -1 63 -1 64 -1 C78 -1 78 -1 82 1 C84 4 86 6 87 8 C88 10 90 11 92 13 C93 14 93 14 94 15 C95 16 96 17 97 18 C98 20 100 21 102 23 C105 26 108 29 111 32 C114 35 116 37 119 40 C120 41 121 42 122 43 C123 44 124 44 124 45 C125 46 126 47 126 47 C128 49 128 49 128 51 C129 51 129 52 130 52 C132 53 132 53 133 56 C126 56 119 56 113 56 C110 56 108 56 106 56 C103 56 99 56 96 56 C95 56 94 56 93 56 C86 56 86 56 82 54 C79 49 79 49 79 44 C79 43 79 42 79 41 C79 40 79 39 79 38 C79 37 79 36 79 35 C79 32 79 28 79 25 C79 13 79 13 79 1 C53 1 27 1 0 1 C0 1 0 0 0 0 Z " fill="#AA8BFC" transform="translate(74,48)"/><path d="M0 0 C1 0 1 0 3 1 C4 1 4 1 5 1 C5 1 5 2 5 2 C1 2 -3 2 -8 2 C-8 1 -8 1 -9 0 C-5 -1 -4 -1 0 0 Z " fill="#714DF7" transform="translate(234,1)"/><path d="M0 0 C3 0 5 2 8 3 C4 3 1 3 -3 3 C-2 2 -1 1 0 0 Z " fill="#6544F8" transform="translate(191,0)"/><path d="" fill="#FF00FF" transform="translate(0,0)"/><path d="" fill="#0000FF" transform="translate(0,0)"/><path d="" fill="#0000FF" transform="translate(0,0)"/><path d="" fill="#0000FF" transform="translate(0,0)"/><path d="" fill="#0000FF" transform="translate(0,0)"/><path d="" fill="#0000FF" transform="translate(0,0)"/><path d="" fill="#0000FF" transform="translate(0,0)"/><path d="" fill="#FF00FF" transform="translate(0,0)"/><path d="" fill="#0000FF" transform="translate(0,0)"/><path d="" fill="#0000FF" transform="translate(0,0)"/><path d="" fill="#0000FF" transform="translate(0,0)"/></svg>
+            <span class="tile-label">批量前缀重命名</span>
+            <svg class="tile-check" xmlns="http://www.w3.org/2000/svg" viewBox="36 36 56 56" role="img" aria-label="check">
+  <circle cx="64" cy="64" r="28" fill="#08C5D5"/>
+  <path d="M49 63 L59 73 L80 51" fill="none" stroke="#073851" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+          </div>
+          <div class="tile" data-page="more">
+            <svg class="tile-icon" viewBox="0 0 273 276" xmlns="http://www.w3.org/2000/svg"><path d="M0 0 C11 0 21 0 32 0 C35 0 39 0 42 0 C46 0 50 0 53 0 C55 0 57 0 59 0 C72 0 82 1 92 10 C100 18 102 28 102 39 C102 40 102 40 102 41 C102 44 102 47 102 50 C102 52 102 54 103 57 C103 62 103 68 103 74 C103 77 103 81 103 85 C103 96 103 107 103 118 C103 131 103 144 103 157 C103 167 103 177 103 187 C103 193 103 199 103 205 C103 211 103 216 103 222 C103 224 103 226 103 228 C103 231 103 234 103 237 C103 238 103 238 103 239 C103 250 99 259 92 267 C81 277 68 277 54 277 C52 277 50 277 48 277 C42 277 36 277 31 277 C25 277 18 277 12 277 C2 277 -8 277 -18 277 C-30 277 -42 277 -53 277 C-63 277 -73 277 -84 277 C-90 277 -96 277 -102 277 C-107 277 -113 277 -119 277 C-121 277 -123 277 -125 277 C-128 277 -131 277 -133 277 C-135 277 -135 277 -136 277 C-145 276 -153 272 -160 266 C-166 258 -169 249 -169 239 C-169 238 -169 237 -169 236 C-169 233 -169 230 -169 227 C-169 225 -169 223 -169 221 C-169 215 -169 209 -169 203 C-169 198 -169 194 -169 189 C-169 177 -169 166 -169 154 C-169 143 -169 131 -169 119 C-169 109 -169 99 -169 89 C-169 83 -169 77 -169 70 C-169 65 -169 59 -169 53 C-169 51 -169 49 -169 47 C-169 33 -169 22 -160 11 C-154 5 -147 1 -139 1 C-138 1 -137 1 -135 1 C-134 1 -133 1 -132 1 C-131 1 -130 1 -129 1 C-125 1 -122 1 -119 1 C-115 1 -112 1 -109 1 C-102 1 -95 0 -89 0 C-83 0 -78 0 -73 0 C-54 0 -35 0 -17 0 C-11 0 -6 0 0 0 Z " fill="#FDAC12" transform="translate(169,0)"/><path d="M0 0 C1 0 2 0 3 0 C4 0 4 0 5 0 C7 0 7 0 8 0 C10 0 12 0 14 0 C17 0 21 0 24 0 C26 0 28 0 30 0 C31 0 31 0 32 0 C40 0 44 1 49 6 C52 9 52 13 52 17 C52 18 52 19 52 19 C52 20 52 21 52 22 C52 23 52 24 52 25 C52 28 52 30 52 32 C52 35 52 38 52 41 C52 44 52 46 52 48 C52 49 52 50 52 51 C52 56 52 60 49 64 C45 68 42 69 36 69 C35 69 34 69 34 69 C32 69 32 69 31 69 C30 69 29 69 28 69 C25 69 23 69 21 69 C18 69 15 69 11 69 C9 69 7 70 5 70 C4 70 4 70 2 70 C-3 70 -7 69 -11 66 C-15 62 -16 59 -16 54 C-16 53 -16 52 -16 51 C-16 50 -16 50 -17 48 C-17 47 -17 46 -17 45 C-17 43 -17 41 -17 39 C-17 35 -17 32 -17 29 C-17 27 -17 25 -17 23 C-17 22 -17 21 -17 20 C-17 14 -16 10 -12 5 C-8 2 -5 0 0 0 Z " fill="#FDF9ED" transform="translate(76,62)"/><path d="M0 0 C1 0 2 0 3 0 C4 0 4 0 5 0 C7 0 7 0 8 0 C10 0 12 0 14 0 C18 0 21 0 24 0 C26 0 28 0 30 0 C31 0 32 0 33 0 C39 0 42 1 47 6 C51 9 52 12 52 17 C52 18 52 19 52 19 C52 20 52 21 52 22 C52 24 52 24 52 25 C52 28 52 30 52 32 C52 35 52 38 52 41 C52 43 52 46 52 48 C52 49 52 49 52 50 C52 57 51 60 48 65 C42 70 37 70 30 70 C29 70 28 70 27 70 C24 70 22 70 20 70 C17 70 13 70 10 70 C8 70 6 70 4 70 C3 70 2 70 1 70 C-5 70 -9 69 -13 65 C-17 60 -17 53 -17 47 C-17 46 -17 45 -17 44 C-17 42 -17 40 -17 38 C-17 35 -17 31 -17 28 C-17 26 -17 24 -17 22 C-17 21 -17 20 -17 19 C-17 14 -17 10 -13 5 C-12 5 -11 4 -11 4 C-10 3 -10 3 -9 2 C-6 0 -3 0 0 0 Z " fill="#FDF2D9" transform="translate(159,62)"/><path d="M0 0 C1 0 2 0 3 0 C7 0 11 0 15 0 C17 0 19 0 22 0 C25 0 28 0 31 0 C32 0 33 0 34 0 C40 0 45 1 50 5 C53 10 53 16 53 22 C53 23 53 24 53 25 C53 27 53 29 53 31 C53 35 53 38 53 41 C53 43 53 45 53 47 C53 48 53 49 53 50 C53 58 52 62 47 68 C42 70 38 70 33 70 C32 70 31 70 30 70 C27 70 25 70 23 70 C20 70 16 70 13 70 C11 70 9 70 6 70 C5 70 4 70 3 70 C-5 70 -5 70 -9 66 C-13 62 -16 58 -16 53 C-16 52 -16 51 -16 50 C-16 49 -16 48 -16 47 C-16 46 -16 45 -16 44 C-16 42 -16 40 -16 38 C-16 35 -16 32 -16 29 C-16 27 -16 25 -16 23 C-16 22 -16 21 -16 20 C-16 14 -15 10 -11 5 C-8 2 -5 0 0 0 Z " fill="#FDE3A8" transform="translate(75,146)"/><path d="M0 0 C1 0 1 0 3 0 C7 0 11 0 15 0 C17 0 19 0 21 0 C24 0 27 0 30 0 C31 0 32 0 33 0 C39 0 42 1 47 5 C52 10 52 15 52 22 C52 23 52 24 52 25 C52 27 52 30 52 32 C52 35 52 38 52 41 C52 43 52 45 52 47 C52 48 52 49 52 50 C52 56 51 60 47 65 C43 68 41 69 36 69 C35 69 34 69 33 69 C32 69 31 69 30 69 C29 69 28 69 27 69 C25 69 23 69 21 69 C18 69 14 69 11 70 C9 70 7 70 5 70 C4 70 3 70 2 70 C-4 70 -8 69 -12 65 C-15 61 -17 58 -17 53 C-17 52 -17 51 -17 50 C-17 49 -17 48 -17 47 C-17 46 -17 45 -17 44 C-17 42 -17 40 -17 38 C-17 35 -17 32 -17 28 C-17 26 -17 24 -17 22 C-17 21 -17 21 -17 20 C-17 14 -17 10 -13 5 C-13 5 -12 4 -12 4 C-11 3 -11 3 -10 2 C-7 0 -4 0 0 0 Z " fill="#FDE3A6" transform="translate(159,146)"/><path d="" fill="#FFFF00" transform="translate(0,0)"/><path d="" fill="#FFFF00" transform="translate(0,0)"/></svg>
+            <span class="tile-label">更多功能</span>
+            <svg class="tile-check" xmlns="http://www.w3.org/2000/svg" viewBox="36 36 56 56" role="img" aria-label="check">
+  <circle cx="64" cy="64" r="28" fill="#08C5D5"/>
+  <path d="M49 63 L59 73 L80 51" fill="none" stroke="#073851" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+          </div>
+        </div>
+      </section>
+
+      <!-- Symbols 切图说明（仅 Symbols 页显示） -->
+      <section class="card" id="symbolsIntro" style="display:none;">
+        <h3 class="card-title">Symbols 切图说明</h3>
+        <p class="hint">每个图标组需添加一个名为「定位格」的参考图层，并按定位格摆放图标。导出时以定位格为基准：未超出则按定位格尺寸导出；超出则自动补足空白像素，确保图标居中。「定位格」不参与切图，隐藏后仍可识别。</p>
+        <a class="link">如何创建定位格？</a>
+      </section>
+
+      <!-- 完整切图 / Symbols 共享的导出配置（对选中项/隐藏层等真实生效） -->
+      <div id="exportConfig">
+        <section class="card">
+          <div class="switch-row">
+            <svg class="row-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="visibility off">
+  <g fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M18 64 C31 43 47 32 64 32 C81 32 97 43 110 64 C102 77 92 87 81 92"/>
+    <path d="M48 91 C36 85 26 76 18 64"/>
+    <circle cx="64" cy="64" r="20"/>
+    <path d="M28 104 L100 24"/>
+  </g>
+</svg>
+            <span class="row-label">包含隐藏图层</span>
+            <div class="switch on" id="includeHidden"><svg class="sw" viewBox="0 0 44 24" xmlns="http://www.w3.org/2000/svg"><rect class="sw-track" x="12" y="0" width="20" height="24"/><circle class="sw-track" cx="12" cy="12" r="12"/><circle class="sw-track" cx="32" cy="12" r="12"/><circle class="sw-knob sw-off" cx="12" cy="12" r="9"/><circle class="sw-knob sw-on" cx="32" cy="12" r="9"/></svg></div>
+          </div>
+          <div class="switch-row">
+            <svg class="row-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="resize width">
+  <g fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M37 23 H25 C20 23 17 27 17 32 V45"/>
+    <path d="M91 23 H103 C108 23 111 27 111 32 V45"/>
+    <path d="M37 105 H25 C20 105 17 101 17 96 V83"/>
+    <path d="M91 105 H103 C108 105 111 101 111 96 V83"/>
+    <path d="M35 64 H93"/>
+    <path d="M47 52 L35 64 L47 76"/>
+    <path d="M81 52 L93 64 L81 76"/>
+  </g>
+</svg>
+            <span class="row-label">完整导出超出画布部分</span>
+            <div class="switch on" id="fullBleed"><svg class="sw" viewBox="0 0 44 24" xmlns="http://www.w3.org/2000/svg"><rect class="sw-track" x="12" y="0" width="20" height="24"/><circle class="sw-track" cx="12" cy="12" r="12"/><circle class="sw-track" cx="32" cy="12" r="12"/><circle class="sw-knob sw-off" cx="12" cy="12" r="9"/><circle class="sw-knob sw-on" cx="32" cy="12" r="9"/></svg></div>
+          </div>
+          <div class="switch-row">
+            <svg class="row-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="dashed frame">
+  <path d="M35 27 H93 C97 27 101 31 101 35 V93 C101 97 97 101 93 101 H35 C31 101 27 97 27 93 V35 C27 31 31 27 35 27 Z" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-dasharray="16 12"/>
+</svg>
+            <span class="row-label">只对选中的图层/组切图</span>
+            <div class="switch" id="selectedOnly"><svg class="sw" viewBox="0 0 44 24" xmlns="http://www.w3.org/2000/svg"><rect class="sw-track" x="12" y="0" width="20" height="24"/><circle class="sw-track" cx="12" cy="12" r="12"/><circle class="sw-track" cx="32" cy="12" r="12"/><circle class="sw-knob sw-off" cx="12" cy="12" r="9"/><circle class="sw-knob sw-on" cx="32" cy="12" r="9"/></svg></div>
+          </div>
+        </section>
+
+        <!-- 导出设置：外观还原；实际导出位置在点击导出时选择 -->
+        <section class="card">
+          <h3 class="card-title">导出设置</h3>
+          <div class="setting-row">
+            <svg class="row-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="folder">
+  <g fill="none" stroke="#FFFFFF" stroke-width="6.5" stroke-linejoin="round">
+    <path d="M20 43 C20 37 24 34 30 34 H51 L61 44 H99 C105 44 109 48 109 54 V96 C109 101 105 105 99 105 H29 C23 105 20 101 20 95 Z"/>
+    <path d="M20 59 H109"/>
+  </g>
+</svg>
+            <span class="row-label">导出位置</span>
+            <div class="setting-value">
+              <span class="path-text" id="exportPathText"></span>
+              <span class="dots" id="pickFolderBtn"><svg class="dots-ico" viewBox="0 0 26 24" xmlns="http://www.w3.org/2000/svg"><circle cx="6" cy="12" r="1.8"/><circle cx="13" cy="12" r="1.8"/><circle cx="20" cy="12" r="1.8"/></svg></span>
+            </div>
+          </div>
+          <div class="setting-row">
+            <svg class="row-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="image">
+  <g fill="none" stroke="#FFFFFF" stroke-width="6.2" stroke-linejoin="round">
+    <rect x="25" y="26" width="78" height="78" rx="7"/>
+    <path d="M27 88 L51 62 L69 82 L80 70 L103 97"/>
+    <circle cx="80" cy="45" r="8"/>
+  </g>
+</svg>
+            <span class="row-label">导出格式</span>
+            <div class="setting-value" id="formatPills">
+              <span class="pill active" data-format="png">PNG</span>
+              <span class="pill" data-format="jpg">JPG</span>
+              <span class="pill" data-format="webp">WebP</span>
+            </div>
+          </div>
+          <div class="setting-row">
+            <svg class="row-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="scale 1x">
+  <path d="M30 28 H98 V83 L64 105 L30 83 Z" fill="none" stroke="#FFFFFF" stroke-width="5.8" stroke-linejoin="round"/>
+  <text x="64" y="72" text-anchor="middle" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="37" font-weight="900" fill="#20DDF2">1x</text>
+</svg>
+            <span class="row-label">导出倍率</span>
+            <div class="setting-value" id="scalePills">
+              <span class="pill active" data-scale="1">1x</span>
+              <span class="pill" data-scale="2">2x</span>
+              <span class="pill" data-scale="3">3x</span>
+              <span class="pill" data-scale="5">5x</span>
+              <span class="pill" data-scale="10">10x</span>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- 批量前缀重命名页（仅重命名页显示） -->
+      <div id="renamePage" style="display:none;">
+        <section class="card">
+          <h3 class="card-title">批量前缀重命名</h3>
+          <div class="field-block">
+            <label>前缀 <span class="label-sub">（输入即预览，对选中的组/图层生效）</span></label>
+            <sp-textfield id="prefix" placeholder="如 图标_"></sp-textfield>
+          </div>
+          <div class="preview-block">
+            <div class="preview-head">预览 <span class="label-sub">（示例）</span></div>
+            <div id="previewList" class="preview"></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- 主操作按钮：切图/Symbols 页复用同一个（原 sliceBtn 逻辑） -->
+      <button id="sliceBtn" class="primary-btn">
+        <svg class="play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="play">
+  <path d="M45 31 L98 64 L45 97 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>
+</svg>
+        <span class="btn-label">开始导出</span>
+      </button>
+
+      <!-- 重命名页按钮 -->
+      <button id="renameBtn" class="primary-btn" style="display:none;">
+        <span class="btn-label">应用重命名</span>
+      </button>
+
+      <!-- 底部栏（视觉入口） -->
+      <footer class="bottombar">
+        <span class="foot-item"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
+  <g>
+    <circle cx="64" cy="64" r="45" fill="none" stroke="#FFFFFF" stroke-width="7"/>
+    <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="66" cy="94" r="4.8" fill="#FFFFFF"/>
+  </g>
+</svg> 使用帮助</span>
+        <p id="status" class="status"></p>
+        <span class="foot-item"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="message">
+  <g fill="none" stroke="#FFFFFF" stroke-width="6.2" stroke-linejoin="round">
+    <path d="M25 30 H101 C106 30 110 34 110 39 V82 C110 87 106 91 101 91 H59 L42 107 V91 H25 C20 91 16 87 16 82 V39 C16 34 20 30 25 30 Z"/>
+  </g>
+  <g fill="#FFFFFF">
+    <circle cx="43" cy="61" r="6"/>
+    <circle cx="64" cy="61" r="6"/>
+    <circle cx="85" cy="61" r="6"/>
+  </g>
+</svg> 反馈建议</span>
+      </footer>
+    </div>
+
+    <!-- ESC 暂停后确认（内联覆盖层，替代 UXP 下不可靠的 <dialog>） -->
+    <div id="stopConfirm" class="overlay" style="display:none;">
+      <div class="overlay-box">
+        <p class="confirm-msg">已暂停，是否终止任务？<br><small>终止将把 PSD 恢复到切图前</small></p>
+        <div class="confirm-row">
+          <button id="stopConfirmYes" class="danger">终止本次切图</button>
+          <button id="stopConfirmNo" class="ok">继续切图</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 目标文件夹存在同名文件时询问 覆盖/跳过 -->
+    <div id="overwriteConfirm" class="overlay" style="display:none;">
+      <div class="overlay-box">
         <p class="confirm-msg">目标文件夹已存在同名文件：<br><b id="overwriteName"></b><br>覆盖还是跳过？</p>
         <div class="confirm-row">
-          <button id="ovwYes">覆盖</button>
-          <button id="ovwNo">跳过</button>
+          <button id="ovwYes" class="danger">覆盖</button>
+          <button id="ovwNo" class="muted">跳过</button>
         </div>
         <div class="confirm-row">
-          <button id="ovwYesAll">全部覆盖</button>
-          <button id="ovwNoAll">全部跳过</button>
+          <button id="ovwYesAll" class="danger">全部覆盖</button>
+          <button id="ovwNoAll" class="muted">全部跳过</button>
         </div>
-      </section>
-    </section>
-
-    <!-- 功能二：Symbols 切图 -->
-    <section class="card">
-      <h3 class="card-title">Symbols 切图</h3>
-      <p class="hint">每个图标组需添加一个名为「定位格」的参考图层，并按定位格摆放图标。<br>导出时以定位格为基准：未超出则按定位格尺寸导出；超出则自动补足空白像素，确保图标居中。「定位格」不参与切图，隐藏后仍可识别。</p>
-      <button id="symbolsBtn">Symbols 切图</button>
-    </section>
-
-    <!-- 功能三：批量前缀重命名 -->
-    <section class="card">
-      <h3 class="card-title">批量前缀重命名</h3>
-      <label>前缀（输入即预览，对选中的组/图层生效）</label>
-      <sp-textfield id="prefix" placeholder="如 图标"></sp-textfield>
-      <div id="previewList" class="preview"></div>
-      <button id="renameBtn">应用前缀</button>
-    </section>
-
-    <p id="status" class="status"></p>
+      </div>
+    </div>
 
     <script src="panel.js"></script>
   </body>

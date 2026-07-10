@@ -1,118 +1,283 @@
+/* Sliceman 面板样式：深蓝黑底 + 卡片化 + 青色高亮，像素级还原设计稿。
+   注意 UXP CSS 约束：不用 grid，全部 flex；可点击 button 的子元素统一 pointer-events:none。 */
+
 html, body { height: 100%; }
+* { box-sizing: border-box; }
+
 body {
-  font-family: sans-serif;
-  padding: 8px;
   margin: 0;
-  overflow-y: auto;      /* 内容超出面板高度时可滚动，避免下方功能被截断 */
-  box-sizing: border-box;
-  display: flex;         /* 纵向排布，便于把状态栏推到底部 */
+  padding: 0;
+  position: relative;                /* 作为确认弹层 absolute 定位的参照 */
+  font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  color: #d7e5f2;
+  background: #04101d;               /* 面板底色，衬托内框外发光 */
+  overflow-y: auto;                  /* 内容超高时整体滚动 */
+}
+
+/* 外框：深蓝黑底、亮蓝描边、大圆角（不用 box-shadow 外发光——UXP 渲染层高危，改实色描边） */
+.app {
+  display: flex;
   flex-direction: column;
   min-height: 100%;
-}
-.block { margin-bottom: 10px; }
-h3 { margin: 4px 0; font-size: 13px; }
-
-/* 两大功能各成一张卡片，视觉上清晰分区 */
-.card {
-  border: 1px solid #555555;
-  border-radius: 8px;
-  padding: 10px 10px 6px;
-  margin-bottom: 12px;
-  flex-shrink: 0;         /* 面板变矮时不压缩、不重叠，改为整体滚动 */
-}
-.card-title {
-  margin: 0 0 8px;
-  padding-bottom: 6px;
-  font-size: 14px;
-  font-weight: 600;
-  border-bottom: 1px solid #555555;
+  margin: 6px;
+  padding: 12px;
+  background: #071829;
+  border: 1px solid #2a6fa0;
+  border-radius: 14px;
 }
 
-/* 功能简介 */
-.hint {
-  margin: 12px 0 6px;
+/* ---------- 顶部栏 ---------- */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 2px 12px;
+}
+.brand { display: flex; align-items: center; }
+.ps-logo {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  background: #04152a;
+  border: 2px solid #22d3e0;
+  color: #3ce0ef;
   font-size: 13px;
-  line-height: 1.7;
-  color: #cccccc;
+  font-weight: 900;
+  letter-spacing: -0.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-label { display: block; margin: 4px 0 2px; font-size: 12px; }
-/* UXP 原生 <input> 单行文本会贴顶，改用自带垂直居中的 sp-textfield */
+.brand-name { margin-left: 8px; font-size: 18px; font-weight: 700; color: #eef5fb; }
+.version {
+  margin-left: 8px;
+  font-size: 11px;
+  color: #8aa2b6;
+  background: #10293e;
+  padding: 2px 7px;
+  border-radius: 5px;
+}
+.topbar-actions { display: flex; align-items: center; }
+.ic-btn { width: 19px; height: 19px; margin-left: 14px; opacity: 0.72; cursor: pointer; }
+
+/* ---------- 卡片通用 ---------- */
+.card {
+  background: #0a1e33;
+  border: 1px solid #163149;
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 10px;
+  flex-shrink: 0;
+}
+.card-title { margin: 0 0 10px; font-size: 14px; font-weight: 600; color: #e9f2f9; }
+.card-head { display: flex; align-items: baseline; margin-bottom: 10px; }
+.card-head .card-title { margin: 0; }
+.card-sub { margin-left: 8px; font-size: 12px; color: #6f8aa3; }
+
+/* 说明文字 */
+.hint { margin: 0; font-size: 12px; line-height: 1.7; color: #9bb2c6; }
+.link { display: inline-block; margin-top: 8px; font-size: 12px; color: #2fc6d6; cursor: pointer; }
+
+/* 输入框：撑满一行 */
 sp-textfield {
   width: 100%;
-  margin-top: 4px;
+  background: #14395a;              /* 只改框内底色为浅蓝，不动边框 */
+  color: #e6f0f8;
 }
 
-/* 两个勾选各占一行、保持间距；不改 sp-checkbox 自身排版，方框与文字仍同一行 */
-.checkrow { margin: 8px 0; }
-
-/* 主操作按钮：加高、圆角半径 = 高度的一半（圆角矩形） */
-button {
-  margin-top: 8px;
-  width: 100%;
-  height: 40px;
-  font-size: 14px;
-  border: none;
-  border-radius: 20px;          /* = height / 2 */
+/* ---------- 功能中心磁贴 ---------- */
+.tiles { display: flex; }
+.tile {
+  flex: 1 1 0;
+  min-width: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 0 4px;
+  padding: 12px 4px;
+  background: #0c2137;
+  border: 1px solid #17344e;
+  border-radius: 10px;
   cursor: pointer;
 }
-#sliceBtn          { background: #2680eb; color: #ffffff; }    /* 空闲：开始切图=蓝 */
-#sliceBtn.slicing  { background: #e34850; }                    /* 进行中：停止切图=红 */
-#symbolsBtn        { background: #8256d0; color: #ffffff; }    /* Symbols 切图：紫 */
-#symbolsBtn:disabled { opacity: 0.45; cursor: default; }
-#renameBtn         { background: #2d9d78; color: #ffffff; }    /* 应用前缀：绿 */
-
-/* 确认区：整体居中、提示文字醒目 */
-.confirm { text-align: center; }
-.confirm-msg {
-  margin: 6px 0 10px;
-  font-size: 14px;
-  font-weight: 600;
-  color: #ffd54a;              /* 琥珀色，在深底上明显 */
-  line-height: 1.5;
+.tiles .tile:first-child { margin-left: 0; }
+.tiles .tile:last-child { margin-right: 0; }
+.tile > * { pointer-events: none; }       /* 子元素不拦截点击，点直达磁贴 */
+.tile-icon { width: 34px; height: 34px; flex: 0 0 auto; }
+.tile-label { margin-top: 8px; font-size: 11px; line-height: 1.25; text-align: center; color: #c3d4e2; }
+.tile.active {
+  background: #0e2c47;
+  border-color: #22d3e0;
 }
-.confirm-msg small { font-weight: 400; font-size: 12px; color: #e0e0e0; }
-.confirm-msg b { color: #ffffff; }
+.tile.active .tile-label { color: #eaf7fb; }
+/* 角标：svg 已裁掉四周留白让青圆充满；padding-box 定位下 top/right:0 即贴磁贴右上角 */
+.tile-check { position: absolute; top: 1px; right: 1px; width: 12px; height: 12px; display: none; }
+.tile.active .tile-check { display: block; }
 
-/* 成对的确认按钮并排、不占满整行 */
-.confirm button {
-  width: auto;
-  height: auto;
-  padding: 6px 14px;
-  margin: 0 4px 6px;
-  color: #ffffff;
+/* ---------- 开关行 ---------- */
+.switch-row { display: flex; align-items: center; padding: 10px 2px; }
+.switch-row + .switch-row { border-top: 1px solid #12293f; }
+.row-icon { width: 20px; height: 20px; opacity: 0.85; flex: 0 0 auto; }
+.row-label { flex: 1 1 auto; margin-left: 10px; font-size: 13px; color: #d5e3ef; }
+
+/* 手写滑动开关：整块用矢量 svg 画（UXP 的 CSS border-radius 圆角会锯齿，svg 圆角/圆钮平滑）。
+   开/关靠 .on class 切换：轨道换色 + 显示左/右两个圆钮之一。 */
+.switch {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 24px;
+  padding: 0;
+  cursor: pointer;
 }
-#stopConfirmYes { background: #e34850; }   /* 终止本次切图：红 */
-#stopConfirmNo  { background: #2d9d78; }   /* 继续切图：绿 */
-.confirm-row { text-align: center; }       /* 两行按钮各自居中 */
-#ovwYes    { background: #e34850; }        /* 覆盖：红 */
-#ovwNo     { background: #999999; }        /* 跳过：浅灰 */
-#ovwYesAll { background: #b0343b; }        /* 全部覆盖：深红 */
-#ovwNoAll  { background: #999999; }        /* 全部跳过：浅灰 */
+.switch > * { pointer-events: none; }
+.switch .sw { display: block; width: 44px; height: 24px; }
+.sw-track { fill: #203a52; }
+.switch.on .sw-track { fill: #22d3e0; }
+.sw-knob { fill: #ffffff; }
+.sw-on { display: none; }
+.switch.on .sw-on { display: block; }
+.switch.on .sw-off { display: none; }
 
-/* 预览区：浅底深字的独立卡片，与面板底色区分、文字对比明显 */
-.preview {
-  max-height: 220px;
-  min-height: 40px;
-  overflow: auto;
-  margin-top: 6px;
-  padding: 8px;
+/* ---------- 导出设置 ---------- */
+.setting-row { display: flex; align-items: center; padding: 9px 2px; }
+.setting-row + .setting-row { border-top: 1px solid #12293f; }
+.setting-row .row-label { flex: 0 0 auto; }
+.setting-value { margin-left: auto; display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.path-text {
   font-size: 12px;
-  line-height: 1.6;
-  background: #999999;          /* 浅灰底，与深色面板底色区分 */
-  color: #222222;              /* 深字，对比清晰 */
-  border: 1px solid #b0b0b0;
+  color: #aebfce;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dots {
+  margin-left: 8px;
+  width: 32px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  color: #aebfce;
+  border: 1px solid #24425c;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.dots-ico { width: 20px; height: 20px; pointer-events: none; }
+.dots circle { fill: #aebfce; }
+.pill {
+  margin: 3px 0 0 6px;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: #8ba0b3;
+  border: 1px solid transparent;   /* 预留边框位，选中时不跳动 */
   border-radius: 4px;
+  cursor: pointer;
 }
-.preview b { color: #0b5cad; }   /* 新名高亮 */
-.preview .dup { color: #d9534f; }/* 同名警告 */
+/* 选中：亮蓝字 + 青色圆角描边，内部无填充 */
+.pill.active { border-color: #22d3e0; color: #3ce0ef; font-weight: 600; }
+.chev { width: 13px; height: 13px; margin-left: 8px; opacity: 0.55; }
 
-/* 状态栏：推到面板底部、居中显示 */
-.status {
+/* ---------- 重命名页 ---------- */
+.field-block label { display: block; font-size: 13px; color: #d5e3ef; margin-bottom: 8px; }
+.label-sub { color: #6f8aa3; font-size: 11px; }
+.preview-block { margin-top: 14px; }
+.preview-head { font-size: 13px; color: #d5e3ef; margin-bottom: 8px; }
+.preview {
+  min-height: 44px;
+  max-height: 240px;
+  overflow: auto;
+  padding: 10px;
   font-size: 12px;
-  color: #4a90d9;
-  min-height: 16px;
-  flex-shrink: 0;         /* 不被压缩 */
-  margin-top: auto;       /* 占满剩余空间 → 贴到面板底部 */
-  padding-top: 8px;
-  text-align: center;
+  line-height: 1.9;
+  color: #c3d4e2;
+  background: #0c1f33;
+  border: 1px solid #18344e;
+  border-radius: 8px;
 }
+.preview b { color: #22d3e0; font-weight: 600; }
+.preview .dup { color: #e0555c; }
+
+/* ---------- 状态提示 ---------- */
+.status {
+  flex: 1 1 auto;            /* 占据底部栏中间弹性空间，文字居中 */
+  min-width: 0;
+  margin: 0 8px;
+  font-size: 12px;
+  color: #7fd4dd;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 主按钮 ---------- */
+.primary-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 44px;
+  margin-top: 2px;
+  border: none;
+  border-radius: 6px;
+  font-size: 19px;
+  font-weight: 700;
+  color: #ffffff;
+  background: #22d3e0;
+  cursor: pointer;
+}
+.primary-btn > * { pointer-events: none; }
+.play-icon { width: 13px; height: 13px; margin-right: 8px; }
+#sliceBtn.slicing { background: #e34850; color: #ffffff; }
+#sliceBtn.slicing .play-icon { display: none; }
+
+/* ---------- 底部栏 ---------- */
+.bottombar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;                  /* 撑到面板底部 */
+  padding: 12px 4px 2px;
+  border-top: 1px solid #12293f;
+}
+.foot-item { flex: 0 0 auto; display: flex; align-items: center; font-size: 12px; color: #7c93a8; }
+.foot-item svg { width: 14px; height: 14px; margin-right: 6px; opacity: 0.7; }
+
+/* ---------- 确认覆盖层 ---------- */
+.overlay {
+  position: absolute;
+  left: 0; top: 0; right: 0; bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(3, 10, 18, 0.72);
+  z-index: 50;
+}
+.overlay-box {
+  max-width: 84%;
+  padding: 16px;
+  text-align: center;
+  background: #0d2036;
+  border: 1px solid #22d3e0;
+  border-radius: 12px;
+}
+.confirm-msg { margin: 0 0 12px; font-size: 14px; font-weight: 600; line-height: 1.6; color: #ffd54a; }
+.confirm-msg small { font-weight: 400; font-size: 12px; color: #c9d6e2; }
+.confirm-msg b { color: #ffffff; }
+.confirm-row { display: flex; justify-content: center; margin-bottom: 8px; }
+.confirm-row button {
+  margin: 0 4px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #ffffff;
+  cursor: pointer;
+}
+.danger { background: #e34850; }
+.ok     { background: #2d9d78; }
+.muted  { background: #59708a; }

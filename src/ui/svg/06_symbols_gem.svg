@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="symbols gem">
+  <defs>
+    <linearGradient id="blueBg" x1="20" y1="20" x2="106" y2="106" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#44CBFF"/>
+      <stop offset="0.55" stop-color="#1788FF"/>
+      <stop offset="1" stop-color="#2F47E8"/>
+    </linearGradient>
+    <filter id="softShadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+    <filter id="tinyShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <path d="M39 22 H88 L110 44 V84 L88 106 H39 L17 84 V44 Z" fill="url(#blueBg)" filter="url(#softShadow)"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#tinyShadow)">
+    <path d="M64 34 L88 54 L64 92 L40 54 Z"/>
+    <path d="M40 54 H88"/>
+    <path d="M52 54 L64 34 L76 54 L64 92 Z"/>
+  </g>
+</svg>

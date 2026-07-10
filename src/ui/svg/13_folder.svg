@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="folder">
+  <defs>
+    <filter id="softShadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+    <filter id="tinyShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <g fill="none" stroke="#FFFFFF" stroke-width="6.5" stroke-linejoin="round" filter="url(#tinyShadow)">
+    <path d="M20 43 C20 37 24 34 30 34 H51 L61 44 H99 C105 44 109 48 109 54 V96 C109 101 105 105 99 105 H29 C23 105 20 101 20 95 Z"/>
+    <path d="M20 59 H109"/>
+  </g>
+</svg>
