@@ -5,7 +5,7 @@ import { findSymbols } from '../lib/symbols.js';
 import { buildBaseName, makeUniqueName } from '../lib/naming.js';
 import { normalize } from '../lib/normalize.js';
 import { readDocumentTree } from '../ps/layer-tree.js';
-import { exportTask, exportSymbol } from '../ps/exporter.js';
+import { exportTask, exportSymbol, beginExport, endExport } from '../ps/exporter.js';
 import { buildPreview, applyRename } from '../ps/renamer.js';
 import manifest from '../manifest.json';
 
@@ -51,12 +51,14 @@ function selectedLayers() {
   return sel.filter((l) => !descendantIds.has(l.id));
 }
 
-// ---- 项目名称持久化（记住上次输入），localStorage 不可用时降级为不持久化 ----
+// ---- 项目名称：会话级记忆（PS 开着期间/reload 保持，PS 关闭后清空）----
+// 用 sessionStorage（进程会话内有效）而非 localStorage（跨进程持久）；并清掉旧版残留的 localStorage 值
 const projectInput = document.getElementById('projectName');
-function safeGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
-function safeSet(k, v) { try { localStorage.setItem(k, v); } catch { /* 忽略：不支持持久化 */ } }
-projectInput.value = safeGet('projectName') || '';
-projectInput.addEventListener('change', () => safeSet('projectName', projectInput.value));
+function sesGet(k) { try { return sessionStorage.getItem(k); } catch { return null; } }
+function sesSet(k, v) { try { sessionStorage.setItem(k, v); } catch { /* 不支持则不记忆 */ } }
+try { localStorage.removeItem('projectName'); } catch { /* 忽略 */ }
+projectInput.value = sesGet('projectName') || '';
+projectInput.addEventListener('input', () => sesSet('projectName', projectInput.value));
 
 // ---- 切图状态与停止控制 ----
 const sliceBtn = document.getElementById('sliceBtn');
@@ -232,6 +234,7 @@ async function runExport(makeTasks, emptyMsg) {
 
   cancelRequested = false;
   escPause = false;
+  const t0 = Date.now();                 // 记录开始时间，完成后算耗时
   setSlicing(true);
   let ok = 0, empty = 0, deduped = 0, skipped = 0;
   const ps = { docId: app.activeDocument.id, fileName: psdName };
@@ -239,6 +242,9 @@ async function runExport(makeTasks, emptyMsg) {
   let i = 0;
   let currentName = null, currentDeduped = false;
   try {
+    setStatus(`共 ${tasks.length} 张，准备中…`);   // 切图前先告知总数
+    const base = await beginExport(ps);   // 整批只复制一次原文档并建快照（每张导出后回退复用，提速关键）
+    ps.workId = base.workId;
     while (i < tasks.length) {
       const task = tasks[i];
       await tick();                                    // 让排队的停止/ESC 事件先执行
@@ -282,7 +288,7 @@ async function runExport(makeTasks, emptyMsg) {
           : await exportTask(task, ps, folder, currentName, { fullBleed, includeHidden, format, scale });
         if (r === 'ok') ok++; else empty++;
         if (currentDeduped) deduped++;                 // 成功后再计入去重
-        setStatus(`导出中… ${ok} 张`);
+        setStatus(`导出中… ${ok}/${tasks.length} 张`);
       } catch (err) {
         if (isUserCancel(err)) userCancelled = true;   // ESC 取消了导出 modal → 转入暂停询问
         else throw err;                                // 真错误交给外层 catch
@@ -307,8 +313,10 @@ async function runExport(makeTasks, emptyMsg) {
       currentName = null;                              // 这张已完成，进入下一张
       i++;
     }
-    setStatus(`完成：已导出 ${ok} 张，去重 ${deduped} 次，跳过空图层 ${empty} 张，跳过同名 ${skipped} 张`);
+    const secs = Math.max(1, Math.round((Date.now() - t0) / 1000));
+    setStatus(`完成：已导出 ${ok}/${tasks.length} 张，去重 ${deduped} 次，跳过空图层 ${empty} 张，跳过同名 ${skipped} 张，耗时 ${secs} 秒`);
   } finally {
+    await endExport(ps);   // 关闭共享工作文档
     setSlicing(false);
   }
 }

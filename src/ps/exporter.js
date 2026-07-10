@@ -97,10 +97,50 @@ function findLayerById(container, id) {
   return null;
 }
 
+const SNAPSHOT_NAME = 'sliceman_base';   // 回退用快照名
+
+// ---- 整批共享的工作文档：整批只复制一次原文档并建快照；每张导出后回退到快照复用，
+//      避免"每张都整篇复制"这一最大开销，显著加快切图速度。----
+export async function beginExport(ps) {
+  return core.executeAsModal(async () => {
+    const srcDoc = Array.from(app.documents).find((d) => d.id === ps.docId) || app.activeDocument;
+    const workDoc = await srcDoc.duplicate('__sliceman_work');
+    // 建快照作为回退点：不受历史记录条数限制，回退比整篇复制快得多
+    await action.batchPlay([{
+      _obj: 'make',
+      _target: [{ _ref: 'snapshotClass' }],
+      from: { _ref: 'historyState', _property: 'currentHistoryState' },
+      name: SNAPSHOT_NAME,
+      using: { _enum: 'historyState', _value: 'fullDocument' },
+      _options: { dialogOptions: 'dontDisplay' },
+    }], {});
+    return { workId: workDoc.id };
+  }, { commandName: '准备切图' });
+}
+
+export async function endExport(ps) {
+  if (ps.workId == null) return;
+  try {
+    await core.executeAsModal(async () => {
+      const d = Array.from(app.documents).find((x) => x.id === ps.workId);
+      if (d) await d.closeWithoutSaving();
+    }, { commandName: '结束切图' });
+  } catch { /* 忽略 */ }
+}
+
+// 把共享工作文档回退到快照（在 executeAsModal 内调用）
+async function revertToBase() {
+  await action.batchPlay([{
+    _obj: 'select',
+    _target: [{ _ref: 'snapshotClass', _name: SNAPSHOT_NAME }],
+    _options: { dialogOptions: 'dontDisplay' },
+  }], {});
+}
+
 /**
  * 导出单个任务到 PNG。
  * @param {object} task {type:'layer'|'merged', node, pathSegments}
- * @param {object} ps   {docId, fileName}
+ * @param {object} ps   {docId, fileName, workId}
  * @param {object} folder UXP folder entry（用户选的目标文件夹）
  * @param {string} fileName 已去重的最终文件名（不含扩展名）
  * @param {{fullBleed:boolean, includeHidden:boolean, format?:string, scale?:number}} opts
@@ -108,11 +148,9 @@ function findLayerById(container, id) {
  */
 export async function exportTask(task, ps, folder, fileName, opts) {
   return core.executeAsModal(async () => {
-    // 按原文档 id 精确取源，避免误取到遗留的临时文档
-    const srcDoc = Array.from(app.documents).find((d) => d.id === ps.docId) || app.activeDocument;
-
-    // 1) 复制整个文档
-    const tempDoc = await srcDoc.duplicate(`__sliceman_${fileName}`);
+    // 复用整批共享的工作文档（beginExport 已复制一次），导出后回退到快照
+    const tempDoc = Array.from(app.documents).find((d) => d.id === ps.workId);
+    if (!tempDoc) return 'empty';
     try {
       const target = findLayerById(tempDoc, task.node.id);
       if (!target) return 'empty';
@@ -173,7 +211,7 @@ export async function exportTask(task, ps, folder, fileName, opts) {
       await saveExport(tempDoc, folder, fileName, opts.format, opts.scale);
       return 'ok';
     } finally {
-      await tempDoc.closeWithoutSaving();
+      await revertToBase();   // 回退到快照，供下一张复用（不再关闭/重建文档）
     }
   }, { commandName: `导出 ${fileName}` });
 }
@@ -200,9 +238,9 @@ function unionBounds(a, b) {
  */
 export async function exportSymbol(task, ps, folder, fileName, opts) {
   return core.executeAsModal(async () => {
-    // 按原文档 id 精确取源，避免误取到遗留的临时文档
-    const srcDoc = Array.from(app.documents).find((d) => d.id === ps.docId) || app.activeDocument;
-    const tempDoc = await srcDoc.duplicate(`__sliceman_${fileName}`);
+    // 复用整批共享的工作文档（beginExport 已复制一次），导出后回退到快照
+    const tempDoc = Array.from(app.documents).find((d) => d.id === ps.workId);
+    if (!tempDoc) return 'empty';
     try {
       const dinweige = new Set(task.dinweigeIds);
 
@@ -273,7 +311,7 @@ export async function exportSymbol(task, ps, folder, fileName, opts) {
       await saveExport(tempDoc, folder, fileName, opts.format, opts.scale);
       return 'ok';
     } finally {
-      await tempDoc.closeWithoutSaving();
+      await revertToBase();   // 回退到快照，供下一张复用（不再关闭/重建文档）
     }
   }, { commandName: `导出 Symbol ${fileName}` });
 }
