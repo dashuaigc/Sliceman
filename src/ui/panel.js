@@ -314,7 +314,7 @@ async function runExport(makeTasks, emptyMsg) {
       i++;
     }
     const secs = Math.max(1, Math.round((Date.now() - t0) / 1000));
-    setStatus(`完成：已导出 ${ok}/${tasks.length} 张，去重 ${deduped} 次，跳过空图层 ${empty} 张，跳过同名 ${skipped} 张，耗时 ${secs} 秒`);
+    setStatus(`完成：已导出 ${ok}/${tasks.length} 张，耗时 ${secs} 秒\n去重 ${deduped} 次，跳过空图层 ${empty} 张，跳过同名 ${skipped} 张`);
   } finally {
     await endExport(ps);   // 关闭共享工作文档
     setSlicing(false);
