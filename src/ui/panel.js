@@ -85,7 +85,7 @@ function setSlicing(on) {
   setTilesDisabled(on);
   // 同一按钮：空闲显示青色"开始导出"，进行中变红色"停止切图"
   if (on) {
-    btnLabel.textContent = '按ESC键停止切图';
+    btnLabel.textContent = '点击或按 ESC 停止切图';
     sliceBtn.classList.add('slicing');
   } else {
     sliceBtn.classList.remove('slicing');
@@ -103,7 +103,7 @@ function setSlicing(on) {
 // 弹出"同名文件"确认，返回 'overwrite' | 'skip' | 'overwriteAll' | 'skipAll'
 function askOverwrite(name, ext) {
   document.getElementById('overwriteName').textContent = `${name}.${ext}`;
-  overwriteConfirm.style.display = 'block';
+  overwriteConfirm.style.display = 'flex';
   setStatus(`发现同名文件：${name}.${ext}`);
   return new Promise((res) => { overwriteDecider = res; });
 }
@@ -116,7 +116,7 @@ function requestStop(reason) {
 
 // 弹出"是否终止"确认，返回 'terminate' | 'continue'
 function askTerminate() {
-  stopConfirm.style.display = 'block';
+  stopConfirm.style.display = 'flex';
   sliceBtn.style.display = 'none';   // 已暂停：隐藏"停止切图"，它只在任务进行中显示
   setStatus('已暂停：是否终止任务？');
   return new Promise((res) => { pauseDecider = res; });
@@ -202,16 +202,21 @@ async function runExport(makeTasks, emptyMsg) {
   const psdName = app.activeDocument.name.replace(/\.[^.]+$/, '');
 
   // 导出设置：格式与倍率（可操作控件），扩展名随格式变化
-  const format = currentFormat();                      // 'png' | 'jpg' | 'webp'
-  const scale = currentScale();                        // 1 | 2 | 3 | 5 | 10
-  const ext = format === 'jpg' ? 'jpg' : format === 'webp' ? 'webp' : 'png';
+  const format = currentFormat();                      // png|jpg|webp|gif|bmp
+  const scale = currentScale();                        // 0.25|0.5|1|2|3|5|10
+  const ext = ({ jpg: 'jpg', webp: 'webp', gif: 'gif', bmp: 'bmp' })[format] || 'png';
 
   const tree = await readDocumentTree();
   const tasks = makeTasks(tree, includeHidden);
   if (!tasks.length) return setStatus(emptyMsg);       // 空任务：不弹文件夹，直接提示
 
-  const folder = selectedFolder || await uxpFs.getFolder();   // 预选了导出位置则直接用，否则弹窗
-  if (!folder) return setStatus('已取消');
+  // 已设导出位置则直接用；未设则弹窗选择并记录到配置（之后不再询问）
+  let folder = selectedFolder;
+  if (!folder) {
+    folder = await uxpFs.getFolder();
+    if (!folder) return setStatus('已取消');
+    await rememberFolder(folder);
+  }
 
   const used = new Set();            // 仅本次运行内部去重（同名自动加 _2/_3）
   const existingFiles = new Set();   // 目标文件夹已存在的同格式基名（小写），命中则询问覆盖/跳过
@@ -308,7 +313,7 @@ async function runExport(makeTasks, emptyMsg) {
   }
 }
 
-// ---- 批量前缀重命名：输入即预览 ----
+// ---- 批量增加前缀：输入即预览 ----
 const prefixInput = document.getElementById('prefix');
 const previewList = document.getElementById('previewList');
 
@@ -414,6 +419,7 @@ function switchPage(name) {
   currentPage = name;
   tiles.forEach(t => t.classList.toggle('active', t.getAttribute('data-page') === name));
   show('symbolsIntro', name === 'symbols');
+  show('sliceIntro', name === 'slice');
   show('exportConfig', name === 'slice' || name === 'symbols');
   show('renamePage', name === 'rename');
   show('sliceBtn', name === 'slice' || name === 'symbols');   // 切图/Symbols 共用主按钮
@@ -445,16 +451,24 @@ function currentFormat() {
 }
 function currentScale() {
   const a = document.querySelector('#scalePills .pill.active');
-  return a ? (parseInt(a.getAttribute('data-scale'), 10) || 1) : 1;
+  return a ? (parseFloat(a.getAttribute('data-scale')) || 1) : 1;   // 支持 0.25/0.5 小数倍率
 }
+// 下拉箭头：展开/收起该行的「更多」选项
+document.querySelectorAll('.chev').forEach((c) => c.addEventListener('click', () => {
+  c.parentElement.classList.toggle('expanded');
+}));
 // 导出位置：点「…」预选文件夹并记住，导出时直接使用（不再每次弹窗）
 const pickFolderBtn = document.getElementById('pickFolderBtn');
 const exportPathText = document.getElementById('exportPathText');
+
+// 记住导出位置：仅本次会话记住（重开插件回到未设置状态，导出位置为空）
+function rememberFolder(folder) {
+  selectedFolder = folder;
+  exportPathText.textContent = folder.nativePath || '已选择文件夹';
+}
+
 pickFolderBtn.addEventListener('click', async () => {
-  try {
-    const f = await uxpFs.getFolder();
-    if (f) { selectedFolder = f; exportPathText.textContent = f.nativePath || '已选择文件夹'; }
-  } catch { /* 用户取消选择：保持原状 */ }
+  try { const f = await uxpFs.getFolder(); if (f) rememberFolder(f); } catch { /* 用户取消：保持原状 */ }
 });
 
 // 顶栏版本号：始终显示 manifest 中的真实版本
