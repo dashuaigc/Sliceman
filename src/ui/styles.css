@@ -6,25 +6,28 @@ html, body { height: 100%; }
 
 body {
   margin: 0;
-  padding: 0;
-  position: relative;                /* 作为确认弹层 absolute 定位的参照 */
+  padding: 6px;                      /* 代替 .app 外边距；body 自身不滚动 */
+  position: relative;                /* 确认弹层 absolute 相对可视区（不随内容滚动）定位的参照 */
   font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
   color: #d7e5f2;
-  background: #04101d;               /* 面板底色，衬托内框外发光 */
-  overflow-y: auto;                  /* 内容超高时整体滚动 */
+  background: #04101d;               /* 面板底色 */
+  overflow: hidden;                  /* body 不滚动，改由 .app 内部滚动 → 弹窗遮罩才能稳定居中 */
 }
 
 /* 外框：深蓝黑底、亮蓝描边、大圆角（不用 box-shadow 外发光——UXP 渲染层高危，改实色描边） */
 .app {
   display: flex;
   flex-direction: column;
-  min-height: 100%;
-  margin: 6px;
+  height: 100%;                      /* 撑满可视区，内容超高时在 .app 内部滚动 */
+  margin: 0;
   padding: 12px;
+  overflow-y: auto;
   background: #071829;
   border: 1px solid #2a6fa0;
   border-radius: 14px;
 }
+/* 固定高度的 flex 列里，子元素默认会被压缩重叠；禁止收缩，让内容自然堆叠并整体滚动 */
+.app > * { flex-shrink: 0; }
 
 /* ---------- 顶部栏 ---------- */
 .topbar {
@@ -76,6 +79,9 @@ body {
 
 /* 说明文字 */
 .hint { margin: 0; font-size: 12px; line-height: 1.7; color: #9bb2c6; }
+.hint b { font-weight: 600; }
+.hint .tag-red { color: #e0555c; }
+.hint .tag-blue { color: #4aa3ff; }
 .link { display: inline-block; margin-top: 8px; font-size: 12px; color: #2fc6d6; cursor: pointer; }
 
 /* 输入框：撑满一行 */
@@ -179,7 +185,11 @@ sp-textfield {
 }
 /* 选中：亮蓝字 + 青色圆角描边，内部无填充 */
 .pill.active { border-color: #22d3e0; color: #3ce0ef; font-weight: 600; }
-.chev { width: 13px; height: 13px; margin-left: 8px; opacity: 0.55; }
+.chev { width: 15px; height: 15px; margin-left: 6px; opacity: 0.7; cursor: pointer; flex: 0 0 auto; }
+/* “更多”选项：整行独立容器，展开时换到原行下方，不挤在同一行 */
+.more-wrap { flex-basis: 100%; display: none; flex-wrap: wrap; justify-content: flex-end; margin-top: 6px; }
+.setting-value.expanded .more-wrap { display: flex; }
+.more-wrap .pill { margin: 0 0 0 6px; }
 
 /* ---------- 重命名页 ---------- */
 .field-block label { display: block; font-size: 13px; color: #d5e3ef; margin-bottom: 8px; }
@@ -203,9 +213,9 @@ sp-textfield {
 
 /* ---------- 状态提示 ---------- */
 .status {
-  flex: 1 1 auto;            /* 占据底部栏中间弹性空间，文字居中 */
+  flex: 1 1 auto;            /* 底部栏唯一元素，撑满并居中显示 */
   min-width: 0;
-  margin: 0 8px;
+  margin: 0;
   font-size: 12px;
   color: #7fd4dd;
   text-align: center;
@@ -248,9 +258,11 @@ sp-textfield {
 .foot-item svg { width: 14px; height: 14px; margin-right: 6px; opacity: 0.7; }
 
 /* ---------- 确认覆盖层 ---------- */
+/* body 不滚动，overlay 相对 body(=可视区) absolute 定位并显式撑满（UXP 不认 top/bottom:0 撑高）：弹窗始终在面板中央 */
 .overlay {
   position: absolute;
-  left: 0; top: 0; right: 0; bottom: 0;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;

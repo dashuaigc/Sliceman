@@ -29,8 +29,8 @@ const uxpFs = require('uxp').storage.localFileSystem;
  * @param {number} scale   导出倍率（1 时不缩放）
  */
 async function saveExport(tempDoc, folder, fileName, format, scale) {
-  // 倍率放大：用 imageSize 描述符 + 明确像素单位（规避 DOM resizeImage 的标尺单位坑）
-  if (scale && scale > 1) {
+  // 倍率缩放（放大或缩小，=1 时跳过）：用 imageSize 描述符 + 明确像素单位（规避 DOM resizeImage 的标尺单位坑）
+  if (scale && scale !== 1) {
     const w = Math.max(1, Math.round(tempDoc.width * scale));
     const h = Math.max(1, Math.round(tempDoc.height * scale));
     await action.batchPlay([{
@@ -39,17 +39,21 @@ async function saveExport(tempDoc, folder, fileName, format, scale) {
       height: { _unit: 'pixelsUnit', _value: h },
       scaleStyles: true,
       constrainProportions: true,
-      interpolation: { _enum: 'interpolationType', _value: 'bicubicSmoother' },
+      interpolation: { _enum: 'interpolationType', _value: 'automaticInterpolation' }, // 自动：放大/缩小都合适
       _options: { dialogOptions: 'dontDisplay' },
     }], {});
   }
 
-  const ext = format === 'jpg' ? 'jpg' : format === 'webp' ? 'webp' : 'png';
+  const ext = ({ jpg: 'jpg', webp: 'webp', gif: 'gif', bmp: 'bmp' })[format] || 'png';
   const file = await folder.createFile(`${fileName}.${ext}`, { overwrite: true });
 
   if (format === 'jpg') {
     // JPG 无透明通道，PS 会以白底合并（选 JPG 视为可接受）
     await tempDoc.saveAs.jpg(file, { quality: 12 }, true);   // quality 0-12，取最高
+  } else if (format === 'gif') {
+    await tempDoc.saveAs.gif(file, {}, true);
+  } else if (format === 'bmp') {
+    await tempDoc.saveAs.bmp(file, {}, true);
   } else if (format === 'webp') {
     // DOM saveAs 不支持 WebP，用 batchPlay save；先建好精确文件名再传 sessionToken，避免 PS 追加 "copy"
     const token = await uxpFs.createSessionToken(file);
