@@ -219,9 +219,8 @@ sp-textfield {
   font-size: 12px;
   color: #7fd4dd;
   text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.5;          /* 过长时自动换行、完整展示；\n 强制分行 */
+  white-space: pre-line;
 }
 
 /* ---------- 主按钮 ---------- */
