@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="frame crop">
+  <defs>
+    <linearGradient id="tealBg" x1="24" y1="24" x2="106" y2="106" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2DEFFF"/>
+      <stop offset="0.45" stop-color="#159BA5"/>
+      <stop offset="1" stop-color="#0D6C7F"/>
+    </linearGradient>
+    <filter id="softShadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+    <filter id="tinyShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <rect x="23" y="24" width="82" height="82" rx="16" fill="url(#tealBg)" filter="url(#softShadow)"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" filter="url(#tinyShadow)">
+    <path d="M38 50 V39 C38 34 42 30 47 30 H58"/>
+    <path d="M91 50 V39 C91 34 87 30 82 30 H71"/>
+    <path d="M38 78 V90 C38 95 42 99 47 99 H58"/>
+    <path d="M91 78 V90 C91 95 87 99 82 99 H71"/>
+  </g>
+</svg>

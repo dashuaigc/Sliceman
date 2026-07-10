@@ -7,6 +7,7 @@ import { normalize } from '../lib/normalize.js';
 import { readDocumentTree } from '../ps/layer-tree.js';
 import { exportTask, exportSymbol } from '../ps/exporter.js';
 import { buildPreview, applyRename } from '../ps/renamer.js';
+import manifest from '../manifest.json';
 
 const { app, action, core } = require('photoshop');
 const uxpFs = require('uxp').storage.localFileSystem;
@@ -59,29 +60,32 @@ projectInput.addEventListener('change', () => safeSet('projectName', projectInpu
 
 // ---- 切图状态与停止控制 ----
 const sliceBtn = document.getElementById('sliceBtn');
+const btnLabel = sliceBtn.querySelector('.btn-label');   // 主按钮内的文字节点（按钮含图标+文字，不能整体设 textContent）
 const stopConfirm = document.getElementById('stopConfirm');
 const overwriteConfirm = document.getElementById('overwriteConfirm');
+let currentPage = 'slice';               // 当前功能页：slice | symbols | rename
 let slicing = false;
 let cancelRequested = false;   // 停止按钮：完成当前张后直接中止
 let escPause = false;          // ESC：完成当前张后暂停并询问
 let pauseDecider = null;       // 暂停时等待用户决定的 Promise resolver
 let overwriteDecider = null;   // 同名覆盖询问的 Promise resolver
 let overwriteAll = null;       // 记忆"全部覆盖/全部跳过"：null | 'overwrite' | 'skip'
+let selectedFolder = null;     // 预选的导出位置（点「…」选择）；未选则导出时弹窗
 
 // 勾选「只对选中的图层/组切图」时，空闲按钮显示"导出选中"，否则"开始完整切图"
 function selectedOnly() { return document.getElementById('selectedOnly').checked; }
+// 主按钮文字：空闲统一显示「开始导出」，进行中显示停止提示（见 setSlicing）
 function updateSliceLabel() {
-  if (!slicing) sliceBtn.textContent = selectedOnly() ? '导出选中的图层/组' : '开始完整切图';
+  if (!slicing) btnLabel.textContent = '开始导出';
 }
 
 function setSlicing(on) {
   slicing = on;
-  // Symbols 按钮在切图进行中禁用，避免并发
-  const symBtn = document.getElementById('symbolsBtn');
-  if (symBtn) symBtn.disabled = on;
-  // 同一按钮：空闲显示蓝色"开始/导出"，进行中变红色"停止切图"
+  // 切图进行中禁用功能磁贴，避免切页把正在用的主按钮隐藏
+  setTilesDisabled(on);
+  // 同一按钮：空闲显示青色"开始导出"，进行中变红色"停止切图"
   if (on) {
-    sliceBtn.textContent = '按ESC键停止切图';
+    btnLabel.textContent = '按ESC键停止切图';
     sliceBtn.classList.add('slicing');
   } else {
     sliceBtn.classList.remove('slicing');
@@ -97,10 +101,10 @@ function setSlicing(on) {
 }
 
 // 弹出"同名文件"确认，返回 'overwrite' | 'skip' | 'overwriteAll' | 'skipAll'
-function askOverwrite(name) {
-  document.getElementById('overwriteName').textContent = name + '.png';
+function askOverwrite(name, ext) {
+  document.getElementById('overwriteName').textContent = `${name}.${ext}`;
   overwriteConfirm.style.display = 'block';
-  setStatus(`发现同名文件：${name}.png`);
+  setStatus(`发现同名文件：${name}.${ext}`);
   return new Promise((res) => { overwriteDecider = res; });
 }
 
@@ -197,17 +201,24 @@ async function runExport(makeTasks, emptyMsg) {
   const project = normalize(projectInput.value) ? projectInput.value : '';
   const psdName = app.activeDocument.name.replace(/\.[^.]+$/, '');
 
+  // 导出设置：格式与倍率（可操作控件），扩展名随格式变化
+  const format = currentFormat();                      // 'png' | 'jpg' | 'webp'
+  const scale = currentScale();                        // 1 | 2 | 3 | 5 | 10
+  const ext = format === 'jpg' ? 'jpg' : format === 'webp' ? 'webp' : 'png';
+
   const tree = await readDocumentTree();
   const tasks = makeTasks(tree, includeHidden);
   if (!tasks.length) return setStatus(emptyMsg);       // 空任务：不弹文件夹，直接提示
 
-  const folder = await uxpFs.getFolder();              // 弹文件夹选择
+  const folder = selectedFolder || await uxpFs.getFolder();   // 预选了导出位置则直接用，否则弹窗
   if (!folder) return setStatus('已取消');
 
   const used = new Set();            // 仅本次运行内部去重（同名自动加 _2/_3）
-  const existingFiles = new Set();   // 目标文件夹已存在的 png 基名（小写），命中则询问覆盖/跳过
+  const existingFiles = new Set();   // 目标文件夹已存在的同格式基名（小写），命中则询问覆盖/跳过
+  const extLc = '.' + ext;
   for (const e of await folder.getEntries()) {
-    if (e.isFile && e.name.toLowerCase().endsWith('.png')) existingFiles.add(e.name.replace(/\.png$/i, '').toLowerCase());
+    const nm = e.name.toLowerCase();
+    if (e.isFile && nm.endsWith(extLc)) existingFiles.add(nm.slice(0, -extLc.length));
   }
 
   // 记录切图前的历史快照，供"终止并恢复"回退
@@ -243,7 +254,7 @@ async function runExport(makeTasks, emptyMsg) {
       if (existingFiles.has(currentName.toLowerCase())) {
         let action = overwriteAll;
         if (!action) {
-          const d = await askOverwrite(currentName);
+          const d = await askOverwrite(currentName, ext);
           overwriteConfirm.style.display = 'none';
           if (d === 'overwriteAll') { overwriteAll = 'overwrite'; action = 'overwrite'; }
           else if (d === 'skipAll') { overwriteAll = 'skip'; action = 'skip'; }
@@ -262,8 +273,8 @@ async function runExport(makeTasks, emptyMsg) {
       let userCancelled = false;
       try {
         const r = task.type === 'symbol'
-          ? await exportSymbol(task, ps, folder, currentName, { includeHidden })
-          : await exportTask(task, ps, folder, currentName, { fullBleed, includeHidden });
+          ? await exportSymbol(task, ps, folder, currentName, { includeHidden, format, scale })
+          : await exportTask(task, ps, folder, currentName, { fullBleed, includeHidden, format, scale });
         if (r === 'ok') ok++; else empty++;
         if (currentDeduped) deduped++;                 // 成功后再计入去重
         setStatus(`导出中… ${ok} 张`);
@@ -342,18 +353,11 @@ prefixInput.addEventListener('focus', renderPreview);
 // 空闲点击=按勾选框决定：勾选→仅导出选中，未勾选→全部导出
 sliceBtn.addEventListener('click', () => {
   if (slicing) { requestStop(); return; }
-  const run = selectedOnly() ? runExportSelected : runSliceAll;
+  // Symbols 页 → Symbols 导出；切图页 → 按「只对选中切图」决定全量/仅选中
+  const run = currentPage === 'symbols'
+    ? runExportSymbols
+    : (selectedOnly() ? runExportSelected : runSliceAll);
   run().catch(e => { setSlicing(false); setStatus('出错：' + e.message); });
-});
-
-// 勾选框变化时更新按钮文字（导出选中 / 开始切图）
-document.getElementById('selectedOnly').addEventListener('change', updateSliceLabel);
-
-// Symbols 切图：自动检测定位格并导出（进行中禁用，避免并发）
-const symbolsBtn = document.getElementById('symbolsBtn');
-symbolsBtn.addEventListener('click', () => {
-  if (slicing) return;
-  runExportSymbols().catch(e => { setSlicing(false); setStatus('出错：' + e.message); });
 });
 
 // ESC 快捷键：切图中按下 → 标记暂停（当前这张切完后在循环里弹确认）
@@ -384,6 +388,79 @@ document.getElementById('ovwNoAll').onclick  = () => resolveOverwrite('skipAll')
 document.getElementById('renameBtn').addEventListener('click', () =>
   runRename().catch(e => setStatus('出错：' + e.message)));
 
+// ---- 手写滑动开关：仍暴露原生 .checked，供切图逻辑无感读取 ----
+// （UXP 下自绘开关比 sp-switch 稳；子元素 knob 已设 pointer-events:none）
+function setupSwitch(id, initial, onChange) {
+  const el = document.getElementById(id);
+  el.checked = initial;                          // 供 runExport 读取 .checked
+  el.classList.toggle('on', initial);
+  el.addEventListener('click', () => {
+    el.checked = !el.checked;
+    el.classList.toggle('on', el.checked);
+    if (onChange) onChange();
+  });
+}
+setupSwitch('includeHidden', true);
+setupSwitch('fullBleed', true);
+setupSwitch('selectedOnly', false);
+
+// ---- 功能页切换：前三张磁贴切换 UI，「更多功能」不绑定操作 ----
+const tiles = Array.from(document.querySelectorAll('.tile'));
+function setTilesDisabled(on) {
+  tiles.forEach(t => { t.style.pointerEvents = on ? 'none' : ''; t.style.opacity = on ? '0.5' : ''; });
+}
+function show(id, on) { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; }
+function switchPage(name) {
+  currentPage = name;
+  tiles.forEach(t => t.classList.toggle('active', t.getAttribute('data-page') === name));
+  show('symbolsIntro', name === 'symbols');
+  show('exportConfig', name === 'slice' || name === 'symbols');
+  show('renamePage', name === 'rename');
+  show('sliceBtn', name === 'slice' || name === 'symbols');   // 切图/Symbols 共用主按钮
+  show('renameBtn', name === 'rename');
+}
+tiles.forEach((t) => t.addEventListener('click', () => {
+  if (slicing) return;                           // 切图进行中不切页
+  const page = t.getAttribute('data-page');
+  if (page === 'slice' || page === 'symbols' || page === 'rename') switchPage(page);
+}));
+switchPage('slice');                             // 初始进入完整切图页
+
+// ---- 导出设置：格式 / 倍率 / 位置（真实生效的可操作控件）----
+function bindPills(containerId) {
+  const box = document.getElementById(containerId);
+  if (!box) return;
+  Array.from(box.querySelectorAll('.pill')).forEach((p) => {
+    p.addEventListener('click', () => {
+      Array.from(box.querySelectorAll('.pill')).forEach((q) => q.classList.remove('active'));
+      p.classList.add('active');
+    });
+  });
+}
+bindPills('formatPills');
+bindPills('scalePills');
+function currentFormat() {
+  const a = document.querySelector('#formatPills .pill.active');
+  return a ? a.getAttribute('data-format') : 'png';
+}
+function currentScale() {
+  const a = document.querySelector('#scalePills .pill.active');
+  return a ? (parseInt(a.getAttribute('data-scale'), 10) || 1) : 1;
+}
+// 导出位置：点「…」预选文件夹并记住，导出时直接使用（不再每次弹窗）
+const pickFolderBtn = document.getElementById('pickFolderBtn');
+const exportPathText = document.getElementById('exportPathText');
+pickFolderBtn.addEventListener('click', async () => {
+  try {
+    const f = await uxpFs.getFolder();
+    if (f) { selectedFolder = f; exportPathText.textContent = f.nativePath || '已选择文件夹'; }
+  } catch { /* 用户取消选择：保持原状 */ }
+});
+
+// 顶栏版本号：始终显示 manifest 中的真实版本
+const versionEl = document.getElementById('version');
+if (versionEl) versionEl.textContent = 'v' + manifest.version;
+
 renderPreview();                                       // 初始渲染一次
-updateSliceLabel();                                    // 按勾选框初始化按钮文字
+updateSliceLabel();                                    // 初始化主按钮文字
 setStatus('插件已加载');

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="resize width">
+  <defs>
+    <filter id="softShadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+    <filter id="tinyShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <g fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" filter="url(#tinyShadow)">
+    <path d="M37 23 H25 C20 23 17 27 17 32 V45"/>
+    <path d="M91 23 H103 C108 23 111 27 111 32 V45"/>
+    <path d="M37 105 H25 C20 105 17 101 17 96 V83"/>
+    <path d="M91 105 H103 C108 105 111 101 111 96 V83"/>
+    <path d="M35 64 H93"/>
+    <path d="M47 52 L35 64 L47 76"/>
+    <path d="M81 52 L93 64 L81 76"/>
+  </g>
+</svg>

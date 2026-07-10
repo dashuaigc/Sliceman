@@ -19,6 +19,59 @@ import { computeSymbolFrame } from '../lib/symbols.js';
 const { app, action, core } = require('photoshop');
 const uxpFs = require('uxp').storage.localFileSystem;
 
+/**
+ * 按所选格式与倍率把当前临时文档导出到目标文件夹。
+ * 统一 exportTask / exportSymbol 的保存出口：format ∈ png|jpg|webp，scale 为放大倍数。
+ * @param {object} tempDoc 已裁好的临时文档（当前活动文档）
+ * @param {object} folder  UXP folder entry
+ * @param {string} fileName 不含扩展名的最终文件名
+ * @param {string} format  'png' | 'jpg' | 'webp'（缺省按 png）
+ * @param {number} scale   导出倍率（1 时不缩放）
+ */
+async function saveExport(tempDoc, folder, fileName, format, scale) {
+  // 倍率放大：用 imageSize 描述符 + 明确像素单位（规避 DOM resizeImage 的标尺单位坑）
+  if (scale && scale > 1) {
+    const w = Math.max(1, Math.round(tempDoc.width * scale));
+    const h = Math.max(1, Math.round(tempDoc.height * scale));
+    await action.batchPlay([{
+      _obj: 'imageSize',
+      width: { _unit: 'pixelsUnit', _value: w },
+      height: { _unit: 'pixelsUnit', _value: h },
+      scaleStyles: true,
+      constrainProportions: true,
+      interpolation: { _enum: 'interpolationType', _value: 'bicubicSmoother' },
+      _options: { dialogOptions: 'dontDisplay' },
+    }], {});
+  }
+
+  const ext = format === 'jpg' ? 'jpg' : format === 'webp' ? 'webp' : 'png';
+  const file = await folder.createFile(`${fileName}.${ext}`, { overwrite: true });
+
+  if (format === 'jpg') {
+    // JPG 无透明通道，PS 会以白底合并（选 JPG 视为可接受）
+    await tempDoc.saveAs.jpg(file, { quality: 12 }, true);   // quality 0-12，取最高
+  } else if (format === 'webp') {
+    // DOM saveAs 不支持 WebP，用 batchPlay save；先建好精确文件名再传 sessionToken，避免 PS 追加 "copy"
+    const token = await uxpFs.createSessionToken(file);
+    await action.batchPlay([{
+      _obj: 'save',
+      as: {
+        _obj: 'WebPFormat',
+        compression: { _enum: 'WebPCompression', _value: 'compressionLossless' }, // 无损，保留透明
+        includeXMPData: false, includeEXIFData: false, includePsExtras: false,
+      },
+      in: { _path: token, _kind: 'local' },
+      documentID: tempDoc.id,
+      copy: true,
+      lowerCase: true,
+      saveStage: { _enum: 'saveStageType', _value: 'saveBegin' },
+      _options: { dialogOptions: 'dontDisplay' },
+    }], {});
+  } else {
+    await tempDoc.saveAs.png(file, {}, true);   // asCopy=true
+  }
+}
+
 /** 递归收集文档内所有图层（含嵌套）。 */
 function allLayers(container, out = []) {
   for (const l of container.layers ?? []) {
@@ -46,7 +99,7 @@ function findLayerById(container, id) {
  * @param {object} ps   {docId, fileName}
  * @param {object} folder UXP folder entry（用户选的目标文件夹）
  * @param {string} fileName 已去重的最终文件名（不含扩展名）
- * @param {{fullBleed:boolean, includeHidden:boolean}} opts
+ * @param {{fullBleed:boolean, includeHidden:boolean, format?:string, scale?:number}} opts
  * @returns {Promise<'ok'|'empty'>}
  */
 export async function exportTask(task, ps, folder, fileName, opts) {
@@ -112,9 +165,8 @@ export async function exportTask(task, ps, folder, fileName, opts) {
         top: true, bottom: true, left: true, right: true,
       }], {});
 
-      // 7) 存 PNG
-      const file = await folder.createFile(`${fileName}.png`, { overwrite: true });
-      await tempDoc.saveAs.png(file, {}, true);   // asCopy=true
+      // 7) 按所选格式与倍率导出
+      await saveExport(tempDoc, folder, fileName, opts.format, opts.scale);
       return 'ok';
     } finally {
       await tempDoc.closeWithoutSaving();
@@ -139,7 +191,7 @@ function unionBounds(a, b) {
  * @param {object} ps   {docId, fileName}
  * @param {object} folder UXP folder entry
  * @param {string} fileName 已去重的最终文件名（不含扩展名）
- * @param {{includeHidden:boolean}} opts
+ * @param {{includeHidden:boolean, format?:string, scale?:number}} opts
  * @returns {Promise<'ok'|'empty'>}
  */
 export async function exportSymbol(task, ps, folder, fileName, opts) {
@@ -213,9 +265,8 @@ export async function exportSymbol(task, ps, folder, fileName, opts) {
       };
       await tempDoc.crop(rect);   // DOM 裁切：超出画布处补透明
 
-      // 8) 存 PNG
-      const file = await folder.createFile(`${fileName}.png`, { overwrite: true });
-      await tempDoc.saveAs.png(file, {}, true);
+      // 8) 按所选格式与倍率导出
+      await saveExport(tempDoc, folder, fileName, opts.format, opts.scale);
       return 'ok';
     } finally {
       await tempDoc.closeWithoutSaving();

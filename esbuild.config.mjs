@@ -22,6 +22,9 @@ await copyFile('src/manifest.json', `${OUT}/manifest.json`);
 await copyFile('src/ui/index.html', `${OUT}/index.html`);
 await copyFile('src/ui/styles.css', `${OUT}/styles.css`);
 
+// 注：图标已作为 inline <svg> 内联进 index.html（净化去除了 filter/gradient），
+// 不再需要随包拷贝位图目录——位图 <img> 是导致 UXP 面板 native 崩溃的根因。
+
 // 4) 拷贝图标（打包 .ccx 时 manifest.icons 引用，路径相对插件根目录）
 await mkdir(`${OUT}/icons`, { recursive: true });
 await copyFile('src/icons/icon.png', `${OUT}/icons/icon.png`);

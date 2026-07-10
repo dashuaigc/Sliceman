@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="scale 1x">
+  <defs>
+    <filter id="softShadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+    <filter id="tinyShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <path d="M30 28 H98 V83 L64 105 L30 83 Z" fill="none" stroke="#FFFFFF" stroke-width="5.8" stroke-linejoin="round" filter="url(#tinyShadow)"/>
+  <text x="64" y="72" text-anchor="middle" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="37" font-weight="900" fill="#20DDF2" filter="url(#tinyShadow)">1x</text>
+</svg>

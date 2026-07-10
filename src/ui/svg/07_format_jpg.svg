@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="jpg file">
+  <defs>
+    <linearGradient id="purpleDoc" x1="27" y1="20" x2="102" y2="112" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#D892FF"/>
+      <stop offset="0.5" stop-color="#8757FF"/>
+      <stop offset="1" stop-color="#4B3EF0"/>
+    </linearGradient>
+    <filter id="softShadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+    <filter id="tinyShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <path d="M34 20 H80 L102 42 V104 C102 108 98 112 94 112 H34 C29 112 26 108 26 104 V28 C26 24 30 20 34 20 Z" fill="url(#purpleDoc)" filter="url(#softShadow)"/>
+  <path d="M80 20 V42 H102 Z" fill="#D1A6FF" opacity="0.95"/>
+  <rect x="43" y="55" width="43" height="30" rx="3" fill="#FFFFFF" opacity="0.96"/>
+  <text x="64.5" y="76" text-anchor="middle" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="18" font-weight="900" fill="#7A56F6">JPG</text>
+</svg>

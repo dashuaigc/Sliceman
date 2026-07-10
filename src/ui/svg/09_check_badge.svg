@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="check">
+  <defs>
+    <linearGradient id="checkBg" x1="36" y1="36" x2="92" y2="92" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#38FCFF"/>
+      <stop offset="1" stop-color="#08C5D5"/>
+    </linearGradient>
+    <filter id="softShadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+    <filter id="tinyShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <circle cx="64" cy="64" r="28" fill="url(#checkBg)" filter="url(#softShadow)"/>
+  <path d="M49 63 L59 73 L80 51" fill="none" stroke="#073851" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" filter="url(#tinyShadow)"/>
+</svg>
