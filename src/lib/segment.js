@@ -164,7 +164,30 @@ export function boxToPixels(box, factor, width, height) {
 }
 
 /**
- * 一站式：RGBA → 连通域原始像素边界框列表（按面积从大到小）。
+ * 行序排列（阅读顺序）：先按 top 升序，纵向有重叠的并进同一"视觉行"，
+ * 行内按 left 升序 —— 即"从最上面一行开始、每行从左往右，再第二行、第三行…"。
+ * @param {Array<{left,top,right,bottom}>} boxes
+ * @returns {Array} 重排后的 boxes
+ */
+export function orderRowMajor(boxes) {
+  const sorted = [...boxes].sort((a, b) => (a.top - b.top) || (a.left - b.left));
+  const rows = [];
+  for (const b of sorted) {
+    const row = rows.length ? rows[rows.length - 1] : null;
+    if (row && b.top < row.bottom) {               // 与当前行纵向有重叠 → 并入该行
+      row.items.push(b);
+      if (b.bottom > row.bottom) row.bottom = b.bottom;
+    } else {
+      rows.push({ items: [b], bottom: b.bottom });
+    }
+  }
+  const out = [];
+  for (const r of rows) out.push(...r.items.sort((x, y) => x.left - y.left));
+  return out;
+}
+
+/**
+ * 一站式：RGBA → 连通域原始像素边界框列表（按"从上到下、每行从左到右"的行序排列）。
  * @param {Uint8Array|Uint8ClampedArray} rgba
  * @param {number} width
  * @param {number} height
@@ -179,7 +202,5 @@ export function findElementBounds(rgba, width, height, opts = {}) {
   const { alpha, w, h, factor: f } = downsampleAlpha(rgba, width, height, factor, alphaThreshold);
   const minAreaGrid = Math.max(1, Math.ceil(minAreaPx / (f * f)));
   const boxes = labelComponents(alpha, w, h, minAreaGrid);
-  return boxes
-    .map((b) => boxToPixels(b, f, width, height))
-    .sort((a, b) => (b.right - b.left) * (b.bottom - b.top) - (a.right - a.left) * (a.bottom - a.top));
+  return orderRowMajor(boxes.map((b) => boxToPixels(b, f, width, height)));
 }
