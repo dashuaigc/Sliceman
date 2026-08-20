@@ -7,6 +7,7 @@ import { normalize } from '../lib/normalize.js';
 import { readDocumentTree } from '../ps/layer-tree.js';
 import { exportTask, exportSymbol, beginExport, endExport } from '../ps/exporter.js';
 import { buildPreview, applyRename } from '../ps/renamer.js';
+import { smartSplitLayer } from '../ps/smart-split.js';
 import manifest from '../manifest.json';
 
 const { app, action, core } = require('photoshop');
@@ -65,7 +66,7 @@ const sliceBtn = document.getElementById('sliceBtn');
 const btnLabel = sliceBtn.querySelector('.btn-label');   // 主按钮内的文字节点（按钮含图标+文字，不能整体设 textContent）
 const stopConfirm = document.getElementById('stopConfirm');
 const overwriteConfirm = document.getElementById('overwriteConfirm');
-let currentPage = 'slice';               // 当前功能页：slice | symbols | rename
+let currentPage = 'slice';               // 当前功能页：slice | symbols | rename | split
 let slicing = false;
 let cancelRequested = false;   // 停止按钮：完成当前张后直接中止
 let escPause = false;          // ESC：完成当前张后暂停并询问
@@ -321,6 +322,61 @@ async function runExport(makeTasks, emptyMsg) {
   }
 }
 
+// 把任意异常转成可读字符串：batchPlay 常抛 undefined 或只有 number/_overallError
+function errMsg(e) {
+  if (e == null) return '未知错误(undefined)';
+  if (typeof e === 'string') return e;
+  const parts = [];
+  if (e.message) parts.push(e.message);
+  if (e.number != null) parts.push('number=' + e.number);
+  if (e._overallError) parts.push(String(e._overallError));
+  if (!parts.length) { try { parts.push(JSON.stringify(e)); } catch { parts.push(String(e)); } }
+  return parts.filter(Boolean).join(' | ') || '未知错误';
+}
+
+// ---- 智能分割：选中一个像素图层 → 识别连通块 → 各复制为独立图层 ----
+const splitBtn = document.getElementById('splitBtn');
+let splitting = false;
+
+async function runSmartSplit() {
+  if (splitting) return;
+  if (!app.activeDocument) return setStatus('请先打开一个 PSD 文档');
+  // 取最外层选中项；要求恰好选中一个像素图层（组/多选/未选都给明确提示）
+  const sel = selectedLayers();
+  if (!sel.length) return setStatus('请先在图层面板选中一个要分割的像素图层');
+  if (sel.length > 1) return setStatus('一次只分割一个图层，请只选中一个像素图层');
+  const layer = sel[0];
+  if (layer.kind === 'group') return setStatus('选中的是组，请改选组内的单个像素图层');
+
+  splitting = true;
+  setTilesDisabled(true);
+  const lbl = splitBtn.querySelector('.btn-label');
+  const orig = lbl.textContent;
+  lbl.textContent = '分割中…';
+  splitBtn.style.pointerEvents = 'none';
+  splitBtn.style.opacity = '0.6';
+  let lastStep = '尚未开始';
+  setStatus('正在识别连通元素…');
+  try {
+    const { created, blocks } = await smartSplitLayer(layer.id, {
+      onStep: (msg) => { lastStep = msg; },
+      onProgress: (done, total) => setStatus(`分割中… ${done}/${total} 块`),
+    });
+    if (blocks <= 1) setStatus(`只识别到 ${blocks} 个连通元素，无需分割\n（最后一步：${lastStep}）`);
+    else setStatus(`完成：识别 ${blocks} 个元素，已新建 ${created} 个独立图层（原图层未改动）`);
+  } catch (e) {
+    setStatus(`分割失败：${errMsg(e)}\n（最后成功的一步：${lastStep}）`);
+  } finally {
+    splitting = false;
+    setTilesDisabled(false);
+    lbl.textContent = orig;
+    splitBtn.style.pointerEvents = '';
+    splitBtn.style.opacity = '';
+  }
+}
+
+splitBtn.addEventListener('click', () => { runSmartSplit(); });
+
 // ---- 批量增加前缀：输入即预览 ----
 const prefixInput = document.getElementById('prefix');
 const previewList = document.getElementById('previewList');
@@ -428,15 +484,17 @@ function switchPage(name) {
   tiles.forEach(t => t.classList.toggle('active', t.getAttribute('data-page') === name));
   show('symbolsIntro', name === 'symbols');
   show('sliceIntro', name === 'slice');
+  show('splitIntro', name === 'split');
   show('exportConfig', name === 'slice' || name === 'symbols');
   show('renamePage', name === 'rename');
   show('sliceBtn', name === 'slice' || name === 'symbols');   // 切图/Symbols 共用主按钮
   show('renameBtn', name === 'rename');
+  show('splitBtn', name === 'split');
 }
 tiles.forEach((t) => t.addEventListener('click', () => {
-  if (slicing) return;                           // 切图进行中不切页
+  if (slicing || splitting) return;                // 任务进行中不切页
   const page = t.getAttribute('data-page');
-  if (page === 'slice' || page === 'symbols' || page === 'rename') switchPage(page);
+  if (page === 'slice' || page === 'symbols' || page === 'rename' || page === 'split') switchPage(page);
 }));
 switchPage('slice');                             // 初始进入完整切图页
 
