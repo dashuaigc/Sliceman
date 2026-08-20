@@ -95,7 +95,6 @@ export async function smartSplitLayer(sourceLayerId, opts = {}) {
   const srcLayer = findLayerById(srcDoc, sourceLayerId);
   if (!srcLayer) throw new Error('找不到要分割的图层');
   if (srcLayer.kind === 'group') throw new Error('请选中一个像素图层（不是组）');
-  const baseName = srcLayer.name || '元素';
 
   await closeWorkDoc();                              // 清掉上次可能遗留的工作文档
 
@@ -157,7 +156,7 @@ export async function smartSplitLayer(sourceLayerId, opts = {}) {
           const copied = await pasted.duplicate(srcDoc);
           if (copied) {
             try { await copied.moveAbove(srcLayer); } catch { /* 定位失败也保留（在顶层） */ }
-            try { copied.name = `${baseName}_${i + 1}`; } catch { /* 命名失败不影响 */ }
+            try { copied.name = String(i); } catch { /* 命名失败不影响 */ }   // 从 0 开始依次编号
             created++;
           }
           onStep(`6.${i + 1} duplicate结果=${copied ? 'ok' : '空'}`);

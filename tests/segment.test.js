@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { labelComponents, downsampleAlpha, findElementBounds } from '../src/lib/segment.js';
+import { labelComponents, downsampleAlpha, findElementBounds, orderRowMajor } from '../src/lib/segment.js';
 
 /** 造一张 w*h 的 0/1 网格，把给定矩形涂成 1 */
 function grid(w, h, rects = []) {
@@ -102,12 +102,10 @@ describe('findElementBounds', () => {
     expect(findElementBounds(buf, 50, 50, { factor: 2, minAreaPx: 1 })).toHaveLength(1);
   });
 
-  it('按面积从大到小排序', () => {
+  it('排序规则由 orderRowMajor 提供（行序），详见下方 orderRowMajor 组', () => {
+    // 行序排列的断言在 orderRowMajor describe 中覆盖；这里只确认多块输出数量正确
     const buf = rgba(100, 100, [{ left: 0, top: 0, right: 10, bottom: 10 }, { left: 30, top: 30, right: 90, bottom: 90 }]);
-    const boxes = findElementBounds(buf, 100, 100, { factor: 1, minAreaPx: 1 });
-    expect(boxes).toHaveLength(2);
-    const area = (b) => (b.right - b.left) * (b.bottom - b.top);
-    expect(area(boxes[0])).toBeGreaterThan(area(boxes[1]));
+    expect(findElementBounds(buf, 100, 100, { factor: 1, minAreaPx: 1 })).toHaveLength(2);
   });
 
   it('结果坐标钳制在图内', () => {
@@ -119,5 +117,40 @@ describe('findElementBounds', () => {
       expect(b.left).toBeGreaterThanOrEqual(0);
       expect(b.top).toBeGreaterThanOrEqual(0);
     }
+  });
+});
+
+describe('orderRowMajor（行序排列：从上到下、每行从左到右）', () => {
+  it('两行三块：第一行左→右，再到第二行', () => {
+    // 第一行 y 5-10：B 在左 A 在右；第二行 y 20-30：C
+    const A = { left: 40, top: 5, right: 60, bottom: 10 };
+    const B = { left: 0, top: 5, right: 20, bottom: 10 };
+    const C = { left: 10, top: 20, right: 30, bottom: 30 };
+    expect(orderRowMajor([A, B, C]).map(b => b.left)).toEqual([0, 40, 10]);
+  });
+
+  it('高度不同的两块纵向有重叠 → 算同一行，按 left 排', () => {
+    // A 高（y0-40），B 矮（y10-20）但和 A 纵向重叠 → 同行；B 在 A 右边
+    const A = { left: 0, top: 0, right: 30, bottom: 40 };
+    const B = { left: 50, top: 10, right: 80, bottom: 20 };
+    expect(orderRowMajor([B, A])).toEqual([A, B]);
+  });
+
+  it('错开的行（无纵向重叠）→ 严格分两行', () => {
+    const A = { left: 30, top: 0, right: 60, bottom: 10 };
+    const B = { left: 0, top: 20, right: 20, bottom: 30 };
+    expect(orderRowMajor([A, B])).toEqual([A, B]);   // 虽 B 的 left 更小，但 A 在上面一行
+  });
+
+  it('findElementBounds 输出即为行序（不再是面积序）', () => {
+    // 左上小块 + 右下大块：行序应左上在前，尽管大块面积更大
+    const buf = rgba(100, 100, [
+      { left: 0, top: 0, right: 10, bottom: 10 },
+      { left: 80, top: 60, right: 100, bottom: 100 },
+    ]);
+    const boxes = findElementBounds(buf, 100, 100, { factor: 1, minAreaPx: 1 });
+    expect(boxes).toHaveLength(2);
+    expect(boxes[0].top).toBe(0);                    // 左上小块排第一
+    expect(boxes[1].top).toBeGreaterThan(0);
   });
 });
