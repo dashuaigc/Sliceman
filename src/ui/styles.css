@@ -14,7 +14,7 @@ body {
   overflow: hidden;                  /* body 不滚动，改由 .app 内部滚动 → 弹窗遮罩才能稳定居中 */
 }
 
-/* 外框：深蓝黑底、亮蓝描边、大圆角（不用 box-shadow 外发光——UXP 渲染层高危，改实色描边） */
+/* 外框：深蓝黑底、大圆角（不用 box-shadow 外发光——UXP 渲染层高危；最外层不要细线框） */
 .app {
   display: flex;
   flex-direction: column;
@@ -23,7 +23,6 @@ body {
   padding: 12px;
   overflow-y: auto;
   background: #071829;
-  border: 1px solid #2a6fa0;
   border-radius: 14px;
 }
 /* 固定高度的 flex 列里，子元素默认会被压缩重叠；禁止收缩，让内容自然堆叠并整体滚动 */
