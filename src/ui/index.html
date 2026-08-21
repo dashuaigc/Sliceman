@@ -73,6 +73,9 @@
   <path d="M49 63 L59 73 L80 51" fill="none" stroke="#073851" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
           </div>
+        </div>
+        <!-- 功能中心第二行：智能分割 / 批量转智能对象 / 更多功能 -->
+        <div class="tiles" style="margin-top:8px;">
           <div class="tile" data-page="split">
             <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
   <g fill="#EDE9FE" stroke="#EDE9FE" stroke-width="5" stroke-linejoin="round" stroke-linecap="round">
@@ -82,6 +85,24 @@
   <path d="M104 14 L108.5 27.5 L122 32 L108.5 36.5 L104 50 L99.5 36.5 L86 32 L99.5 27.5 Z" fill="#EDE9FE"/>
 </svg>
             <span class="tile-label">智能分割</span>
+            <svg class="tile-check" xmlns="http://www.w3.org/2000/svg" viewBox="36 36 56 56" role="img" aria-label="check">
+  <circle cx="64" cy="64" r="28" fill="#08C5D5"/>
+  <path d="M49 63 L59 73 L80 51" fill="none" stroke="#073851" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+          </div>
+          <div class="tile" data-page="smartobj">
+            <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <g fill="none" stroke="#EDE9FE" stroke-width="6" stroke-linejoin="round" stroke-linecap="round">
+    <rect x="24" y="16" width="80" height="80" rx="10"/>
+    <g opacity="0.55" stroke-width="5">
+      <circle cx="48" cy="42" r="7"/>
+      <path d="M32 78 L56 54 L70 68"/>
+    </g>
+  </g>
+  <rect x="72" y="72" width="40" height="40" rx="9" fill="#22d3e0"/>
+  <path d="M84 100 L102 82 M92 82 H102 V92" fill="none" stroke="#043042" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+            <span class="tile-label">批量转智能对象</span>
             <svg class="tile-check" xmlns="http://www.w3.org/2000/svg" viewBox="36 36 56 56" role="img" aria-label="check">
   <circle cx="64" cy="64" r="28" fill="#08C5D5"/>
   <path d="M49 63 L59 73 L80 51" fill="none" stroke="#073851" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
@@ -102,6 +123,12 @@
       <section class="card" id="splitIntro" style="display:none;">
         <h3 class="card-title">智能分割说明</h3>
         <p class="hint">在图层面板<b>选中一个像素图层</b>（如拼合的素材图 / 多元素图层），插件自动识别其中<b>互不相连的内容块</b>，把每一块复制成<b>独立图层</b>（按从上到下、每行从左到右的顺序，依次命名为 0、1、2…）。<br>原图层保持不变，可放心撤销。</p>
+      </section>
+
+      <!-- 批量转智能对象说明（仅智能对象页显示） -->
+      <section class="card" id="smartObjIntro" style="display:none;">
+        <h3 class="card-title">批量转智能对象说明</h3>
+        <p class="hint">选中一个或多个图层，点击后<b>逐个</b>转换为<b>独立智能对象</b>——绝不把多个图层合并进同一个智能对象。<br>已是智能对象的图层自动跳过；图层名称、顺序、位置、所在图层组与视觉效果保持不变；整个批量操作在历史记录中为一步，可一次撤销。</p>
       </section>
 
       <!-- Symbols 切图说明（仅 Symbols 页显示） -->
@@ -246,6 +273,14 @@
   <path d="M45 31 L98 64 L45 97 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>
 </svg>
         <span class="btn-label">开始智能分割</span>
+      </button>
+
+      <!-- 智能对象页按钮 -->
+      <button id="smartObjBtn" class="primary-btn" style="display:none;">
+        <svg class="play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="smart object">
+  <path d="M45 31 L98 64 L45 97 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>
+</svg>
+        <span class="btn-label">转换为智能对象</span>
       </button>
 
       <!-- 底部栏（视觉入口） -->
