@@ -8,6 +8,7 @@ import { readDocumentTree } from '../ps/layer-tree.js';
 import { exportTask, exportSymbol, beginExport, endExport } from '../ps/exporter.js';
 import { buildPreview, applyRename } from '../ps/renamer.js';
 import { smartSplitLayer } from '../ps/smart-split.js';
+import { convertToSmartObjects } from '../ps/smart-object.js';
 import manifest from '../manifest.json';
 
 const { app, action, core } = require('photoshop');
@@ -66,7 +67,7 @@ const sliceBtn = document.getElementById('sliceBtn');
 const btnLabel = sliceBtn.querySelector('.btn-label');   // 主按钮内的文字节点（按钮含图标+文字，不能整体设 textContent）
 const stopConfirm = document.getElementById('stopConfirm');
 const overwriteConfirm = document.getElementById('overwriteConfirm');
-let currentPage = 'slice';               // 当前功能页：slice | symbols | rename | split
+let currentPage = 'slice';               // 当前功能页：slice | symbols | rename | split | smartobj
 let slicing = false;
 let cancelRequested = false;   // 停止按钮：完成当前张后直接中止
 let escPause = false;          // ESC：完成当前张后暂停并询问
@@ -377,6 +378,47 @@ async function runSmartSplit() {
 
 splitBtn.addEventListener('click', () => { runSmartSplit(); });
 
+// ---- 批量转智能对象：选中图层逐个转独立 SO，绝不合并 ----
+const smartObjBtn = document.getElementById('smartObjBtn');
+let converting = false;
+
+async function runSmartObjects() {
+  if (converting) return;
+  if (!app.activeDocument) return setStatus('请先打开一个 PSD 文档');
+  const sel = selectedLayers();
+  if (!sel.length) return setStatus('请先选择需要转换的图层');
+
+  converting = true;
+  setTilesDisabled(true);
+  const lbl = smartObjBtn.querySelector('.btn-label');
+  const orig = lbl.textContent;
+  lbl.textContent = '转换中…';
+  smartObjBtn.style.pointerEvents = 'none';
+  smartObjBtn.style.opacity = '0.6';
+  setStatus('正在转换为智能对象…');
+  try {
+    const r = await convertToSmartObjects(sel.map((l) => l.id), {
+      onProgress: (done, total) => setStatus(`转换中… ${done}/${total} 个`),
+    });
+    // 按需求组织提示：全部已转换 / 混合跳过 / 有失败，各自成句
+    if (!r.converted && !r.failed) return setStatus('所选图层已经是智能对象');
+    const parts = [`已转换 ${r.converted} 个图层为独立智能对象`];
+    if (r.skippedSO) parts.push(`跳过 ${r.skippedSO} 个智能对象`);
+    if (r.failed) parts.push(`${r.failed} 个图层无法转换`);
+    setStatus(parts.join('，'));
+  } catch (e) {
+    setStatus('转换失败：' + errMsg(e));
+  } finally {
+    converting = false;
+    setTilesDisabled(false);
+    lbl.textContent = orig;
+    smartObjBtn.style.pointerEvents = '';
+    smartObjBtn.style.opacity = '';
+  }
+}
+
+smartObjBtn.addEventListener('click', () => { runSmartObjects(); });
+
 // ---- 批量增加前缀：输入即预览 ----
 const prefixInput = document.getElementById('prefix');
 const previewList = document.getElementById('previewList');
@@ -485,16 +527,18 @@ function switchPage(name) {
   show('symbolsIntro', name === 'symbols');
   show('sliceIntro', name === 'slice');
   show('splitIntro', name === 'split');
+  show('smartObjIntro', name === 'smartobj');
   show('exportConfig', name === 'slice' || name === 'symbols');
   show('renamePage', name === 'rename');
   show('sliceBtn', name === 'slice' || name === 'symbols');   // 切图/Symbols 共用主按钮
   show('renameBtn', name === 'rename');
   show('splitBtn', name === 'split');
+  show('smartObjBtn', name === 'smartobj');
 }
 tiles.forEach((t) => t.addEventListener('click', () => {
-  if (slicing || splitting) return;                // 任务进行中不切页
+  if (slicing || splitting || converting) return;  // 任务进行中不切页
   const page = t.getAttribute('data-page');
-  if (page === 'slice' || page === 'symbols' || page === 'rename' || page === 'split') switchPage(page);
+  if (page === 'slice' || page === 'symbols' || page === 'rename' || page === 'split' || page === 'smartobj') switchPage(page);
 }));
 switchPage('slice');                             // 初始进入完整切图页
 
