@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { labelComponents, downsampleAlpha, findElementBounds, orderRowMajor } from '../src/lib/segment.js';
+import { labelComponents, labelComponentsMerged, downsampleAlpha, findElementBounds, orderRowMajor } from '../src/lib/segment.js';
 
 /** 造一张 w*h 的 0/1 网格，把给定矩形涂成 1 */
 function grid(w, h, rects = []) {
@@ -117,6 +117,204 @@ describe('findElementBounds', () => {
       expect(b.left).toBeGreaterThanOrEqual(0);
       expect(b.top).toBeGreaterThanOrEqual(0);
     }
+  });
+});
+
+describe('labelComponentsMerged（近距合并：解决图标内细缝过分割）', () => {
+  it('相距 6px 的两块，膨胀半径 3 → 合并为一，边界取并集不外扩', () => {
+    // 两块 4x4，x 间隔 6：0-4 与 10-14
+    const a = grid(20, 10, [{ left: 0, top: 0, right: 4, bottom: 4 }, { left: 10, top: 0, right: 14, bottom: 4 }]);
+    const boxes = labelComponentsMerged(a, 20, 10, 1, 3);
+    expect(boxes).toHaveLength(1);
+    expect(boxes[0]).toMatchObject({ left: 0, top: 0, right: 14, bottom: 4 });   // 并集，未被膨胀撑大
+  });
+
+  it('相距 30px 的两块，膨胀半径 3 → 仍分开', () => {
+    const a = grid(50, 10, [{ left: 0, top: 0, right: 4, bottom: 4 }, { left: 34, top: 0, right: 38, bottom: 4 }]);
+    expect(labelComponentsMerged(a, 50, 10, 1, 3)).toHaveLength(2);
+  });
+
+  it('r=0 退化为普通 labelComponents', () => {
+    const a = grid(20, 10, [{ left: 0, top: 0, right: 4, bottom: 4 }, { left: 10, top: 0, right: 14, bottom: 4 }]);
+    expect(labelComponentsMerged(a, 20, 10, 1, 0)).toHaveLength(2);
+    expect(labelComponentsMerged(a, 20, 10, 1, 0)).toEqual(labelComponents(a, 20, 10, 1));
+  });
+
+  it('三方链式合并：A-B 近、B-C 近、A-C 远 → 全并为一', () => {
+    const a = grid(60, 10, [
+      { left: 0, top: 0, right: 4, bottom: 4 },
+      { left: 10, top: 0, right: 14, bottom: 4 },
+      { left: 20, top: 0, right: 24, bottom: 4 },
+    ]);
+    const boxes = labelComponentsMerged(a, 60, 10, 1, 3);
+    expect(boxes).toHaveLength(1);
+    expect(boxes[0].right).toBe(24);
+  });
+
+  it('噪点过滤在合并后仍生效：孤立小块不因膨胀吸附远处元素', () => {
+    // 大块 8x8 与 40px 外的 1x1 噪点：膨胀 r=3 不接触，噪点被 minArea 过滤
+    const a = grid(60, 20, [{ left: 0, top: 0, right: 8, bottom: 8 }, { left: 48, top: 0, right: 49, bottom: 1 }]);
+    const boxes = labelComponentsMerged(a, 60, 20, 20, 3);
+    expect(boxes).toHaveLength(1);
+    expect(boxes[0].right).toBe(8);
+  });
+
+  it('findElementBounds 集成：视觉一个图标（两笔细缝 6px）→ 一个边界框', () => {
+    const buf = rgba(100, 40, [
+      { left: 10, top: 10, right: 40, bottom: 14 },   // 横笔
+      { left: 10, top: 20, right: 40, bottom: 24 },   // 横笔（与上一笔隔 6px）
+      { left: 70, top: 10, right: 90, bottom: 24 },   // 远处的另一个元素
+    ]);
+    const boxes = findElementBounds(buf, 100, 40, { factor: 1, minAreaPx: 1, mergeGapPx: 10 });
+    expect(boxes).toHaveLength(2);
+    expect(boxes[0]).toMatchObject({ left: 10, top: 10, right: 40, bottom: 24 });  // 两笔合为一
+  });
+
+  it('mergeGapPx=0 关闭合并（旧行为）', () => {
+    const buf = rgba(100, 40, [
+      { left: 10, top: 10, right: 40, bottom: 14 },
+      { left: 10, top: 20, right: 40, bottom: 24 },
+    ]);
+    expect(findElementBounds(buf, 100, 40, { factor: 1, minAreaPx: 1, mergeGapPx: 0 })).toHaveLength(2);
+  });
+});
+
+describe('自适应合并（mergeGapPx:"auto"，按间隙分布定阈值）', () => {
+  // 布局：一个"图标"由 3 块 10x10 组成（缝 6px），另一个独立块距它 40px
+  const layout = [
+    { left: 0, top: 0, right: 10, bottom: 10 },
+    { left: 16, top: 0, right: 26, bottom: 10 },
+    { left: 32, top: 0, right: 42, bottom: 10 },
+    { left: 82, top: 0, right: 92, bottom: 10 },
+  ];
+  // 同布局整体放大 s 倍
+  const scale = (rects, s) => rects.map((r) => ({
+    left: r.left * s, top: r.top * s, right: r.right * s, bottom: r.bottom * s,
+  }));
+
+  it('小尺寸：内部细缝合并、独立元素分开', () => {
+    const buf = rgba(100, 20, layout);
+    const boxes = findElementBounds(buf, 100, 20, { factor: 1, minAreaPx: 1 });   // 默认 auto
+    expect(boxes).toHaveLength(2);
+  });
+
+  it('尺度不变：同布局放大 10 倍，结果仍为 2 个元素', () => {
+    const buf = rgba(1000, 200, scale(layout, 10));
+    const boxes = findElementBounds(buf, 1000, 200, { factor: 1, minAreaPx: 1 });
+    expect(boxes).toHaveLength(2);
+  });
+
+  it('无明显双峰（等距排布）→ 保守不误并', () => {
+    // 四块等距 30px，彼此间距完全相同：无双峰，退化为保守相对值，保持 4 块
+    const buf = rgba(160, 10, [
+      { left: 0, top: 0, right: 10, bottom: 10 },
+      { left: 40, top: 0, right: 50, bottom: 10 },
+      { left: 80, top: 0, right: 90, bottom: 10 },
+      { left: 120, top: 0, right: 130, bottom: 10 },
+    ]);
+    expect(findElementBounds(buf, 160, 10, { factor: 1, minAreaPx: 1 })).toHaveLength(4);
+  });
+
+  it('重度碎片化场景（NN 统计失效）：两个图标各由 3 片组成，片间距远小于图标间距', () => {
+    // 图标1：x 0-20 / 40-60 / 80-100（缝 20px）；图标2：x 500-520 / 540-560 / 580-600
+    // 每一片的最近邻都是自己图标的相邻片 → NN 统计里根本没有 380px 的图标间距（旧算法因此失效）
+    const rects = [0, 40, 80, 500, 540, 580].map((x) => ({ left: x, top: 5, right: x + 20, bottom: 25 }));
+    const buf = rgba(640, 30, rects);
+    const boxes = findElementBounds(buf, 640, 30, { factor: 1, minAreaPx: 1 });
+    expect(boxes).toHaveLength(2);
+    expect(boxes[0]).toMatchObject({ left: 0, right: 100 });      // 图标1 三片合一
+    expect(boxes[1]).toMatchObject({ left: 500, right: 600 });    // 图标2 三片合一
+  });
+
+  it('规则网格布局（3 行×4 列，行距小于列距）→ 按格分割不合并', () => {
+    // 行间距 20、列间距 80：间隙分布双峰、切割点会按列粘连——但网格检测应阻止合并
+    const rects = [];
+    for (let r = 0; r < 3; r++)
+      for (let c = 0; c < 4; c++)
+        rects.push({ left: c * 130, top: r * 110, right: c * 130 + 110, bottom: r * 110 + 90 });
+    const buf = rgba(530, 350, rects);
+    const info = {};
+    const boxes = findElementBounds(buf, 530, 350, { factor: 1, minAreaPx: 1, info });
+    expect(boxes).toHaveLength(12);
+    expect(info.grid).toBe(true);
+  });
+
+  it('碎片散布（非网格）不受网格检测影响，仍合并', () => {
+    // 3 片同属一个"图标"（横向错落、纵向也不对齐），远处 1 片
+    const buf = rgba(300, 200, [
+      { left: 10, top: 10, right: 50, bottom: 50 },
+      { left: 60, top: 30, right: 100, bottom: 70 },
+      { left: 30, top: 90, right: 70, bottom: 130 },
+      { left: 240, top: 10, right: 280, bottom: 50 },
+    ]);
+    const boxes = findElementBounds(buf, 300, 200, { factor: 1, minAreaPx: 1 });
+    expect(boxes).toHaveLength(2);
+  });
+
+  it('gap=0 完全关闭合并（纯连通域）', () => {
+    const buf = rgba(100, 20, layout);
+    expect(findElementBounds(buf, 100, 20, { factor: 1, minAreaPx: 1, mergeGapPx: 0 })).toHaveLength(4);
+  });
+
+  it('合并后的边界为原始块并集（不外扩）', () => {
+    const buf = rgba(100, 20, layout);
+    const boxes = findElementBounds(buf, 100, 20, { factor: 1, minAreaPx: 1 });
+    expect(boxes[0]).toMatchObject({ left: 0, top: 0, right: 42, bottom: 10 });
+    expect(boxes[1]).toMatchObject({ left: 82, top: 0, right: 92, bottom: 10 });
+  });
+});
+
+describe('不透明实底图（无 alpha，底色分离模式）', () => {
+  /** 全不透明白底图，把矩形涂成指定颜色 */
+  function opaque(w, h, rects, color = [200, 60, 60], bg = [255, 255, 255]) {
+    const buf = new Uint8Array(w * h * 4);
+    for (let i = 0; i < w * h; i++) {
+      buf[i * 4] = bg[0]; buf[i * 4 + 1] = bg[1]; buf[i * 4 + 2] = bg[2]; buf[i * 4 + 3] = 255;
+    }
+    for (const r of rects) {
+      for (let y = r.top; y < r.bottom; y++)
+        for (let x = r.left; x < r.right; x++) {
+          const i = (y * w + x) * 4;
+          buf[i] = color[0]; buf[i + 1] = color[1]; buf[i + 2] = color[2]; buf[i + 3] = 255;
+        }
+    }
+    return buf;
+  }
+
+  it('白底不透明图上的两个色块 → 2 个元素（旧逻辑会并成 1 块）', () => {
+    const buf = opaque(100, 50, [
+      { left: 5, top: 5, right: 30, bottom: 30 },
+      { left: 60, top: 10, right: 90, bottom: 40 },
+    ]);
+    const info = {};
+    const boxes = findElementBounds(buf, 100, 50, { factor: 1, minAreaPx: 1, info });
+    expect(boxes).toHaveLength(2);
+    expect(info.mode).toBe('color');
+  });
+
+  it('整图与底色几乎同色 → 退回整层一个元素（而非 0 个）', () => {
+    // 色块 (250,250,250) 与白底 (255,255,255) 差 5 < 容差 24 → 分离后无内容 → 整层 1 个
+    const buf = opaque(100, 50, [{ left: 5, top: 5, right: 30, bottom: 30 }], [250, 250, 250]);
+    expect(findElementBounds(buf, 100, 50, { factor: 1, minAreaPx: 1 })).toHaveLength(1);
+  });
+
+  it('底色分离后仍走自适应合并：碎片化的图标并回一个', () => {
+    // 白底上一个"图标"由两片组成（缝 4px），远处另一个独立片
+    const buf = opaque(100, 30, [
+      { left: 5, top: 5, right: 25, bottom: 25 },
+      { left: 29, top: 5, right: 49, bottom: 25 },
+      { left: 80, top: 5, right: 95, bottom: 25 },
+    ]);
+    const boxes = findElementBounds(buf, 100, 30, { factor: 1, minAreaPx: 1 });
+    expect(boxes).toHaveLength(2);
+    expect(boxes[0]).toMatchObject({ left: 5, right: 49 });
+  });
+
+  it('有透明的图仍走 alpha 模式（回归）', () => {
+    const buf = rgba(100, 50, [{ left: 5, top: 5, right: 30, bottom: 30 }]);   // 透明底
+    const info = {};
+    findElementBounds(buf, 100, 50, { factor: 1, minAreaPx: 1, info });
+    expect(info.mode).toBe('alpha');
   });
 });
 

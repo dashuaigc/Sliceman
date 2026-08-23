@@ -89,6 +89,7 @@ export async function smartSplitLayer(sourceLayerId, opts = {}) {
   const onProgress = opts.onProgress || (() => {});
   const onStep = opts.onStep || (() => {});
   const shouldStop = opts.shouldStop || (() => false);
+  const mergeFragments = opts.merge !== false;   // 面板「合并相近碎片」开关（默认开）
   const srcDoc = app.activeDocument;
   if (!srcDoc) throw new Error('请先打开一个 PSD 文档');
   const srcDocId = srcDoc.id;
@@ -127,14 +128,16 @@ export async function smartSplitLayer(sourceLayerId, opts = {}) {
       await px.imageData.dispose();
       onStep(`4 读像素 ok 字节 ${rgba.length}`);
 
-      // 3) 连通域标记 → 各块边界框（加上图层在画布中的偏移）。纯 JS，不改 PS 状态。
-      const boxes = findElementBounds(rgba, width, height, { factor: 2, minAreaPx: 64 })
+      // 3) 连通域标记（自适应合并）→ 各块边界框（加上图层在画布中的偏移）。纯 JS，不改 PS 状态。
+      //    mergeGapPx：'auto'=自适应（细缝并回、网格按格分割）；0=纯连通域（面板关闭「合并相近碎片」）
+      const mergeInfo = {};
+      const boxes = findElementBounds(rgba, width, height, { factor: 2, minAreaPx: 64, mergeGapPx: mergeFragments ? 'auto' : 0, info: mergeInfo })
         .map((r) => ({
           left: r.left + b.left, top: r.top + b.top,
           right: r.right + b.left, bottom: r.bottom + b.top,
         }));
-      onStep(`5 连通域识别 ${boxes.length} 块`);
-      if (boxes.length <= 1) return { created: 0, blocks: boxes.length };
+      onStep(`5 连通域识别 ${boxes.length} 块（合并前 ${mergeInfo.components} 块，阈值 ${mergeInfo.thresholdPx}px）`);
+      if (boxes.length <= 1) return { created: 0, blocks: boxes.length, mergeInfo };
 
       // 4) 逐块：选区 copy → paste 临时层 → duplicate 回原文档 → 删临时层。底稿层不动。
       let created = 0;
@@ -164,7 +167,7 @@ export async function smartSplitLayer(sourceLayerId, opts = {}) {
         }
         onProgress(i + 1, boxes.length);
       }
-      return { created, blocks: boxes.length };
+      return { created, blocks: boxes.length, mergeInfo };
     }, { commandName: '智能分割' });
   } finally {
     // 无论成功/失败/中途出错：关掉临时工作文档并切回原 PSD，不留下新文档
