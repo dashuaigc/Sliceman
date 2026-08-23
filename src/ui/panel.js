@@ -359,12 +359,17 @@ async function runSmartSplit() {
   let lastStep = '尚未开始';
   setStatus('正在识别连通元素…');
   try {
-    const { created, blocks } = await smartSplitLayer(layer.id, {
+    const { created, blocks, mergeInfo } = await smartSplitLayer(layer.id, {
+      merge: document.getElementById('splitMerge').checked,
       onStep: (msg) => { lastStep = msg; },
       onProgress: (done, total) => setStatus(`分割中… ${done}/${total} 块`),
     });
-    if (blocks <= 1) setStatus(`只识别到 ${blocks} 个连通元素，无需分割\n（最后一步：${lastStep}）`);
-    else setStatus(`完成：识别 ${blocks} 个元素，已新建 ${created} 个独立图层（原图层未改动）`);
+    // 诊断信息：连通块数与自适应阈值（新代码标识；老版本不会显示这行）
+    const diag = mergeInfo && mergeInfo.components != null
+      ? `\n连通 ${mergeInfo.components} 块 → ${mergeInfo.grid ? '网格布局，按格分割' : `自适应阈值 ${mergeInfo.thresholdPx ?? '—'}px`}`
+      : '';
+    if (blocks <= 1) setStatus(`只识别到 ${blocks} 个元素，无需分割${diag}\n（最后一步：${lastStep}）`);
+    else setStatus(`完成：识别 ${blocks} 个元素，已新建 ${created} 个独立图层（原图层未改动）${diag}`);
   } catch (e) {
     setStatus(`分割失败：${errMsg(e)}\n（最后成功的一步：${lastStep}）`);
   } finally {
@@ -514,6 +519,7 @@ function setupSwitch(id, initial, onChange) {
 setupSwitch('includeHidden', true);
 setupSwitch('fullBleed', true);
 setupSwitch('selectedOnly', false);
+setupSwitch('splitMerge', true);
 
 // ---- 功能页切换：前三张磁贴切换 UI，「更多功能」不绑定操作 ----
 const tiles = Array.from(document.querySelectorAll('.tile'));

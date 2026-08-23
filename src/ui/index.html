@@ -122,7 +122,20 @@
       <!-- 智能分割说明（仅智能分割页显示） -->
       <section class="card" id="splitIntro" style="display:none;">
         <h3 class="card-title">智能分割说明</h3>
-        <p class="hint">在图层面板<b>选中一个像素图层</b>（如拼合的素材图 / 多元素图层），插件自动识别其中<b>互不相连的内容块</b>，把每一块复制成<b>独立图层</b>（按从上到下、每行从左到右的顺序，依次命名为 0、1、2…）。<br>原图层保持不变，可放心撤销。</p>
+        <p class="hint">在图层面板<b>选中一个像素图层</b>（如拼合的素材图 / 多元素图层），插件自动识别其中<b>互不相连的内容块</b>，把每一块复制成<b>独立图层</b>（按从上到下、每行从左到右的顺序，依次命名为 0、1、2…）。<br>同一元素内部有细缝的笔画会自动并回（合并距离按本图自适应推导）；规则排列的字符表/雪碧图自动按格分割、不做合并；<br>原图层保持不变，可放心撤销。</p>
+        <div class="switch-row" style="margin-top:10px;">
+          <svg class="row-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="merge">
+  <g fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="34" cy="34" r="14"/>
+    <circle cx="94" cy="34" r="14"/>
+    <circle cx="34" cy="94" r="14"/>
+    <circle cx="94" cy="94" r="14"/>
+    <path d="M48 34 H80 M48 94 H80 M34 48 V80 M94 48 V80"/>
+  </g>
+</svg>
+          <span class="row-label">合并相近碎片</span>
+          <div class="switch on" id="splitMerge"><svg class="sw" viewBox="0 0 44 24" xmlns="http://www.w3.org/2000/svg"><rect class="sw-track" x="12" y="0" width="20" height="24"/><circle class="sw-track" cx="12" cy="12" r="12"/><circle class="sw-track" cx="32" cy="12" r="12"/><circle class="sw-knob sw-off" cx="12" cy="12" r="9"/><circle class="sw-knob sw-on" cx="32" cy="12" r="9"/></svg></div>
+        </div>
       </section>
 
       <!-- 批量转智能对象说明（仅智能对象页显示） -->
