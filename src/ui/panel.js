@@ -6,7 +6,8 @@ import { buildBaseName, makeUniqueName } from '../lib/naming.js';
 import { normalize } from '../lib/normalize.js';
 import { readDocumentTree } from '../ps/layer-tree.js';
 import { exportTask, exportSymbol, beginExport, endExport } from '../ps/exporter.js';
-import { buildPreview, applyRename } from '../ps/renamer.js';
+import { hasCounter, buildRenameRows } from '../lib/rename-core.js';
+import { readItemIndexes, applyRename } from '../ps/renamer.js';
 import { smartSplitLayer } from '../ps/smart-split.js';
 import { convertToSmartObjects } from '../ps/smart-object.js';
 import manifest from '../manifest.json';
@@ -424,43 +425,148 @@ async function runSmartObjects() {
 
 smartObjBtn.addEventListener('click', () => { runSmartObjects(); });
 
-// ---- 批量增加前缀：输入即预览 ----
-const prefixInput = document.getElementById('prefix');
+// ---- 批量重命名：替换 / 重新命名 / 加前缀 / 加后缀 + n 连续编号，输入即预览 ----
 const previewList = document.getElementById('previewList');
+const findInput = document.getElementById('findText');
+const templateInput = document.getElementById('templateText');
+const startInput = document.getElementById('startNum');
+const stepInput = document.getElementById('stepNum');
+const counterSwitchEl = document.getElementById('counterSwitch');
+const MODE_LABEL = { replace: '替换为', new: '新名称', prefix: '前缀', suffix: '后缀' };
+const MODE_PLACEHOLDER = { replace: '如 Icon_n', new: '如 Button_n', prefix: '如 UI_', suffix: '如 _n' };
+let renameMode = 'replace';               // replace | new | prefix | suffix
 
-function renderPreview() {
-  const layers = selectedLayers();
+// 图层名进 innerHTML 前转义，防名字里的 <>& 被当标签
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+function readRenameCfg() {
+  const active = (boxId, attr) => {
+    const a = document.querySelector(`#${boxId} .pill.active`);
+    return a ? a.getAttribute(attr) : null;
+  };
+  const toInt = (v, dflt) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : dflt; };
+  return {
+    mode: renameMode,
+    find: findInput.value,
+    template: templateInput.value,
+    counter: !!counterSwitchEl.checked,                      // 显式开关，不从模板猜
+    start: toInt(startInput.value, 1),
+    step: toInt(stepInput.value, 1),
+    digits: parseInt(active('digitsPills', 'data-digits'), 10) || 0,   // 自动=0 不补零
+  };
+}
+
+// 选中层按图层面板顺序排序（编号与预览都按此序）：
+// 主路：一次 batchPlay 读回 itemIndex（自面板底部向上递增 → 从上到下 = 降序）；
+// 兜底：itemIndex 读不到时按 doc.layers 遍历序（UXP 面板序，首个=最上）。
+async function sortedSelectedLayers() {
+  const sel = selectedLayers();
+  if (sel.length <= 1) return sel;
+  const up = document.querySelector('#dirPills .pill.active')?.getAttribute('data-dir') === 'up';
+  const idx = await readItemIndexes(sel.map((l) => l.id));
+  if (idx.size === sel.length) {
+    return sel.slice().sort((a, b) => (idx.get(a.id) - idx.get(b.id)) * (up ? 1 : -1));
+  }
+  try {
+    const order = [];
+    (function walkIds(cont) {
+      for (const l of cont.layers || []) { order.push(l.id); walkIds(l); }
+    })(app.activeDocument);
+    const pos = new Map(order.map((id, i) => [id, i]));
+    const sorted = sel.slice().sort((a, b) => (pos.get(a.id) ?? 0) - (pos.get(b.id) ?? 0));
+    return up ? sorted.reverse() : sorted;
+  } catch { return sel; }
+}
+
+// 模式相关字段显隐 + 标签/占位文案（编号设置区由「启用编号 n」开关控制）
+function updateRenameFields() {
+  show('findBlock', renameMode === 'replace');
+  document.getElementById('templateLabel').textContent = MODE_LABEL[renameMode];
+  templateInput.setAttribute('placeholder', MODE_PLACEHOLDER[renameMode]);
+  document.getElementById('counterBlock').style.display = counterSwitchEl.checked ? '' : 'none';
+}
+
+let renderSeq = 0;   // 连续输入时只保留最后一次异步渲染的结果
+async function renderRenamePreview() {
+  const seq = ++renderSeq;
+  updateRenameFields();
+  const layers = await sortedSelectedLayers();
+  if (seq !== renderSeq) return;                     // 已被更新的渲染取代
   if (!layers.length) { previewList.innerHTML = '<i>未选中图层或组</i>'; return; }
-  const rawPrefix = prefixInput.value;
-  if (!rawPrefix) {
-    // 前缀为空：预览就是原名（不变）
-    previewList.innerHTML = layers.map(l => `<div>${l.name}</div>`).join('');
+  const cfg = readRenameCfg();
+  // 必填输入为空：预览退化为原名（替换模式要填查找，其它模式要填模板）
+  const inputReady = cfg.mode === 'replace' ? !!cfg.find : !!cfg.template;
+  if (!inputReady) {
+    previewList.innerHTML = layers.map((l) => `<div>${esc(l.name)}</div>`).join('');
     return;
   }
-  const rows = buildPreview(layers.map(l => l.name), rawPrefix);
-  previewList.innerHTML = rows.map(r =>
-    `<div>${r.from} &nbsp;→&nbsp; <b>${r.to}</b>${r.dup ? ' <span class="dup">⚠同名</span>' : ''}</div>`
+  const rows = buildRenameRows(layers.map((l) => l.name), cfg);
+  // 开着编号但模板里没有独立的 n：提示一句，避免"怎么没编号"的困惑（不阻止执行）
+  const hint = cfg.counter && cfg.template && !hasCounter(cfg.template)
+    ? '<i>已启用编号，但模板里没有独立的 n（Button/Icon 里的 n 不算），编号不会出现</i>'
+    : '';
+  previewList.innerHTML = hint + rows.map((r) => r.unmatched
+    ? `<div>${esc(r.from)} <span class="dup">未找到「${esc(cfg.find)}」</span></div>`
+    : `<div>${esc(r.from)} &nbsp;→&nbsp; <b>${esc(r.to)}</b>${r.dup ? ' <span class="dup">⚠同名</span>' : ''}</div>`
   ).join('');
 }
 
 async function runRename() {
-  const layers = selectedLayers();
-  if (!layers.length) return setStatus('请先在图层面板选中图层或组');
-  const rawPrefix = prefixInput.value;
-  if (!rawPrefix) return setStatus('请先输入前缀');
-  const n = await applyRename(layers, rawPrefix);
-  setStatus(`已重命名 ${n} 个图层/组`);
-  renderPreview();                                     // 刷新为新名
+  const layers = await sortedSelectedLayers();
+  if (!layers.length) return setStatus('请先选择需要重命名的图层');
+  const cfg = readRenameCfg();
+  if (cfg.mode === 'replace' && !cfg.find) return setStatus('请输入查找内容');
+  if (cfg.mode !== 'replace' && !cfg.template) return setStatus(`请输入${MODE_LABEL[cfg.mode]}`);
+  const rows = buildRenameRows(layers.map((l) => l.name), cfg);
+  const unmatched = rows.filter((r) => r.unmatched).length;
+  if (unmatched === rows.length) {
+    return setStatus(`选中的 ${rows.length} 个图层名称中都没有「${cfg.find}」，未做修改`);
+  }
+  // 只写回真正会变化的行（未匹配/同名不变/替换后为空 都不动）
+  const pairs = [];
+  rows.forEach((r, i) => {
+    if (!r.unmatched && r.to && r.to !== r.from) pairs.push({ id: layers[i].id, name: r.to });
+  });
+  if (!pairs.length) return setStatus('没有需要修改的图层（新名称与原名称相同）');
+  const { renamed, failed } = await applyRename(pairs);
+  const parts = [`已重命名 ${renamed} 个图层/组`];
+  if (unmatched) parts.push(`${rows.length} 个中有 ${unmatched} 个未找到匹配内容`);
+  if (failed) parts.push(`${failed} 个无法重命名`);
+  setStatus(parts.join('，'));
+  renderRenamePreview();                             // 刷新为新名
 }
 
-// 输入前缀即时预览；聚焦时也刷新一次
-prefixInput.addEventListener('input', renderPreview);
-prefixInput.addEventListener('focus', renderPreview);
+// 一组 pill 单选：点选切换 .active 并回调
+function bindPillGroup(containerId, attr, onChange) {
+  const box = document.getElementById(containerId);
+  if (!box) return;
+  Array.from(box.querySelectorAll('.pill')).forEach((p) => {
+    p.addEventListener('click', () => {
+      Array.from(box.querySelectorAll('.pill')).forEach((q) => q.classList.remove('active'));
+      p.classList.add('active');
+      onChange(p.getAttribute(attr));
+    });
+  });
+}
+bindPillGroup('renameModePills', 'data-mode', (m) => { renameMode = m; renderRenamePreview(); });
+bindPillGroup('digitsPills', 'data-digits', () => renderRenamePreview());
+bindPillGroup('dirPills', 'data-dir', () => renderRenamePreview());
+setupSwitch('counterSwitch', false, () => renderRenamePreview());   // 编号开关：默认关
+
+// 输入即时预览；聚焦时也刷新一次
+findInput.addEventListener('input', renderRenamePreview);
+findInput.addEventListener('focus', renderRenamePreview);
+templateInput.addEventListener('input', renderRenamePreview);
+templateInput.addEventListener('focus', renderRenamePreview);
+startInput.addEventListener('input', renderRenamePreview);
+stepInput.addEventListener('input', renderRenamePreview);
+startInput.value = '1';                               // sp-textfield 的 value 属性不可靠，用 JS 赋初值
+stepInput.value = '1';
 
 // 图层选择变化时，实时刷新预览（best-effort，不支持则忽略）
 (async () => {
   try {
-    await action.addNotificationListener(['select'], () => renderPreview());
+    await action.addNotificationListener(['select'], () => renderRenamePreview());
   } catch { /* 某些版本不触发 select 通知，靠输入/聚焦刷新 */ }
 })();
 
@@ -591,6 +697,6 @@ pickFolderBtn.addEventListener('click', async () => {
 const versionEl = document.getElementById('version');
 if (versionEl) versionEl.textContent = 'v' + manifest.version;
 
-renderPreview();                                       // 初始渲染一次
+renderRenamePreview();                                // 初始渲染一次
 updateSliceLabel();                                    // 初始化主按钮文字
 setStatus('插件已加载');
