@@ -1,6 +1,6 @@
 # Sliceman
 
-Photoshop UXP 切图插件：把当前 PSD 按图层/组一键切成规范命名的 PNG，附带批量前缀重命名工具。
+Photoshop UXP 切图插件：把当前 PSD 按图层/组一键切成规范命名的 PNG，附带批量重命名图层工具。
 
 ## 功能
 
@@ -9,7 +9,7 @@ Photoshop UXP 切图插件：把当前 PSD 按图层/组一键切成规范命名
 - **规范命名**：`[项目名_]PSD名_组名(逐层)_图层名`，`_` 分隔；中文取拼音首字母、全小写、去空格与符号；重名自动加 `_2/_3`，不覆盖磁盘旧文件。
 - **项目名称**：可选、记住上次输入、也走拼音规范化。
 - **两个开关**：包含隐藏图层（默认关）、完整切出超出画布部分（默认开）。
-- **批量前缀重命名**：给选中图层/组批量加规范化后的前缀（原名不变、直接拼接），改前弹预览、可撤销。
+- **批量重命名图层**：对选中图层/组按「替换 / 重新命名 / 加前缀 / 加后缀」四种模式批量改名；「启用编号 n」开关打开后，模板中独立的 `n` 按连续数字展开（如 `Button_n`、起始 3、递增 2 → Button_3、5、7、9…），可设起始数字、递增数字、数字位数（自动/1–4 位补零）、命名方向（面板从上到下/从下到上）；开关关闭时 n 是普通字母。实时预览原名称 → 新名称，整个批量合并为一条历史，Ctrl+Z 一步撤销（`doc.suspendHistory`）。
 
 ## 开发环境
 
@@ -21,7 +21,7 @@ Photoshop UXP 切图插件：把当前 PSD 按图层/组一键切成规范命名
 
 ```bash
 npm install        # 安装依赖
-npm test           # 运行纯逻辑单测（normalize / naming / traversal / buildPreview）
+npm test           # 运行纯逻辑单测（normalize / naming / traversal / rename-core）
 npm run build      # 打包出可加载的插件目录 dist/plugin/
 ```
 
@@ -52,12 +52,13 @@ npm run build      # 打包出可加载的插件目录 dist/plugin/
 | `src/lib/normalize.js` | 单段规范化（拼音首字母 + slug） | ✅ |
 | `src/lib/naming.js` | 文件名拼接 + 占位兜底 + 去重 | ✅ |
 | `src/lib/traversal.js` | 图层树遍历，产出导出任务（红/蓝/默认规则） | ✅ |
-| `src/ps/renamer.js` | `buildPreview`（✅ 单测）+ 选中读取/写回（PS，手动验证） | 部分 |
+| `src/lib/rename-core.js` | 批量重命名纯逻辑（四种模式 + n 编号 + 预览行） | ✅ |
+| `src/ps/renamer.js` | 图层面板顺序读取 + 批量改名写回（PS，手动验证） | 手动验证 |
 | `src/ps/layer-tree.js` | 读文档图层树为纯数据（含颜色标记、id） | 手动验证 |
 | `src/ps/exporter.js` | 临时文档 + mergeVisible 隔离 + trim + 存 PNG | 手动验证 |
 | `src/ui/` | 面板 HTML/CSS/JS | 手动验证 |
 
-纯逻辑（`src/lib/*`、`renamer` 的 `buildPreview`）在 Node 下用 vitest 覆盖；`src/ps/*` 与 UI 依赖 Photoshop 运行时，需在 UDT 里对真实 PSD 手动验证。
+纯逻辑（`src/lib/*`）在 Node 下用 vitest 覆盖；`src/ps/*` 与 UI 依赖 Photoshop 运行时，需在 UDT 里对真实 PSD 手动验证。
 
 ## 手动验证清单（在 Photoshop 里）
 
@@ -66,7 +67,7 @@ npm run build      # 打包出可加载的插件目录 dist/plugin/
   - [ ] 蓝组内嵌套**红色组**（不只是红色图层）也被排除
   - [ ] 单图层任务的 `mergeVisible`（仅一个可见层）不报错、正常输出
 - [ ] 端到端切图：命名/去重/红蓝规则/隐藏开关全部符合（Task 7）
-- [ ] 前缀重命名：预览 `原名→前缀+原名`、只改组名、同名标注、确认写回、Ctrl+Z 一步撤销（Task 9）
+- [ ] 批量重命名：四模式预览与写回、n 编号（起始/位数/方向按面板序）、未匹配层跳过并提示、Ctrl+Z 一步撤销
 - [ ] `.ccx` 双击安装可用（Task 10）
 
 设计与计划见 `docs/superpowers/specs/` 与 `docs/superpowers/plans/`。

@@ -193,6 +193,12 @@ sp-textfield {
 /* ---------- 重命名页 ---------- */
 .field-block label { display: block; font-size: 13px; color: #d5e3ef; margin-bottom: 8px; }
 .label-sub { color: #6f8aa3; font-size: 11px; }
+.field-block + .field-block { margin-top: 12px; }
+#counterBlock { margin-top: 12px; }                   /* 编号设置区：检测到 n 才显示 */
+/* pill 横排容器（方式/位数/方向单选） */
+.pill-row { display: flex; flex-wrap: wrap; }
+.pill-row .pill { margin: 0 6px 0 0; }
+.pill-row .pill:last-child { margin-right: 0; }
 .preview-block { margin-top: 14px; }
 .preview-head { font-size: 13px; color: #d5e3ef; margin-bottom: 8px; }
 .preview {
