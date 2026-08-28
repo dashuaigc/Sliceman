@@ -74,7 +74,12 @@ body {
 .card-title { margin: 0 0 10px; font-size: 14px; font-weight: 600; color: #e9f2f9; }
 .card-head { display: flex; align-items: baseline; margin-bottom: 10px; }
 .card-head .card-title { margin: 0; }
-.card-sub { margin-left: 8px; font-size: 12px; color: #6f8aa3; }
+/* 标题 + 输入框同一行：标题不压缩，输入框吃掉剩余宽度。
+   flex 项是外层 div、sp-textfield 靠全局 width:100% 撑满 —— 和 .field-col 同一套已验证写法，
+   不让 sp-textfield 这种自定义元素直接当 flex 项 */
+.card-head-inline { align-items: center; margin-bottom: 0; }
+.card-head-inline .card-title { flex: 0 0 auto; }
+.card-head-inline .head-field { flex: 1 1 0; min-width: 0; margin-left: 10px; }
 
 /* 说明文字 */
 .hint { margin: 0; font-size: 12px; line-height: 1.7; color: #9bb2c6; }
@@ -82,6 +87,27 @@ body {
 .hint .tag-red { color: #e0555c; }
 .hint .tag-blue { color: #4aa3ff; }
 .link { display: inline-block; margin-top: 8px; font-size: 12px; color: #2fc6d6; cursor: pointer; }
+
+/* 切图方式的悬停说明：绝对定位浮在下方卡片之上，出现/消失都不挤动布局。
+   项目名称（sp-textfield，UXP 原生控件、不吃 z-index）排在切图方式之上，不在提示的覆盖范围里 */
+#sliceModeCard { position: relative; z-index: 10; }
+.mode-tip {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  padding: 10px 12px;
+  background: #0d2438;
+  border: 1px solid #22d3e0;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #b9cbdb;
+  z-index: 40;
+  pointer-events: none;              /* 提示框本身不吃鼠标，移出选项即消失，不会自我遮挡 */
+}
+.mode-tip .tip-title { display: block; margin-bottom: 4px; font-weight: 600; color: #e9f2f9; }
 
 /* 输入框：撑满一行 */
 sp-textfield {
@@ -91,6 +117,9 @@ sp-textfield {
 }
 
 /* ---------- 功能中心磁贴 ---------- */
+/* 无标题、无外框：磁贴自身就是全部视觉，只留和卡片一致的下外边距 */
+.tiles-section { margin-bottom: 10px; }
+/* 四个功能并排一行：磁贴等分剩余宽度，图标与文字都按窄面板压缩 */
 .tiles { display: flex; }
 .tile {
   flex: 1 1 0;
@@ -99,26 +128,33 @@ sp-textfield {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin: 0 4px;
-  padding: 12px 4px;
+  margin: 0 3px;
+  padding: 7px 2px;
   background: #0c2137;
   border: 1px solid #17344e;
-  border-radius: 10px;
+  border-radius: 8px;
   cursor: pointer;
 }
 .tiles .tile:first-child { margin-left: 0; }
 .tiles .tile:last-child { margin-right: 0; }
 .tile > * { pointer-events: none; }       /* 子元素不拦截点击，点直达磁贴 */
-.tile-icon { width: 34px; height: 34px; flex: 0 0 auto; }
-.tile-label { margin-top: 8px; font-size: 11px; line-height: 1.25; text-align: center; color: #c3d4e2; }
+.tile-icon { width: 22px; height: 22px; flex: 0 0 auto; }
+/* 名称保持完整，窄面板下允许折成两行；磁贴等高由 flex 默认 stretch 保证，图标仍横向对齐 */
+.tile-label {
+  margin-top: 5px;
+  font-size: 10px;
+  line-height: 1.25;
+  text-align: center;
+  color: #c3d4e2;
+  max-width: 100%;
+  word-break: break-all;             /* 「Symbols 切图」这类含拉丁词的标签也能断开，不撑宽磁贴 */
+}
+/* 选中态：只靠青色描边 + 略深底色高亮，不再画右上角对勾 */
 .tile.active {
   background: #0e2c47;
   border-color: #22d3e0;
 }
 .tile.active .tile-label { color: #eaf7fb; }
-/* 角标：svg 已裁掉四周留白让青圆充满；padding-box 定位下 top/right:0 即贴磁贴右上角 */
-.tile-check { position: absolute; top: 1px; right: 1px; width: 12px; height: 12px; display: none; }
-.tile.active .tile-check { display: block; }
 
 /* ---------- 开关行 ---------- */
 .switch-row { display: flex; align-items: center; padding: 10px 2px; }
@@ -149,30 +185,94 @@ sp-textfield {
 .setting-row + .setting-row { border-top: 1px solid #12293f; }
 .setting-row .row-label { flex: 0 0 auto; }
 .setting-value { margin-left: auto; display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
-.path-text {
-  font-size: 12px;
-  color: #aebfce;
-  max-width: 150px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.dots {
+/* 导出设置一行：位置(图标) + 格式下拉 + 倍率下拉 */
+.export-row { display: flex; align-items: center; padding: 2px; }
+.export-row .row-label { flex: 0 0 auto; margin-left: 0; }
+/* 与两个下拉等宽：三者都 flex:1 1 0，平分「位置」标签之后的剩余宽度 */
+.folder-btn {
+  flex: 1 1 0;
+  min-width: 0;
   margin-left: 8px;
-  width: 32px;
-  height: 24px;
-  display: inline-flex;
+  height: 26px;
+  display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
-  line-height: 1;
-  color: #aebfce;
   border: 1px solid #24425c;
   border-radius: 6px;
   cursor: pointer;
 }
-.dots-ico { width: 20px; height: 20px; pointer-events: none; }
-.dots circle { fill: #aebfce; }
+.folder-btn > * { pointer-events: none; }
+.folder-ico { width: 18px; height: 18px; }
+/* 选中文件夹后顶掉图标：框内只放缩略名，完整路径走 .path-tip 悬停提示 */
+.folder-text {
+  max-width: 100%;
+  padding: 0 5px;
+  font-size: 11px;
+  color: #9fb3c6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 完整路径提示：向上浮出，覆盖的是上面的开关卡片（普通 DOM，不涉及原生控件层级） */
+#exportSettingsCard { position: relative; }
+.path-tip {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  margin-bottom: 4px;
+  padding: 8px 10px;
+  background: #0d2438;
+  border: 1px solid #22d3e0;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #b9cbdb;
+  word-break: break-all;             /* 长路径按字符折行，不撑破提示框 */
+  z-index: 40;
+  pointer-events: none;
+}
+
+/* 自绘下拉：UXP 下 sp-picker/原生 select 不稳，用 div 画。
+   菜单向上弹（bottom:100%）——导出设置在面板底部，向下会被 .app 的滚动边界裁掉。 */
+.dropdown {
+  flex: 1 1 0;
+  min-width: 0;
+  position: relative;
+  height: 26px;
+  margin-left: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #22d3e0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.dd-value { font-size: 12px; font-weight: 600; color: #3ce0ef; pointer-events: none; }
+.dd-chev { width: 13px; height: 13px; margin-left: 5px; pointer-events: none; }
+.dd-menu {
+  display: none;
+  position: absolute;
+  bottom: 100%;                      /* 贴着下拉框上沿向上展开 */
+  left: 0;
+  right: 0;
+  margin-bottom: 4px;
+  padding: 4px 0;
+  background: #0d2438;
+  border: 1px solid #22d3e0;
+  border-radius: 6px;
+  z-index: 30;
+}
+.dropdown.open .dd-menu { display: block; }
+.dd-item {
+  display: block;
+  padding: 5px 8px;
+  font-size: 12px;
+  text-align: center;
+  color: #c3d4e2;
+  cursor: pointer;
+}
+.dd-item.active { color: #3ce0ef; font-weight: 600; background: #123449; }
 .pill {
   margin: 3px 0 0 6px;
   padding: 2px 8px;
@@ -184,16 +284,23 @@ sp-textfield {
 }
 /* 选中：亮蓝字 + 青色圆角描边，内部无填充 */
 .pill.active { border-color: #22d3e0; color: #3ce0ef; font-weight: 600; }
-.chev { width: 15px; height: 15px; margin-left: 6px; opacity: 0.7; cursor: pointer; flex: 0 0 auto; }
-/* “更多”选项：整行独立容器，展开时换到原行下方，不挤在同一行 */
-.more-wrap { flex-basis: 100%; display: none; flex-wrap: wrap; justify-content: flex-end; margin-top: 6px; }
-.setting-value.expanded .more-wrap { display: flex; }
-.more-wrap .pill { margin: 0 0 0 6px; }
 
 /* ---------- 重命名页 ---------- */
 .field-block label { display: block; font-size: 13px; color: #d5e3ef; margin-bottom: 8px; }
 .label-sub { color: #6f8aa3; font-size: 11px; }
+/* 两行标签：主标题一行，小字说明另起一行（查找/替换两列，括号已去掉） */
+.label-2l .label-sub { display: block; margin-top: 3px; line-height: 1.3; }
 .field-block + .field-block { margin-top: 12px; }
+/* 两个字段并排一行（查找/替换、起始/递增）。UXP 无 grid，用 flex 等分。
+   align-items: flex-end —— 某列标签换行时两个输入框仍底对齐，不错位。
+   间距给在 margin-right：某列 display:none 时它的外边距不参与布局，右列自然占满整行 */
+.field-row { display: flex; align-items: flex-end; }
+.field-row .field-col { flex: 1 1 0; min-width: 0; margin-right: 10px; }
+.field-row .field-col:last-child { margin-right: 0; }
+/* 标题与选项同一行（数字位数 / 命名方向）：标题不压缩，pill 吃掉剩余宽度 */
+.field-inline { display: flex; align-items: center; }
+.field-inline label { flex: 0 0 auto; margin-bottom: 0; }
+.field-inline .pill-row { flex: 1 1 auto; min-width: 0; }
 #counterBlock { margin-top: 12px; }                   /* 编号设置区：检测到 n 才显示 */
 /* pill 横排容器（方式/位数/方向单选） */
 .pill-row { display: flex; flex-wrap: wrap; }
@@ -247,6 +354,32 @@ sp-textfield {
 .primary-btn > * { pointer-events: none; }
 .play-icon { width: 13px; height: 13px; margin-right: 8px; }
 #sliceBtn.slicing { background: #e34850; color: #ffffff; }
+/* 批量处理页里第二个功能：与上一个功能的主按钮拉开距离 */
+.batch-next { margin-top: 14px; }
+/* 功能标题行：标题 + 问号图标（说明只在悬停问号时浮出，按钮本身不出提示） */
+.feature-head { position: relative; display: flex; align-items: center; padding: 0 2px; margin-bottom: 8px; }
+.feature-title { font-size: 14px; font-weight: 600; color: #e9f2f9; }
+.info-ico { flex: 0 0 auto; width: 14px; height: 14px; margin-left: 6px; opacity: 0.75; cursor: pointer; }
+
+/* 悬停说明：从标题行往下浮出，盖住下面的按钮区（向上会被上一块内容挡掉半截） */
+.btn-wrap { position: relative; }
+.btn-tip {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  padding: 10px 12px;
+  background: #0d2438;
+  border: 1px solid #22d3e0;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #b9cbdb;
+  z-index: 40;
+  pointer-events: none;              /* 提示自身不吃鼠标，移出按钮即消失 */
+}
+.btn-tip b { font-weight: 600; color: #e9f2f9; }
 #sliceBtn.slicing .play-icon { display: none; }
 
 /* ---------- 底部栏 ---------- */

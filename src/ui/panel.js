@@ -10,6 +10,7 @@ import { hasCounter, buildRenameRows } from '../lib/rename-core.js';
 import { readItemIndexes, applyRename } from '../ps/renamer.js';
 import { smartSplitLayer } from '../ps/smart-split.js';
 import { convertToSmartObjects } from '../ps/smart-object.js';
+import { createGroups } from '../ps/group-maker.js';
 import manifest from '../manifest.json';
 
 const { app, action, core } = require('photoshop');
@@ -68,7 +69,8 @@ const sliceBtn = document.getElementById('sliceBtn');
 const btnLabel = sliceBtn.querySelector('.btn-label');   // 主按钮内的文字节点（按钮含图标+文字，不能整体设 textContent）
 const stopConfirm = document.getElementById('stopConfirm');
 const overwriteConfirm = document.getElementById('overwriteConfirm');
-let currentPage = 'slice';               // 当前功能页：slice | symbols | rename | split | smartobj
+let currentPage = 'slice';               // 当前功能页：slice | rename | split | batch
+let sliceMode = 'all';                   // 切图页内的方式：all=完整切图 | symbols=按定位格导出
 let slicing = false;
 let cancelRequested = false;   // 停止按钮：完成当前张后直接中止
 let escPause = false;          // ESC：完成当前张后暂停并询问
@@ -425,6 +427,48 @@ async function runSmartObjects() {
 
 smartObjBtn.addEventListener('click', () => { runSmartObjects(); });
 
+// ---- 批量新建独立组：给每个选中对象各套一层父级组，绝不合并 ----
+// 新组沿用原对象名称（父子同名），无命名选项。
+const groupBtn = document.getElementById('groupBtn');
+let grouping = false;
+
+async function runCreateGroups() {
+  if (grouping) return;
+  if (!app.activeDocument) return setStatus('请先打开一个 PSD 文档');
+  const layers = await sortedSelectedLayers(false);
+  if (!layers.length) return setStatus('请先选择至少一个图层或图层组');
+  // 名称在执行前一次读好：建组过程中图层顺序会变，事后再读会错位
+  const pairs = layers.map((l) => ({ id: l.id, name: l.name }));
+
+  grouping = true;
+  setTilesDisabled(true);
+  const lbl = groupBtn.querySelector('.btn-label');
+  const orig = lbl.textContent;
+  lbl.textContent = '建组中…';
+  groupBtn.style.pointerEvents = 'none';
+  groupBtn.style.opacity = '0.6';
+  setStatus('正在新建独立组…');
+  try {
+    const r = await createGroups(pairs, {
+      selectAfter: true,                             // 执行后恒选中新建的组，便于接着做下一步批量操作
+      onProgress: (done, total) => setStatus(`建组中… ${done}/${total} 个`),
+    });
+    const parts = [`共选择 ${pairs.length} 个对象，成功创建 ${r.created} 个独立组`];
+    if (r.failed) parts.push(`${r.failed} 个对象无法处理（如背景图层）`);
+    setStatus(parts.join('，'));
+  } catch (e) {
+    setStatus('新建组失败：' + errMsg(e));
+  } finally {
+    grouping = false;
+    setTilesDisabled(false);
+    lbl.textContent = orig;
+    groupBtn.style.pointerEvents = '';
+    groupBtn.style.opacity = '';
+  }
+}
+
+groupBtn.addEventListener('click', () => { runCreateGroups(); });
+
 // ---- 批量重命名：替换 / 重新命名 / 加前缀 / 加后缀 + n 连续编号，输入即预览 ----
 const previewList = document.getElementById('previewList');
 const findInput = document.getElementById('findText');
@@ -452,17 +496,20 @@ function readRenameCfg() {
     counter: !!counterSwitchEl.checked,                      // 显式开关，不从模板猜
     start: toInt(startInput.value, 1),
     step: toInt(stepInput.value, 1),
-    digits: parseInt(active('digitsPills', 'data-digits'), 10) || 0,   // 自动=0 不补零
+    digits: toInt(active('digitsPills', 'data-digits'), 1),   // 位数固定可选，默认 1 位（不补零）
   };
 }
 
 // 选中层按图层面板顺序排序（编号与预览都按此序）：
 // 主路：一次 batchPlay 读回 itemIndex（自面板底部向上递增 → 从上到下 = 降序）；
 // 兜底：itemIndex 读不到时按 doc.layers 遍历序（UXP 面板序，首个=最上）。
-async function sortedSelectedLayers() {
+// @param {boolean} [forceUp] 显式指定方向（批量建组恒用 false=从上到下）；省略则读重命名页的方向 pill
+async function sortedSelectedLayers(forceUp) {
   const sel = selectedLayers();
   if (sel.length <= 1) return sel;
-  const up = document.querySelector('#dirPills .pill.active')?.getAttribute('data-dir') === 'up';
+  const up = forceUp !== undefined
+    ? forceUp
+    : document.querySelector('#dirPills .pill.active')?.getAttribute('data-dir') === 'up';
   const idx = await readItemIndexes(sel.map((l) => l.id));
   if (idx.size === sel.length) {
     return sel.slice().sort((a, b) => (idx.get(a.id) - idx.get(b.id)) * (up ? 1 : -1));
@@ -575,8 +622,8 @@ stepInput.value = '1';
 // 空闲点击=按勾选框决定：勾选→仅导出选中，未勾选→全部导出
 sliceBtn.addEventListener('click', () => {
   if (slicing) { requestStop(); return; }
-  // Symbols 页 → Symbols 导出；切图页 → 按「只对选中切图」决定全量/仅选中
-  const run = currentPage === 'symbols'
+  // Symbols 方式 → 按定位格导出；完整切图 → 按「只对选中切图」决定全量/仅选中
+  const run = sliceMode === 'symbols'
     ? runExportSymbols
     : (selectedOnly() ? runExportSelected : runSliceAll);
   run().catch(e => { setSlicing(false); setStatus('出错：' + e.message); });
@@ -627,7 +674,7 @@ setupSwitch('fullBleed', true);
 setupSwitch('selectedOnly', false);
 setupSwitch('splitMerge', true);
 
-// ---- 功能页切换：前三张磁贴切换 UI，「更多功能」不绑定操作 ----
+// ---- 功能页切换：四张磁贴各对应一个功能页 ----
 const tiles = Array.from(document.querySelectorAll('.tile'));
 function setTilesDisabled(on) {
   tiles.forEach(t => { t.style.pointerEvents = on ? 'none' : ''; t.style.opacity = on ? '0.5' : ''; });
@@ -636,61 +683,133 @@ function show(id, on) { const el = document.getElementById(id); if (el) el.style
 function switchPage(name) {
   currentPage = name;
   tiles.forEach(t => t.classList.toggle('active', t.getAttribute('data-page') === name));
-  show('symbolsIntro', name === 'symbols');
-  show('sliceIntro', name === 'slice');
+  show('sliceModeCard', name === 'slice');
+  show('projectCard', name === 'slice');       // 项目名称只有切图页用得上（导出名前缀）
   show('splitIntro', name === 'split');
-  show('smartObjIntro', name === 'smartobj');
-  show('exportConfig', name === 'slice' || name === 'symbols');
+  show('batchPage', name === 'batch');           // 转智能对象 + 新建独立组同页并列
+  show('exportConfig', name === 'slice');
   show('renamePage', name === 'rename');
-  show('sliceBtn', name === 'slice' || name === 'symbols');   // 切图/Symbols 共用主按钮
+  show('sliceBtn', name === 'slice');
   show('renameBtn', name === 'rename');
   show('splitBtn', name === 'split');
-  show('smartObjBtn', name === 'smartobj');
+  hideAllTips();                                 // 切页时收起可能还开着的说明气泡
 }
+bindPillGroup('sliceModePills', 'data-slicemode', (m) => { sliceMode = m; });
+
+// ---- 悬停说明：功能说明不再占版面，鼠标移到对应控件上才浮出 ----
+// 提示框都设了 pointer-events:none，移出锚点即消失，不会自我遮挡。
+const allTips = [];
+function hideAllTips() { allTips.forEach((t) => { t.style.display = 'none'; }); }
+/** 把一段说明挂到某个锚点元素的悬停上 */
+function bindTip(anchor, tipEl, html) {
+  if (!anchor || !tipEl) return;
+  allTips.push(tipEl);
+  // UXP 对 mouseenter/mouseleave 支持不一致，用会冒泡的 mouseover/mouseout（重复触发也幂等）
+  anchor.addEventListener('mouseover', () => {
+    hideAllTips();
+    tipEl.innerHTML = html;
+    tipEl.style.display = 'block';
+  });
+  anchor.addEventListener('mouseout', hideAllTips);
+}
+
+// 切图方式：两个 pill 各自的说明（原来的两张说明卡片已移除）
+const modeTip = document.getElementById('modeTip');
+const MODE_TIP = {
+  all: '<b class="tip-title">完整切图</b>图层 / 组标记为<b class="tag-red">红色</b>：不切图；<br>图层 / 组标记为<b class="tag-blue">蓝色</b>：合并切图；<br>导出名称格式：「项目名称_组名_[组名…]_图层名称」；<br>名称含中文时，自动取每个字的拼音首字母组合成名称。',
+  symbols: '<b class="tip-title">Symbols 切图</b>每个图标组需添加一个名为「定位格」的参考图层，并按定位格摆放图标。导出时以定位格为基准：未超出则按定位格尺寸导出；超出则自动补足空白像素，确保图标居中。「定位格」不参与切图，隐藏后仍可识别。',
+};
+Array.from(document.querySelectorAll('#sliceModePills .pill')).forEach((p) => {
+  bindTip(p, modeTip, MODE_TIP[p.getAttribute('data-slicemode')]);
+});
+
+// 智能分割 / 批量处理：说明挂在各自标题后的问号图标上
+bindTip(document.getElementById('splitInfo'), document.getElementById('splitTip'),
+  '在图层面板<b>选中一个像素图层</b>（如拼合的素材图 / 多元素图层），插件自动识别其中<b>互不相连的内容块</b>，把每一块复制成<b>独立图层</b>（按从上到下、每行从左到右的顺序，依次命名为 0、1、2…）。<br>同一元素内部有细缝的笔画会自动并回（合并距离按本图自适应推导）；规则排列的字符表/雪碧图自动按格分割、不做合并；<br>原图层保持不变，可放心撤销。');
+bindTip(document.getElementById('smartObjInfo'), document.getElementById('smartObjTip'),
+  '选中一个或多个图层，点击后<b>逐个</b>转换为<b>独立智能对象</b>——绝不把多个图层合并进同一个智能对象。<br>已是智能对象的图层自动跳过；图层名称、顺序、位置、所在图层组与视觉效果保持不变；整个批量操作在历史记录中为一步，可一次撤销。');
+bindTip(document.getElementById('groupInfo'), document.getElementById('groupTip'),
+  '选中一个或多个图层 / 组，点击后为<b>每一个</b>对象分别新建一层父级组并把它嵌套进去——选中几个就建几个组，<b>绝不合并</b>。<br>新组<b>沿用原对象的名称</b>，建在对象原来的父级、原来的位置上：图层顺序、所在组、组内结构、名称、样式、混合模式、不透明度、蒙版与智能对象属性全部不变；整个批量操作在历史记录中为一步，可一次撤销。<br>无法处理的对象（如背景图层）会被跳过并在结果里报出，不影响其余对象。');
 tiles.forEach((t) => t.addEventListener('click', () => {
-  if (slicing || splitting || converting) return;  // 任务进行中不切页
+  if (slicing || splitting || converting || grouping) return;  // 任务进行中不切页
   const page = t.getAttribute('data-page');
-  if (page === 'slice' || page === 'symbols' || page === 'rename' || page === 'split' || page === 'smartobj') switchPage(page);
+  if (page) switchPage(page);
 }));
 switchPage('slice');                             // 初始进入完整切图页
 
-// ---- 导出设置：格式 / 倍率 / 位置（真实生效的可操作控件）----
-function bindPills(containerId) {
-  const box = document.getElementById(containerId);
-  if (!box) return;
-  Array.from(box.querySelectorAll('.pill')).forEach((p) => {
-    p.addEventListener('click', () => {
-      Array.from(box.querySelectorAll('.pill')).forEach((q) => q.classList.remove('active'));
-      p.classList.add('active');
-    });
+// ---- 导出设置：格式 / 倍率 自绘下拉 + 位置（真实生效的可操作控件）----
+// 点框体展开菜单，点选项收起并写回显示值；同一时刻只开一个。
+// 不用 e.target.closest（UXP DOM 未必提供），改用「冒泡顺序 + 标志位」判断点击来源：
+// 选项 handler → 下拉框 handler → document handler，前者置位后者据此让路。
+let ddItemClicked = false;      // 本次点击命中了某个选项
+let ddBoxClicked = false;       // 本次点击落在某个下拉框内
+function bindDropdown(ddId, valueId) {
+  const dd = document.getElementById(ddId);
+  const valueEl = document.getElementById(valueId);
+  if (!dd || !valueEl) return;
+  const items = Array.from(dd.querySelectorAll('.dd-item'));
+  items.forEach((item) => item.addEventListener('click', () => {
+    items.forEach((q) => q.classList.remove('active'));
+    item.classList.add('active');
+    valueEl.textContent = item.textContent;
+    dd.classList.remove('open');
+    ddItemClicked = true;
+  }));
+  dd.addEventListener('click', () => {
+    ddBoxClicked = true;
+    if (ddItemClicked) { ddItemClicked = false; return; }   // 选项已处理，别再切换开合
+    const wasOpen = dd.classList.contains('open');
+    closeAllDropdowns();
+    if (!wasOpen) dd.classList.add('open');
   });
 }
-bindPills('formatPills');
-bindPills('scalePills');
+function closeAllDropdowns() {
+  Array.from(document.querySelectorAll('.dropdown')).forEach((d) => d.classList.remove('open'));
+}
+bindDropdown('formatDd', 'formatValue');
+bindDropdown('scaleDd', 'scaleValue');
+// 点面板其它地方收起下拉
+document.addEventListener('click', () => {
+  if (ddBoxClicked) { ddBoxClicked = false; return; }
+  closeAllDropdowns();
+});
 function currentFormat() {
-  const a = document.querySelector('#formatPills .pill.active');
+  const a = document.querySelector('#formatDd .dd-item.active');
   return a ? a.getAttribute('data-format') : 'png';
 }
 function currentScale() {
-  const a = document.querySelector('#scalePills .pill.active');
+  const a = document.querySelector('#scaleDd .dd-item.active');
   return a ? (parseFloat(a.getAttribute('data-scale')) || 1) : 1;   // 支持 0.25/0.5 小数倍率
 }
-// 下拉箭头：展开/收起该行的「更多」选项
-document.querySelectorAll('.chev').forEach((c) => c.addEventListener('click', () => {
-  c.parentElement.classList.toggle('expanded');
-}));
-// 导出位置：点「…」预选文件夹并记住，导出时直接使用（不再每次弹窗）
+// 导出位置：点文件夹图标预选并记住，导出时直接使用（不再每次弹窗）
 const pickFolderBtn = document.getElementById('pickFolderBtn');
 const exportPathText = document.getElementById('exportPathText');
+const folderIco = document.getElementById('folderIco');
+const pathTip = document.getElementById('pathTip');
+let selectedFolderPath = '';                      // 完整路径，只用于悬停提示
 
 // 记住导出位置：仅本次会话记住（重开插件回到未设置状态，导出位置为空）
+// 框内空间只够放缩略名，所以用文件夹名顶掉图标，完整路径靠悬停提示。
 function rememberFolder(folder) {
   selectedFolder = folder;
-  exportPathText.textContent = folder.nativePath || '已选择文件夹';
+  selectedFolderPath = folder.nativePath || '';
+  exportPathText.textContent = folder.name || '已选择';
+  exportPathText.style.display = '';
+  folderIco.style.display = 'none';
 }
 
 pickFolderBtn.addEventListener('click', async () => {
   try { const f = await uxpFs.getFolder(); if (f) rememberFolder(f); } catch { /* 用户取消：保持原状 */ }
+});
+
+// 悬停「位置」框：浮出完整路径；未设置时提示去点它
+pickFolderBtn.addEventListener('mouseover', () => {
+  if (!pathTip) return;
+  pathTip.textContent = selectedFolderPath || '尚未设置导出位置，点击选择文件夹';
+  pathTip.style.display = 'block';
+});
+pickFolderBtn.addEventListener('mouseout', () => {
+  if (pathTip) pathTip.style.display = 'none';
 });
 
 // 顶栏版本号：始终显示 manifest 中的真实版本

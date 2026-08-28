@@ -1,6 +1,6 @@
 {
   "name": "sliceman",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "description": "",
   "main": "index.js",
   "directories": {
@@ -10,7 +10,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "icons": "node scripts/make-icons.mjs",
-    "build": "node esbuild.config.mjs"
+    "build": "node esbuild.config.mjs",
+    "pack": "node esbuild.config.mjs && node scripts/pack.mjs",
+    "install:ps": "node esbuild.config.mjs && node scripts/install-local.mjs",
+    "uninstall:ps": "node scripts/install-local.mjs --remove"
   },
   "keywords": [],
   "author": "",
