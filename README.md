@@ -1,6 +1,13 @@
 # Sliceman
 
+[![最新版本](https://img.shields.io/github/v/release/dashuaigc/Sliceman?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC&color=22d3e0)](https://github.com/dashuaigc/Sliceman/releases/latest)
+[![下载量](https://img.shields.io/github/downloads/dashuaigc/Sliceman/total?label=%E4%B8%8B%E8%BD%BD%E9%87%8F&color=22d3e0)](https://github.com/dashuaigc/Sliceman/releases)
+[![Photoshop](https://img.shields.io/badge/Photoshop-2022%2B-31a8ff?logo=adobephotoshop&logoColor=white)](https://developer.adobe.com/photoshop/uxp/)
+[![许可证](https://img.shields.io/github/license/dashuaigc/Sliceman?label=%E8%AE%B8%E5%8F%AF%E8%AF%81&color=22d3e0)](LICENSE)
+
 Photoshop UXP 插件：把 PSD 按图层 / 组一键切成规范命名的图片，另附一整套图层批量处理工具（重命名、智能分割、转智能对象、建组、排版、平移）。
+
+**[⬇ 下载最新版 .ccx](https://github.com/dashuaigc/Sliceman/releases/latest)** —— 双击安装，重启 Photoshop 即可使用。
 
 面板顶部五个磁贴各对应一个功能页，启动默认停在「重命名」。
 

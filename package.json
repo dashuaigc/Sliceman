@@ -1,7 +1,7 @@
 {
   "name": "sliceman",
   "version": "0.0.15",
-  "description": "",
+  "description": "Photoshop UXP 插件：颜色标记批量切图 + 图层批量处理工具集",
   "main": "index.js",
   "directories": {
     "doc": "docs"
@@ -16,8 +16,8 @@
     "uninstall:ps": "node scripts/install-local.mjs --remove"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "dashuaigc",
+  "license": "MIT",
   "type": "module",
   "dependencies": {
     "pinyin-pro": "^3.28.1"
@@ -25,5 +25,9 @@
   "devDependencies": {
     "esbuild": "^0.28.1",
     "vitest": "^4.1.10"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dashuaigc/Sliceman.git"
   }
 }
