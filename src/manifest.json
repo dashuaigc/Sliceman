@@ -2,7 +2,7 @@
   "manifestVersion": 5,
   "id": "com.sliceman.plugin",
   "name": "Sliceman",
-  "version": "0.0.13",
+  "version": "0.0.15",
   "main": "index.html",
   "host": {
     "app": "PS",
@@ -44,7 +44,7 @@
         }
       ],
       "minimumSize": {
-        "width": 350,
+        "width": 300,
         "height": 120
       },
       "maximumSize": {
@@ -52,11 +52,11 @@
         "height": 2000
       },
       "preferredDockedSize": {
-        "width": 420,
+        "width": 340,
         "height": 640
       },
       "preferredFloatingSize": {
-        "width": 420,
+        "width": 340,
         "height": 640
       }
     }
