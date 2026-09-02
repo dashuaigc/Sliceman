@@ -84,8 +84,9 @@ body {
 /* 说明文字 */
 .hint { margin: 0; font-size: 12px; line-height: 1.7; color: #9bb2c6; }
 .hint b { font-weight: 600; }
-.hint .tag-red { color: #e0555c; }
-.hint .tag-blue { color: #4aa3ff; }
+/* 不限定在 .hint 下：几个悬停提示框里也用它们标注颜色规则 */
+.tag-red { color: #e0555c; }
+.tag-blue { color: #4aa3ff; }
 .link { display: inline-block; margin-top: 8px; font-size: 12px; color: #2fc6d6; cursor: pointer; }
 
 /* 切图方式的悬停说明：绝对定位浮在下方卡片之上，出现/消失都不挤动布局。
@@ -285,6 +286,54 @@ sp-textfield {
 /* 选中：亮蓝字 + 青色圆角描边，内部无填充 */
 .pill.active { border-color: #22d3e0; color: #3ce0ef; font-weight: 600; }
 
+/* ---------- 一键排版页 ---------- */
+/* 行与行之间统一加分隔线：本页 setting-row 与 switch-row 交替出现，
+   原来的 .setting-row + .setting-row / .switch-row + .switch-row 选择器接不上 */
+#layoutPage { position: relative; }
+#layoutPage .setting-row + .switch-row,
+#layoutPage .switch-row + .setting-row { border-top: 1px solid #12293f; }
+/* 数值输入：定宽输入框 + px 单位。sp-textfield 不直接当 flex 项（同 .head-field 的写法） */
+.num-field { display: flex; align-items: center; }
+.num-box { flex: 0 0 auto; width: 62px; }
+.num-field .unit { flex: 0 0 auto; margin-left: 6px; font-size: 12px; color: #8ba0b3; }
+/* 关闭「自动扩展画布」时，画布边距整行置灰不可操作 */
+.row-off { opacity: 0.4; pointer-events: none; }
+/* 按钮禁用态 */
+.primary-btn.btn-off { background: #1c3a4e; color: #6f8aa3; pointer-events: none; }
+/* 说明浮层用 .btn-tip（锚在 .feature-head 下），并由 panel.js 在浮出期间把两个
+   sp-textfield 的 visibility 藏掉 —— UXP 已知问题：文字编辑控件恒绘制在所有 DOM 之上 */
+
+/* ---------- 批量快速平移（批量处理页内的第三块） ---------- */
+#moveBlock .setting-row + .setting-row { border-top: 1px solid #12293f; }
+/* 本页各行不带图标，标签顶格起，不要基础样式那 10px 的图标间距 */
+#moveBlock .row-label { flex: 0 0 auto; margin-left: 0; }
+/* 两行标签定宽：让「水平方向」「垂直方向」后面的箭头按钮竖直对齐成一列 */
+.axis-label { width: 56px; }
+/* 方向按钮：做成实心方钮而不是细描边 pill —— 选中态填充青色，一眼能看出当前朝哪走 */
+.arrow-pill {
+  min-width: 30px;
+  margin: 0 0 0 6px;
+  padding: 4px 0;
+  font-size: 15px;
+  line-height: 1.1;
+  text-align: center;
+  color: #8ba0b3;
+  background: #0e2438;
+  border: 1px solid #24425c;
+  border-radius: 5px;
+}
+.arrow-pill.active {
+  color: #04283a;
+  font-weight: 700;
+  background: #22d3e0;
+  border-color: #22d3e0;
+}
+/* 距离输入框跟在方向按钮右边，不再靠 margin-left:auto 顶到最右 */
+#moveBlock .num-field { flex: 0 0 auto; margin-left: 10px; }
+#moveBlock .num-box { width: 54px; }
+/* 输入非数字时给输入框套红框（sp-textfield 自身样式改不动，描在外层的定宽盒上） */
+.num-box.field-err { outline: 1px solid #e0555c; border-radius: 4px; }
+
 /* ---------- 重命名页 ---------- */
 .field-block label { display: block; font-size: 13px; color: #d5e3ef; margin-bottom: 8px; }
 .label-sub { color: #6f8aa3; font-size: 11px; }
@@ -359,7 +408,12 @@ sp-textfield {
 /* 功能标题行：标题 + 问号图标（说明只在悬停问号时浮出，按钮本身不出提示） */
 .feature-head { position: relative; display: flex; align-items: center; padding: 0 2px; margin-bottom: 8px; }
 .feature-title { font-size: 14px; font-weight: 600; color: #e9f2f9; }
+/* 卡片标题当功能标题用时（批量重命名）：外边距交给 .feature-head 统一管 */
+.feature-head .card-title { margin: 0; }
 .info-ico { flex: 0 0 auto; width: 14px; height: 14px; margin-left: 6px; opacity: 0.75; cursor: pointer; }
+/* 图标内部的圆/线不单独吃鼠标：否则在图标里挪动会跨子元素触发 mouseout→mouseover，
+   提示框跟着一收一放（排版页还会连带输入框闪一下） */
+.info-ico > * { pointer-events: none; }
 
 /* 悬停说明：从标题行往下浮出，盖住下面的按钮区（向上会被上一块内容挡掉半截） */
 .btn-wrap { position: relative; }

@@ -89,7 +89,7 @@ export async function smartSplitLayer(sourceLayerId, opts = {}) {
   const onProgress = opts.onProgress || (() => {});
   const onStep = opts.onStep || (() => {});
   const shouldStop = opts.shouldStop || (() => false);
-  const mergeFragments = opts.merge !== false;   // 面板「合并相近碎片」开关（默认开）
+  const mergeFragments = opts.merge !== false;   // 面板「保持元素完整」开关（面板默认关）
   const srcDoc = app.activeDocument;
   if (!srcDoc) throw new Error('请先打开一个 PSD 文档');
   const srcDocId = srcDoc.id;
@@ -129,7 +129,7 @@ export async function smartSplitLayer(sourceLayerId, opts = {}) {
       onStep(`4 读像素 ok 字节 ${rgba.length}`);
 
       // 3) 连通域标记（自适应合并）→ 各块边界框（加上图层在画布中的偏移）。纯 JS，不改 PS 状态。
-      //    mergeGapPx：'auto'=自适应（细缝并回、网格按格分割）；0=纯连通域（面板关闭「合并相近碎片」）
+      //    mergeGapPx：'auto'=自适应（细缝并回、网格按格分割）；0=纯连通域（面板关闭「保持元素完整」）
       const mergeInfo = {};
       const boxes = findElementBounds(rgba, width, height, { factor: 2, minAreaPx: 64, mergeGapPx: mergeFragments ? 'auto' : 0, info: mergeInfo })
         .map((r) => ({
