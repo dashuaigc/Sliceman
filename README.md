@@ -4,6 +4,18 @@ Photoshop UXP 插件：把 PSD 按图层 / 组一键切成规范命名的图片�
 
 面板顶部五个磁贴各对应一个功能页，启动默认停在「重命名」。
 
+## 插件截图
+
+| 批量重命名 | 启用编号 n | 智能分割 |
+|:---:|:---:|:---:|
+| ![批量重命名](docs/screenshots/01-rename.png) | ![启用编号 n](docs/screenshots/02-rename-counter.png) | ![智能分割](docs/screenshots/03-smart-split.png) |
+| 四种改名方式，实时预览 | 起始 / 递增 / 位数 / 方向 | 一个开关，默认按连通像素拆 |
+
+| 批量处理 | 一键排版 | 切图 |
+|:---:|:---:|:---:|
+| ![批量处理](docs/screenshots/04-batch.png) | ![一键排版](docs/screenshots/05-layout.png) | ![切图](docs/screenshots/06-slice.png) |
+| 转智能对象 / 建组 / 快速平移 | 方向 · 对齐 · 间距 · 扩画布 | 完整切图与 Symbols 两套规则 |
+
 ---
 
 ## 一、批量重命名
