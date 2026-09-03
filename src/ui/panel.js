@@ -13,6 +13,9 @@ import { convertToSmartObjects } from '../ps/smart-object.js';
 import { createGroups } from '../ps/group-maker.js';
 import { layoutLayers } from '../ps/layouter.js';
 import { moveLayers } from '../ps/mover.js';
+import { validateParams, buildTable, computeLayout } from '../lib/table-core.js';
+import { originAtCenter, isPlausibleCenter } from '../lib/view-core.js';
+import { drawTable, readForegroundHex, pickColor, readViewCenter } from '../ps/table-maker.js';
 import { parseDistance, applySign, toDelta, nudgeValue, formatDist, describeDelta } from '../lib/move-core.js';
 import manifest from '../manifest.json';
 
@@ -515,7 +518,7 @@ function updateLayoutAlignRow() {
   show('layoutAlignV', layoutDir === 'v');
 }
 // 未开启「自动扩展画布」时，画布边距整行置灰不可操作。
-// 光靠父级 pointer-events:none 挡不住 sp-textfield（UXP 原生控件自成一层），再显式加 disabled
+// 光靠父级 pointer-events:none 挡不住输入框（UXP 下文字控件自成一层），再显式加 disabled
 function updateLayoutMarginRow() {
   const off = !layoutExpandEl.checked;
   layoutMarginRow.classList.toggle('row-off', off);
@@ -525,12 +528,14 @@ function updateLayoutMarginRow() {
 
 // UXP 已知问题：具备文字编辑能力的控件恒绘制在所有 DOM 之上，z-index 无效
 // （换成普通 <input> 同样如此，是原生编辑层的问题）。官方给的解法就是浮层出现时把它藏起来。
-// ⚠️ 必须设在 sp-textfield 元素自身：设在父级容器上不生效，原生编辑层不继承父级可见性。
+// ⚠️ 必须设在输入框元素自身：设在父级容器上不生效，原生编辑层不继承父级可见性。
 // 用 visibility 而非 display —— 占位保留，行高不跳、鼠标不会因为布局位移而反复进出。
 // 同一时刻只有一个功能页可见，所以不分页、一律全藏，省掉「这个提示压着哪几个框」的判断。
 const TIP_MASKED_FIELD_IDS = [
   'layoutGap', 'layoutMargin', 'moveX', 'moveY',      // 一键排版 / 批量快速平移
   'findText', 'templateText', 'startNum', 'stepNum',  // 批量重命名
+  'tblRows', 'tblCols', 'tblW', 'tblH', 'tblRowGap', 'tblColGap',   // 快速绘制表格
+  'tblLineW', 'tblLineColor', 'tblFillColor', 'tblRadius',
 ];
 function setTipMaskedFields(on) {
   const v = on ? 'hidden' : '';
@@ -696,7 +701,7 @@ moveBtn.addEventListener('click', () => doMove());
 // X/Y 距离框：placeholder 显示灰色的 0（= 该轴不动）。
 // 聚焦时把值为 0 的内容清掉，直接开始输入，不用先删掉那个 0；
 // 非 0 的值保留——聚焦常常只是为了用 ↑/↓ 微调，清掉反而碍事。
-// focus 不冒泡，而 sp-textfield 是包着原生 input 的自定义元素，事件未必落在外壳上，
+// focus 不冒泡，为保险连会冒泡的 focusin 一起听，
 // 所以连会冒泡的 focusin 一起听；重复触发也幂等。
 [moveXInput, moveYInput].forEach((input) => {
   const clearZero = () => { if (parseDistance(input.value) === 0) input.value = ''; };
@@ -725,6 +730,298 @@ setPillActive('moveXDirPills', 'data-dir', prefGet('move.xDir', 'right'));
 setPillActive('moveYDirPills', 'data-dir', prefGet('move.yDir', 'down'));
 bindPillGroup('moveXDirPills', 'data-dir', (d) => prefSet('move.xDir', d));
 bindPillGroup('moveYDirPills', 'data-dir', (d) => prefSet('move.yDir', d));
+
+// ---- 快速绘制表格：按行列与尺寸生成可继续编辑的矢量形状网格 ----
+// 全部几何在 lib/table-core.js（有单测），这里只做「读界面 → 调几何 → 交给 PS」。
+const tableBtn = document.getElementById('tableBtn');
+const TBL_FIELDS = ['tblRows', 'tblCols', 'tblW', 'tblH', 'tblRowGap', 'tblColGap',
+  'tblLineW', 'tblLineColor', 'tblFillColor', 'tblRadius'];
+const tbl = {};
+for (const id of TBL_FIELDS) tbl[id] = document.getElementById(id);
+let drawing = false;
+let tableDecider = null;                          // 性能提醒的 Promise resolver
+
+// 多选 pill 组：每个 pill 独立开关，不互斥（结构那三个开关用）
+function bindTogglePills(containerId, onChange) {
+  const box = document.getElementById(containerId);
+  if (!box) return;
+  Array.from(box.querySelectorAll('.pill')).forEach((p) => {
+    p.addEventListener('click', () => { p.classList.toggle('active'); if (onChange) onChange(); });
+  });
+}
+const pillOn = (containerId, attr, value) => {
+  const el = document.querySelector(`#${containerId} .pill[${attr}="${value}"]`);
+  return !!(el && el.classList.contains('active'));
+};
+const setPillOn = (containerId, attr, value, on) => {
+  const el = document.querySelector(`#${containerId} .pill[${attr}="${value}"]`);
+  if (el) el.classList.toggle('active', !!on);
+};
+
+const numOr = (v, dflt) => { const n = parseFloat(v); return Number.isFinite(n) ? n : dflt; };
+const intOr = (v, dflt) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : dflt; };
+
+// 本页输入框的取值模型：【真值存在 tblState 里，输入框本身常态是空的，当前值以
+// placeholder（灰色提示）显示】。点进去直接敲数字，不用先删；没敲就走开，真值原样保留。
+//
+// 这么设计的关键理由：不依赖 blur 事件。把「提交」放在 input 上（每敲一下就写进
+// tblState），blur 就只剩「把框清空、恢复灰字」这点纯装饰工作，漏了也不丢数据。
+//
+// 一律走 tblVal 取值，别直接读 .value —— 正在输入时值在框里，其余时候值在 tblState 里。
+const tblState = {};
+
+const tblVal = (id) => {
+  const v = String(tbl[id].value ?? '').trim();
+  return v !== '' ? v : (tblState[id] ?? '');
+};
+
+/** 写入一个值：存进 tblState，用灰字显示，输入框清空等着接收输入 */
+function setTblValue(id, v) {
+  const s = String(v);
+  tblState[id] = s;
+  const el = tbl[id];
+  el.value = '';
+  el.placeholder = s;
+  el.setAttribute('placeholder', s);              // 属性/特性两头都设，稳一点
+}
+
+function readTableCfg() {
+  return {
+    rows: intOr(tblVal('tblRows'), 0),
+    cols: intOr(tblVal('tblCols'), 0),
+    sizeMode: activePill('tblSizeModePills', 'data-mode') || 'cell',
+    // 「宽/高」两个框在两种尺寸方式下复用，含义随方式变化
+    cellW: numOr(tblVal('tblW'), 0), cellH: numOr(tblVal('tblH'), 0),
+    totalW: numOr(tblVal('tblW'), 0), totalH: numOr(tblVal('tblH'), 0),
+    rowGap: numOr(tblVal('tblRowGap'), 0), colGap: numOr(tblVal('tblColGap'), 0),
+    lineWidth: numOr(tblVal('tblLineW'), 0),
+    lineColor: tblVal('tblLineColor'),
+    radius: numOr(tblVal('tblRadius'), 0),
+    border: pillOn('tblStructPills', 'data-flag', 'border'),
+    hLines: pillOn('tblStructPills', 'data-flag', 'hLines'),
+    vLines: pillOn('tblStructPills', 'data-flag', 'vLines'),
+    fillCells: !!document.getElementById('tblFill').checked,
+    fillColor: tblVal('tblFillColor'),
+    output: activePill('tblOutputPills', 'data-out') || 'single',
+  };
+}
+
+function writeTableCfg(c) {
+  setTblValue('tblRows', c.rows ?? 3);
+  setTblValue('tblCols', c.cols ?? 3);
+  setTblValue('tblW', c.cellW ?? 100);
+  setTblValue('tblH', c.cellH ?? 100);
+  setTblValue('tblRowGap', c.rowGap ?? 0);
+  setTblValue('tblColGap', c.colGap ?? 0);
+  setTblValue('tblLineW', c.lineWidth ?? 1);
+  setTblValue('tblLineColor', c.lineColor || '#000000');
+  setTblValue('tblFillColor', c.fillColor || '#cccccc');
+  setTblValue('tblRadius', c.radius ?? 0);
+  setPillActive('tblSizeModePills', 'data-mode', c.sizeMode || 'cell');
+  setPillActive('tblOutputPills', 'data-out', c.output || 'single');
+  setPillOn('tblStructPills', 'data-flag', 'border', c.border !== false);
+  setPillOn('tblStructPills', 'data-flag', 'hLines', c.hLines !== false);
+  setPillOn('tblStructPills', 'data-flag', 'vLines', c.vLines !== false);
+  const fillEl = document.getElementById('tblFill');
+  fillEl.checked = !!c.fillCells;
+  fillEl.classList.toggle('on', !!c.fillCells);
+}
+
+// 整份配置存成一个 JSON —— 项目多达二十来个，逐个建 key 不值当
+function saveTableCfg() {
+  try { prefSet('table.cfg', JSON.stringify(readTableCfg())); } catch { /* 不支持则不记忆 */ }
+}
+function loadTableCfg() {
+  let c = {};
+  try { c = JSON.parse(prefGet('table.cfg', '{}')) || {}; } catch { c = {}; }
+  writeTableCfg(c);
+  if (!c.lineColor) setTblValue('tblLineColor', readForegroundHex() || '#000000');
+}
+
+// 色块跟着 hex 输入实时变色；填错就显示成透明并标红
+function refreshSwatch(inputId, swatchId) {
+  const v = String(tblVal(inputId) || '').trim();
+  const ok = /^#?[0-9a-f]{6}$/i.test(v);
+  const sw = document.getElementById(swatchId);
+  sw.style.background = ok ? (v.startsWith('#') ? v : '#' + v) : 'transparent';
+  document.getElementById(inputId).parentNode?.classList.toggle('field-err', !ok);
+}
+function refreshSwatches() {
+  refreshSwatch('tblLineColor', 'tblLineSwatch');
+  refreshSwatch('tblFillColor', 'tblFillSwatch');
+}
+
+// 点色块弹 PS 原生拾色器。拾色器是模态的，期间禁止再点第二次。
+let picking = false;
+function bindSwatchPicker(swatchId, inputId) {
+  document.getElementById(swatchId).addEventListener('click', async () => {
+    if (picking || drawing) return;
+    picking = true;
+    try {
+      const hex = await pickColor(tblVal(inputId));
+      if (!hex) return;                            // 用户取消，保持原值
+      setTblValue(inputId, hex);
+      refreshSwatches();
+      saveTableCfg();
+    } catch (e) {
+      setStatus('打不开拾色器：' + errMsg(e) + '（可直接在输入框填 #rrggbb）');
+    } finally {
+      picking = false;
+    }
+  });
+}
+
+// 参数联动（需求 §24）：结构开关在独立单元格模式下无意义
+function refreshTableUi() {
+  document.getElementById('tblStructRow').classList.toggle(
+    'row-off', activePill('tblOutputPills', 'data-out') === 'cells',
+  );
+  show('tblFillColorRow', !!document.getElementById('tblFill').checked);
+  refreshSwatches();
+}
+
+function askTableConfirm(count) {
+  document.getElementById('tblCellCount').textContent = String(count);
+  document.getElementById('tableConfirm').style.display = 'flex';
+  return new Promise((res) => { tableDecider = res; });
+}
+function resolveTableConfirm(v) {
+  document.getElementById('tableConfirm').style.display = 'none';
+  if (tableDecider) { const d = tableDecider; tableDecider = null; d(v); }
+}
+document.getElementById('tblConfirmYes').onclick = () => resolveTableConfirm(true);
+document.getElementById('tblConfirmNo').onclick = () => resolveTableConfirm(false);
+
+async function runDrawTable() {
+  if (drawing) return;
+  const doc = app.activeDocument;
+  const cfg = readTableCfg();
+
+  const err = validateParams(cfg, { hasDoc: !!doc });
+  if (err) return setStatus(err);
+
+  // 画在【当前视图】正中间：放大到局部工作时，表格就出现在眼前而不是跑到画布中心。
+  // 取不到视图信息（老版本 PS / 描述符键名对不上）就退回画布中心，行为与之前一致。
+  const canvas = { width: doc.width, height: doc.height };
+  const geo = computeLayout(cfg);                  // 独立单元格模式的总尺寸算法不同，走这个口
+  const raw = await readViewCenter();
+  // 描述符解析出来的东西未必真是我以为的那个语义，算出画布外的中心点一律不信，
+  // 否则表格会被画到画布外几千像素处——看起来就是「什么都没画出来」
+  const center = isPlausibleCenter(raw, canvas) ? raw : null;
+  const rectOrigin = originAtCenter({ w: geo.totalW, h: geo.totalH }, canvas, center);
+
+  const plan = buildTable(cfg, canvas, rectOrigin);
+  if (!plan.layers.length) return setStatus('当前设置不会画出任何内容：请至少开启一项结构或单元格填充。');
+
+  // 性能保护（需求 §27）：形状图层过多先问一句
+  if (plan.layers.length > 500) {
+    const go = await askTableConfirm(plan.layers.length);
+    if (!go) return setStatus('已取消');
+  }
+
+  drawing = true;
+  setTilesDisabled(true);
+  const lbl = tableBtn.querySelector('.btn-label');
+  const orig = lbl.textContent;
+  lbl.textContent = '绘制中…';
+  tableBtn.style.pointerEvents = 'none';
+  tableBtn.style.opacity = '0.6';
+  setStatus('正在绘制表格…');
+  try {
+    const r = await drawTable(plan, { lineColor: cfg.lineColor, fillColor: cfg.fillColor }, {
+      onProgress: (done, total) => { if (total > 4) setStatus(`绘制中… ${done}/${total} 个形状`); },
+    });
+    if (r.created === 0) {
+      // 一个都没建成：把真实错误摆到面板上，别让用户对着空画布猜
+      setStatus('绘制失败：' + (r.error ? errMsg(r.error) : '未知原因') + '（详情见 UDT 控制台）');
+    } else {
+      const parts = [`已绘制 ${cfg.rows}×${cfg.cols} 表格（${Math.round(plan.size.w)}×${Math.round(plan.size.h)} px）`];
+      parts.push(`${r.created} 个形状图层`);
+      if (r.failed) parts.push(`${r.failed} 个失败：${errMsg(r.error)}`);
+      // 独立单元格模式下明确回报是不是实时形状——决定属性面板里能不能改圆角
+      if (cfg.output === 'cells') {
+        parts.push(r.liveShape ? '实时形状 ✓（属性面板可改圆角）' : '非实时形状 ✗（属性面板改不了）');
+      }
+      parts.push(`[${r.strategy || '?'}] 位置 ${rectOrigin.left},${rectOrigin.top}`);
+      setStatus(parts.join('，'));
+    }
+  } catch (e) {
+    setStatus('绘制失败：' + errMsg(e));
+  } finally {
+    drawing = false;
+    setTilesDisabled(false);
+    lbl.textContent = orig;
+    tableBtn.style.pointerEvents = '';
+    tableBtn.style.opacity = '';
+  }
+}
+
+tableBtn.addEventListener('click', () => { runDrawTable(); });
+
+// 「宽/高」两个框在两种尺寸方式下复用。切换方式时把值按新含义换算过去，
+// 否则「单元格 100」会被原样当成「总宽 100」，画出来的东西和用户预期差一个数量级。
+bindPillGroup('tblSizeModePills', 'data-mode', (mode) => {
+  // 借几何层来换算：独立单元格模式有共边重叠，公式和单一形状不一样，别在这儿重写一遍
+  const cfg = readTableCfg();
+  const geo = computeLayout({ ...cfg, sizeMode: mode === 'total' ? 'cell' : 'total' });
+  const round1 = (v) => String(Math.round(Math.max(0, v) * 10) / 10);
+  if (mode === 'total') {
+    setTblValue('tblW', round1(geo.totalW));
+    setTblValue('tblH', round1(geo.totalH));
+  } else {
+    setTblValue('tblW', round1(geo.cellW));
+    setTblValue('tblH', round1(geo.cellH));
+  }
+  refreshTableUi(); saveTableCfg();
+});
+bindPillGroup('tblOutputPills', 'data-out', () => { refreshTableUi(); saveTableCfg(); });
+bindTogglePills('tblStructPills', saveTableCfg);
+// 初值先给 false，紧接着的 loadTableCfg 会用记忆的值覆盖掉
+setupSwitch('tblFill', false, () => { refreshTableUi(); saveTableCfg(); });
+// 四个事件各司其职，谁漏了都不丢数据：
+//   input   —— 每敲一下就把真值提交进 tblState（唯一的「提交」时机）
+//   focus   —— 把框清空，直接开始输入，不用先删旧值
+//   Enter   —— 确认当前输入并退出输入框
+//   blur    —— 纯装饰：清空框、把当前真值恢复成灰字提示
+// focus/blur 不冒泡，为保险连会冒泡的 focusin/focusout 一起听；
+// 所以连会冒泡的 focusin/focusout 一起听；重复触发也幂等。
+for (const id of TBL_FIELDS) {
+  const el = tbl[id];
+
+  el.addEventListener('input', () => {
+    const v = String(el.value ?? '').trim();
+    if (v !== '') tblState[id] = v;                // 空串不提交：那是「清空了还没输」的中间态
+    refreshSwatches();
+    saveTableCfg();
+  });
+
+  const clear = () => { el.value = ''; };
+  el.addEventListener('focus', clear);
+  el.addEventListener('focusin', clear);
+
+  const restore = () => {
+    el.value = '';
+    el.placeholder = tblState[id] ?? '';
+    el.setAttribute('placeholder', tblState[id] ?? '');
+    refreshSwatches();
+  };
+  el.addEventListener('blur', restore);
+  el.addEventListener('focusout', restore);
+
+  el.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    if (e.preventDefault) e.preventDefault();      // 别让回车顺带触发别的默认行为
+    const v = String(el.value ?? '').trim();
+    if (v !== '') tblState[id] = v;                // input 一般已经提交过，这里兜底
+    restore();
+    saveTableCfg();
+    try { el.blur(); } catch { /* 不支持就算了 */ }
+  });
+}
+bindSwatchPicker('tblLineSwatch', 'tblLineColor');
+bindSwatchPicker('tblFillSwatch', 'tblFillColor');
+loadTableCfg();
+refreshTableUi();
 
 // 回填上次的设置（首次使用即为默认：横排 / 底部对齐 / 竖排左侧对齐 / 间距 10 / 不扩画布 / 边距 10）
 layoutDir = prefGet('layout.dir', 'h') === 'v' ? 'v' : 'h';
@@ -888,7 +1185,7 @@ templateInput.addEventListener('input', renderRenamePreview);
 templateInput.addEventListener('focus', renderRenamePreview);
 startInput.addEventListener('input', renderRenamePreview);
 stepInput.addEventListener('input', renderRenamePreview);
-startInput.value = '1';                               // sp-textfield 的 value 属性不可靠，用 JS 赋初值
+startInput.value = '1';                               // HTML 上的 value 特性不可靠，用 JS 赋初值
 stepInput.value = '1';
 
 // 图层选择变化时，实时刷新预览（best-effort，不支持则忽略）
@@ -973,6 +1270,7 @@ function switchPage(name) {
   show('exportConfig', name === 'slice');
   show('renamePage', name === 'rename');
   show('layoutPage', name === 'layout');
+  show('tablePage', name === 'table');
   show('sliceBtn', name === 'slice');
   show('renameBtn', name === 'rename');
   show('splitBtn', name === 'split');
@@ -1026,11 +1324,17 @@ bindTip(document.getElementById('layoutInfo'), document.getElementById('layoutTi
 bindTip(document.getElementById('moveInfo'), document.getElementById('moveTip'),
   '在图层面板<b>选中一个或多个</b>图层 / 组，填好 X、Y 的方向与距离后点「移动」，所有选中对象<b>按同一个偏移量整体平移</b>——对象之间的相对位置、排列关系完全不变。<br>是<b>相对位移</b>不是绝对坐标：不需要指定左上角 / 中心点之类的基点，每个对象都从自己当前的位置起算，移动距离完全一致。<br>距离框<b>留空即为 0</b>，该轴不动；填<b>负数</b>会自动转成正数并翻转方向。框内按 <b>Enter</b> 直接执行，按 <b>↑/↓</b> 加减 1px、<b>Shift+↑/↓</b> 加减 10px。<br>数值执行后不清零，连点「移动」即可按同一距离<b>累加</b>；走过头就点一下反方向箭头再移一次。<br>选中父组和它的子图层时自动去重，只移动父组，子图层不会走出双倍距离；锁定图层与背景图层自动跳过、不影响其余对象；允许移动到画布外，<b>不会自动改变画布尺寸</b>。每次点击在历史记录中为一步，可一次撤销。');
 
+bindTip(document.getElementById('tableInfo'), document.getElementById('tableTip'),
+  '按行列生成<b>矢量形状</b>表格，不是像素、不是选区，生成后颜色、大小、圆角都能继续改。<br>'
+  + '<b>行距 / 列距为 0</b> 时是连续表格；<b>大于 0</b> 时画成互相独立的格子。<br>'
+  + '<b>独立单元格</b>模式每格一层（R1C1…）放进组，描边与填充各自独立，可同时有。<br>'
+  + '点色块可开拾色器。表格画在<b>当前视图正中</b>，整次绘制可一次撤销。');
+
 bindTip(document.getElementById('renameInfo'), document.getElementById('renameTip'),
   '在图层面板<b>选中若干图层 / 组</b>，四种方式改名，改动<b>只作用于选中项本身</b>（选中组时改的是组名，不会进组里动子图层）：<br><b>替换</b>——把原名里的「查找内容」换成新文字，没匹配到的原样不动；<b>重新命名</b>——整个名称直接换掉；<b>加前缀 / 加后缀</b>——在原名前后拼接。<br>打开<b>启用编号 n</b> 后，模板里<b>单独的字母 n</b> 会被替换成连续数字（Button、Icon 里的 n 不算）；可设起始值、递增量、数字位数（不足补 0），以及沿图层面板<b>从上到下</b>还是<b>从下到上</b>编号。<br>下方<b>预览</b>实时显示「原名称 → 新名称」，重名会标出<b class="tag-red">⚠同名</b>；新旧名相同、替换后为空、未匹配到的行都不会写回 PS。');
 
 tiles.forEach((t) => t.addEventListener('click', () => {
-  if (slicing || splitting || converting || grouping || laying || moving) return;  // 任务进行中不切页
+  if (slicing || splitting || converting || grouping || laying || moving || drawing) return;  // 任务进行中不切页
   const page = t.getAttribute('data-page');
   if (page) switchPage(page);
 }));

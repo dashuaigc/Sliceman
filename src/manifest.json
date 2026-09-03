@@ -2,7 +2,7 @@
   "manifestVersion": 5,
   "id": "com.sliceman.plugin",
   "name": "Sliceman",
-  "version": "0.0.15",
+  "version": "1.0.0",
   "main": "index.html",
   "host": {
     "app": "PS",
