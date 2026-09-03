@@ -75,8 +75,8 @@ body {
 .card-head { display: flex; align-items: baseline; margin-bottom: 10px; }
 .card-head .card-title { margin: 0; }
 /* 标题 + 输入框同一行：标题不压缩，输入框吃掉剩余宽度。
-   flex 项是外层 div、sp-textfield 靠全局 width:100% 撑满 —— 和 .field-col 同一套已验证写法，
-   不让 sp-textfield 这种自定义元素直接当 flex 项 */
+   flex 项是外层 div、输入框靠全局 width:100% 撑满 —— 和 .field-col 同一套已验证写法，
+   不让输入框直接当 flex 项 */
 .card-head-inline { align-items: center; margin-bottom: 0; }
 .card-head-inline .card-title { flex: 0 0 auto; }
 .card-head-inline .head-field { flex: 1 1 0; min-width: 0; margin-left: 10px; }
@@ -90,7 +90,7 @@ body {
 .link { display: inline-block; margin-top: 8px; font-size: 12px; color: #2fc6d6; cursor: pointer; }
 
 /* 切图方式的悬停说明：绝对定位浮在下方卡片之上，出现/消失都不挤动布局。
-   项目名称（sp-textfield，UXP 原生控件、不吃 z-index）排在切图方式之上，不在提示的覆盖范围里 */
+   项目名称（文字输入控件，UXP 下不吃 z-index）排在切图方式之上，不在提示的覆盖范围里 */
 #sliceModeCard { position: relative; z-index: 10; }
 .mode-tip {
   position: absolute;
@@ -110,12 +110,59 @@ body {
 }
 .mode-tip .tip-title { display: block; margin-bottom: 4px; font-weight: 600; color: #e9f2f9; }
 
-/* 输入框：撑满一行 */
-sp-textfield {
-  width: 100%;
-  background: #14395a;              /* 只改框内底色为浅蓝，不动边框 */
-  color: #e6f0f8;
+/* 输入框：撑满一行。
+   用原生 input 而不是 sp-textfield —— 后者内部自带一圈改不掉的内边距，编辑区缩在
+   边框里一大截，且边框/圆角/聚焦态都动不了。原生 input 的样式完全可控，行为（value /
+   placeholder / focus / blur / keydown）反而更标准。 */
+/* ⚠️ 边框画在【外层 div】上，不画在 input 上。
+   input 自己画的边框在 UXP 下底边渲染不出来（三面有、底边没有），普通 div 则没这问题
+   ——面板里卡片、药丸、开关的边框都是 div 画的，一直是好的。
+   所以：外层 .num-box / .head-field / .tf 负责描边和圆角，input 只负责一块纯色底 + 文字。 */
+.num-box,
+.head-field,
+.tf {
+  border: 1px solid #24425c;
+  border-radius: 4px;
+  background: #0a1e33;
+  /* ⚠️ 上下各留 2px 缓冲，别让 input 贴着边框。
+     UXP 的文字层恒绘制在所有 DOM 之上，且它的实际绘制矩形比 CSS 盒子往下溢出一两像素
+     （基线/降部那一段），紧贴时会把外框的【底边】盖掉——表现就是三面有边、底边没有。
+     overflow:hidden 挡不住它，那是 DOM 层的裁剪，管不到原生层，所以只能靠留白。
+     input 底色和外框同色，这 2px 看不出来。 */
+  padding: 2px 0;
 }
+.num-box:focus-within,
+.head-field:focus-within,
+.tf:focus-within { border-color: #22d3e0; }
+
+input[type="text"] {
+  /* 关掉平台自绘的控件外观。不关的话 UXP 会在输入框内侧自己画一圈深色装饰，
+     它不受 background 影响，框里就永远是「外圈深带 + 中间底色」两种颜色。 */
+  appearance: none;
+  -webkit-appearance: none;
+  box-shadow: none;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  height: 20px;                     /* 外层 = 20 + 上下 2px 缓冲 + 上下 1px 边框 = 26px */
+  margin: 0;
+  /* 左右留白用 text-indent 而不是 padding：padding 会缩小内容盒，
+     而文字编辑层只覆盖内容盒，缩了就会在框内露出一圈别的颜色。 */
+  padding: 0;
+  text-indent: 6px;
+  border: 0;
+  /* 和外层同色，看上去就是「框内不填色，只留一圈描边」。
+     不能用 transparent —— 文字编辑层背后没有东西可透，会渲染成黑块。 */
+  background: #0a1e33;
+  color: #e6f0f8;
+  font-size: 12px;
+  line-height: 20px;
+  outline: none;
+}
+input[type="text"]:disabled { opacity: 0.45; }
+input[type="text"]::placeholder { color: #6d8ba3; }
+/* 画布边距整行置灰时，外框跟着淡下去，别只淡文字 */
+.row-off .num-box { opacity: 0.6; }
 
 /* ---------- 功能中心磁贴 ---------- */
 /* 无标题、无外框：磁贴自身就是全部视觉，只留和卡片一致的下外边距 */
@@ -129,7 +176,7 @@ sp-textfield {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin: 0 3px;
+  margin: 0 2px;                     /* 6 个磁贴并排：3px 会挤到标签折行，收到 2px */
   padding: 7px 2px;
   background: #0c2137;
   border: 1px solid #17344e;
@@ -292,7 +339,7 @@ sp-textfield {
 #layoutPage { position: relative; }
 #layoutPage .setting-row + .switch-row,
 #layoutPage .switch-row + .setting-row { border-top: 1px solid #12293f; }
-/* 数值输入：定宽输入框 + px 单位。sp-textfield 不直接当 flex 项（同 .head-field 的写法） */
+/* 数值输入：定宽输入框 + px 单位。输入框不直接当 flex 项，外面套定宽 div（同 .head-field 的写法） */
 .num-field { display: flex; align-items: center; }
 .num-box { flex: 0 0 auto; width: 62px; }
 .num-field .unit { flex: 0 0 auto; margin-left: 6px; font-size: 12px; color: #8ba0b3; }
@@ -301,7 +348,7 @@ sp-textfield {
 /* 按钮禁用态 */
 .primary-btn.btn-off { background: #1c3a4e; color: #6f8aa3; pointer-events: none; }
 /* 说明浮层用 .btn-tip（锚在 .feature-head 下），并由 panel.js 在浮出期间把两个
-   sp-textfield 的 visibility 藏掉 —— UXP 已知问题：文字编辑控件恒绘制在所有 DOM 之上 */
+   输入框的 visibility 藏掉 —— UXP 已知问题：文字编辑控件恒绘制在所有 DOM 之上 */
 
 /* ---------- 批量快速平移（批量处理页内的第三块） ---------- */
 #moveBlock .setting-row + .setting-row { border-top: 1px solid #12293f; }
@@ -331,8 +378,43 @@ sp-textfield {
 /* 距离输入框跟在方向按钮右边，不再靠 margin-left:auto 顶到最右 */
 #moveBlock .num-field { flex: 0 0 auto; margin-left: 10px; }
 #moveBlock .num-box { width: 54px; }
-/* 输入非数字时给输入框套红框（sp-textfield 自身样式改不动，描在外层的定宽盒上） */
-.num-box.field-err { outline: 1px solid #e0555c; border-radius: 4px; }
+/* 输入非数字时把输入框边框标红 */
+.num-box.field-err { border-color: #e0555c; }
+
+/* ---------- 快速绘制表格页 ---------- */
+#tablePage .setting-row { padding: 7px 2px; }
+#tablePage .setting-row + .setting-row,
+#tablePage .setting-row + .switch-row,
+#tablePage .switch-row + .setting-row { border-top: 1px solid #12293f; }
+#tablePage .row-label { flex: 0 0 auto; margin-left: 0; }
+/* 本页标签是 flex:0 0 auto，开关不会被顶到行尾，得自己占掉剩余空间 */
+#tablePage .switch { margin-left: auto; }
+/* 两列对齐的关键：一行拆成左右两个等宽 .cell，标签在 cell 内定宽。
+   这样输入框的左边缘 = cell 起点 + 定宽标签，与标签实际字数无关，
+   「宽 / 行 / 行距 / 粗细」这几行的输入框就落在同一条竖线上，右列同理。 */
+#tablePage .cell { flex: 1 1 0; min-width: 0; display: flex; align-items: center; }
+#tablePage .cell-wide { flex: 1 1 100%; }
+/* 标签定宽保证两列输入框对齐，但文字【右对齐】——这样不管标签是一个字还是三个字，
+   都紧贴着自己的输入框，不会像左对齐那样让「宽」「行」这类单字标签甩出一大段空白 */
+#tablePage .cell .row-label { flex: 0 0 38px; text-align: right; padding-right: 8px; }
+#tablePage .cell .num-box { flex: 0 0 auto; width: 52px; }
+#tablePage .cell .unit { flex: 0 0 auto; margin-left: 6px; font-size: 12px; color: #8ba0b3; }
+/* 十六进制色值比数字长，给宽一点 */
+#tablePage .hex-box { width: 84px; }
+/* 色块：既是预览也是按钮，点击弹 PS 原生拾色器；右边的 hex 输入框仍可直接填色值 */
+.color-swatch {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 22px;
+  margin-right: 8px;
+  border: 1px solid #3a5a76;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.color-swatch:hover { border-color: #22d3e0; }
+.color-swatch:active { border-color: #22d3e0; opacity: 0.75; }
+/* 输出为「独立单元格」时，结构开关整行置灰 */
+#tablePage .row-off { opacity: 0.4; pointer-events: none; }
 
 /* ---------- 重命名页 ---------- */
 .field-block label { display: block; font-size: 13px; color: #d5e3ef; margin-bottom: 8px; }
@@ -408,6 +490,8 @@ sp-textfield {
 /* 功能标题行：标题 + 问号图标（说明只在悬停问号时浮出，按钮本身不出提示） */
 .feature-head { position: relative; display: flex; align-items: center; padding: 0 2px; margin-bottom: 8px; }
 .feature-title { font-size: 14px; font-weight: 600; color: #e9f2f9; }
+/* 功能标题前的小图标 */
+.head-ico { flex: 0 0 auto; width: 15px; height: 15px; margin-right: 7px; }
 /* 卡片标题当功能标题用时（批量重命名）：外边距交给 .feature-head 统一管 */
 .feature-head .card-title { margin: 0; }
 .info-ico { flex: 0 0 auto; width: 14px; height: 14px; margin-left: 6px; opacity: 0.75; cursor: pointer; }
