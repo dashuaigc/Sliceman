@@ -11,7 +11,7 @@
         <div class="brand">
           <span class="ps-logo">PS</span>
           <span class="brand-name">Sliceman</span>
-          <span class="version" id="version">v1.0.0</span>
+          <span class="version" id="version">v1.1.0</span>
         </div>
         <div class="topbar-actions">
           <svg class="ic-btn" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="settings">
@@ -23,12 +23,16 @@
         </div>
       </header>
 
-      <!-- 功能中心：置顶，五个功能并排一行，各自切换页面（无标题、无外框，只留磁贴）。
-           切图排在最末——顺序按使用频率，不是按重要性 -->
+      <!-- 功能中心：置顶，各自切换页面（无标题、无外框，只留磁贴）。
+           七个功能排成两行（4 + 3）：一行挤七个会把标签压折行，靠 .tiles 的 flex-wrap
+           + .tile 定宽 25% 分行；.tile 只当「槽」，视觉盒下沉到 .tile-inner，
+           这样槽与槽之间才留得出间距（UXP 下 calc 不可靠，不用 calc 算宽）。
+           切图排在末尾——顺序按使用频率，不是按重要性 -->
       <section class="tiles-section">
         <div class="tiles">
           <div class="tile active" data-page="rename">
-            <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+            <div class="tile-inner">
+              <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
   <g fill="none" stroke="#EDE9FE" stroke-width="9" stroke-linecap="round">
     <path d="M16 28 H88"/>
     <path d="M16 58 H72"/>
@@ -37,20 +41,24 @@
   <path d="M58 114 L63 91 L97 57 L112 72 L78 106 Z" fill="#22d3e0"/>
   <path d="M91 63 L106 78" fill="none" stroke="#043042" stroke-width="6" stroke-linecap="round"/>
 </svg>
-            <span class="tile-label">重命名</span>
+              <span class="tile-label">重命名</span>
+            </div>
           </div>
           <div class="tile" data-page="split">
-            <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+            <div class="tile-inner">
+              <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
   <g fill="#EDE9FE" stroke="#EDE9FE" stroke-width="5" stroke-linejoin="round" stroke-linecap="round">
     <rect x="22" y="22" width="54" height="54" rx="8"/>
     <rect x="46" y="46" width="54" height="54" rx="8" opacity="0.55"/>
   </g>
   <path d="M104 14 L108.5 27.5 L122 32 L108.5 36.5 L104 50 L99.5 36.5 L86 32 L99.5 27.5 Z" fill="#EDE9FE"/>
 </svg>
-            <span class="tile-label">分割</span>
+              <span class="tile-label">分割</span>
+            </div>
           </div>
           <div class="tile" data-page="batch">
-            <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+            <div class="tile-inner">
+              <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
   <g fill="none" stroke="#EDE9FE" stroke-width="6" stroke-linejoin="round" stroke-linecap="round">
     <rect x="24" y="16" width="80" height="80" rx="10"/>
     <g opacity="0.55" stroke-width="5">
@@ -61,10 +69,12 @@
   <rect x="72" y="72" width="40" height="40" rx="9" fill="#22d3e0"/>
   <path d="M84 100 L102 82 M92 82 H102 V92" fill="none" stroke="#043042" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
-            <span class="tile-label">批处理</span>
+              <span class="tile-label">批处理</span>
+            </div>
           </div>
           <div class="tile" data-page="layout">
-            <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+            <div class="tile-inner">
+              <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
   <g fill="#EDE9FE">
     <rect x="14" y="46" width="26" height="52" rx="5"/>
     <rect x="51" y="24" width="26" height="74" rx="5"/>
@@ -72,19 +82,36 @@
   </g>
   <path d="M10 112 H118" fill="none" stroke="#22d3e0" stroke-width="9" stroke-linecap="round"/>
 </svg>
-            <span class="tile-label">排版</span>
+              <span class="tile-label">排版</span>
+            </div>
           </div>
           <div class="tile" data-page="table">
-            <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+            <div class="tile-inner">
+              <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
   <g fill="none" stroke="#EDE9FE" stroke-width="7" stroke-linejoin="round" stroke-linecap="round">
     <rect x="16" y="24" width="96" height="80" rx="8"/>
     <path d="M16 51 H112 M16 77 H112 M48 24 V104 M80 24 V104"/>
   </g>
 </svg>
-            <span class="tile-label">表格</span>
+              <span class="tile-label">表格</span>
+            </div>
+          </div>
+          <div class="tile" data-page="guide">
+            <div class="tile-inner">
+              <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <rect x="20" y="20" width="88" height="88" rx="8" fill="none" stroke="#EDE9FE" stroke-width="6"/>
+  <g fill="none" stroke="#22d3e0" stroke-width="6" stroke-linecap="round">
+    <path d="M48 8 V120"/>
+    <path d="M88 8 V120"/>
+    <path d="M8 46 H120"/>
+  </g>
+</svg>
+              <span class="tile-label">参考线</span>
+            </div>
           </div>
           <div class="tile" data-page="slice">
-            <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+            <div class="tile-inner">
+              <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
   <g fill="none" stroke="#EDE9FE" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
     <path d="M32 18 L92 95"/>
     <path d="M96 18 L36 95"/>
@@ -93,7 +120,8 @@
   </g>
   <circle cx="64" cy="59" r="6" fill="#22d3e0"/>
 </svg>
-            <span class="tile-label">切图</span>
+              <span class="tile-label">切图</span>
+            </div>
           </div>
         </div>
       </section>
@@ -427,6 +455,67 @@
         </button>
       </section>
 
+      <!-- 参考线助手页：新建版面 / 快速参考线 / 收藏版面 / 最近使用 / 参考线控制
+           全在一页，不弹窗（弹窗只用于「起名」和「清空历史」两处必须确认的动作） -->
+      <section class="card" id="guidePage" style="display:none;">
+        <div class="feature-head">
+          <span class="feature-title">参考线助手</span>
+          <svg class="info-ico" id="guideInfo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
+  <circle cx="64" cy="64" r="45" fill="none" stroke="#9fb3c6" stroke-width="9"/>
+  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#9fb3c6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="66" cy="95" r="6" fill="#9fb3c6"/>
+</svg>
+          <!-- 当前画布尺寸：所有「自动」都按它算，摆在标题行随时可见（需求 §16） -->
+          <span class="gd-canvas" id="gdCanvas"></span>
+          <div class="btn-tip" id="guideTip" style="display:none;"></div>
+        </div>
+
+        <!-- 参数不在面板里填 —— 点按钮直接开 Photoshop 原生的「新建参考线版面」弹窗：
+             它自带「预览」，点确定才创建、关掉弹窗什么都不留。插件负责把创建出来的
+             版面记进「最近使用」，之后一键重放。这样做的另一个原因：UXP 收不到
+             面板被折叠的通知（PS-57284），面板自绘的预览没法保证撤干净 -->
+        <button id="gdCreateBtn" class="primary-btn">
+          <svg class="play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="new guide layout">
+  <path d="M45 31 L98 64 L45 97 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>
+</svg>
+          <span class="btn-label">新建参考线版面</span>
+        </button>
+        <!-- 快速参考线：一步到位的高频版面，不进历史记录，恒为追加 -->
+        <div class="gd-head">快速参考线</div>
+        <div class="gd-row">
+          <div class="gd-btn" data-quick="cross">十字中心</div>
+          <div class="gd-btn" data-quick="nine">九宫格</div>
+        </div>
+
+        <!-- 版面记录：两个入口并排，点开各自的弹窗列表（需求 §8 / §12） -->
+        <div class="gd-head">版面记录</div>
+        <div class="gd-row">
+          <div class="gd-btn" id="gdRecentBtn">最近使用</div>
+          <div class="gd-btn" id="gdFavBtn">收藏版面</div>
+        </div>
+        <!-- 把当前文档里【已经画好】的参考线整套存成收藏，不用重建一遍 -->
+        <div class="gd-row">
+          <div class="gd-btn" id="gdFavNowBtn">收藏当前版面</div>
+        </div>
+
+        <!-- 参考线控制：只作用于当前文档，不动插件里保存的任何记录 -->
+        <div class="gd-row gd-ctrl">
+          <div class="gd-btn" id="gdVisibleBtn">隐藏参考线</div>
+          <div class="gd-btn" id="gdLockBtn">锁定参考线</div>
+        </div>
+        <div class="gd-row gd-ctrl">
+          <div class="gd-btn gd-btn-grow" id="gdClearBtn">清除参考线</div>
+          <div class="dropdown gd-clear-dd" id="gdClearDd">
+            <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#3ce0ef" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div class="dd-menu">
+              <span class="dd-item" data-clear="all">清除全部参考线</span>
+              <span class="dd-item" data-clear="h">仅清除横向参考线</span>
+              <span class="dd-item" data-clear="v">仅清除纵向参考线</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- 完整切图 / Symbols 共享的导出配置（对选中项/隐藏层等真实生效） -->
       <div id="exportConfig" style="display:none;">
         <section class="card">
@@ -668,6 +757,41 @@
         <div class="confirm-row">
           <button id="ovwYesAll" class="danger">全部覆盖</button>
           <button id="ovwNoAll" class="muted">全部跳过</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 版面记录弹窗：最近使用 / 收藏版面共用一个，标题与每条的操作按钮随模式变化 -->
+    <div id="gdListOverlay" class="overlay" style="display:none;">
+      <div class="overlay-box gd-list-box">
+        <p class="confirm-msg" id="gdListTitle">最近使用</p>
+        <div class="gd-list" id="gdList"></div>
+        <div class="confirm-row">
+          <button id="gdListClear" class="danger">清空历史</button>
+          <button id="gdListClose" class="muted">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 收藏版面命名 / 重命名（需求 §13 / §14） -->
+    <div id="gdNameOverlay" class="overlay" style="display:none;">
+      <div class="overlay-box">
+        <p class="confirm-msg" id="gdNameTitle">收藏这个版面</p>
+        <div class="tf gd-name-field"><input type="text" id="gdNameInput" placeholder="给版面起个名字"></div>
+        <div class="confirm-row">
+          <button id="gdNameOk" class="ok">保存</button>
+          <button id="gdNameCancel" class="muted">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 清空历史二次确认（需求 §26） -->
+    <div id="gdHistConfirm" class="overlay" style="display:none;">
+      <div class="overlay-box">
+        <p class="confirm-msg">确定清空全部「最近使用」？<br><small>不影响「我的版面」，也不会删除文档里的参考线</small></p>
+        <div class="confirm-row">
+          <button id="gdHistYes" class="danger">清空历史</button>
+          <button id="gdHistNo" class="muted">取消</button>
         </div>
       </div>
     </div>

@@ -17,6 +17,17 @@ import { validateParams, buildTable, computeLayout } from '../lib/table-core.js'
 import { originAtCenter, isPlausibleCenter } from '../lib/view-core.js';
 import { drawTable, readForegroundHex, pickColor, readViewCenter } from '../ps/table-maker.js';
 import { parseDistance, applySign, toDelta, nudgeValue, formatDist, describeDelta } from '../lib/move-core.js';
+import {
+  normalizeCfg, computeGuides, quickGuides, cfgFromGuideLayout,
+  guideLayoutKeys, unknownGuideLayoutKeys, formatGuideLayoutParams,
+  signatureOf, pushRecent, describeCfg, describeRecord, formatCanvas,
+  inferCfgFromGuides, sameGuides,
+} from '../lib/guide-core.js';
+import {
+  hasDoc, readCanvas, applyGuides, clearGuides, readResolution, readExistingGuides,
+  openGuideLayoutDialog, applyGuideLayout, onGuideLayoutCreated,
+  readGuidesVisible, readGuidesLocked, toggleGuidesVisible, toggleGuidesLock,
+} from '../ps/guides.js';
 import manifest from '../manifest.json';
 
 const { app, action, core } = require('photoshop');
@@ -536,6 +547,7 @@ const TIP_MASKED_FIELD_IDS = [
   'findText', 'templateText', 'startNum', 'stepNum',  // 批量重命名
   'tblRows', 'tblCols', 'tblW', 'tblH', 'tblRowGap', 'tblColGap',   // 快速绘制表格
   'tblLineW', 'tblLineColor', 'tblFillColor', 'tblRadius',
+  'gdNameInput',                                                    // 参考线：收藏起名
 ];
 function setTipMaskedFields(on) {
   const v = on ? 'hidden' : '';
@@ -1271,6 +1283,7 @@ function switchPage(name) {
   show('renamePage', name === 'rename');
   show('layoutPage', name === 'layout');
   show('tablePage', name === 'table');
+  show('guidePage', name === 'guide');
   show('sliceBtn', name === 'slice');
   show('renameBtn', name === 'rename');
   show('splitBtn', name === 'split');
@@ -1278,6 +1291,10 @@ function switchPage(name) {
   hideAllTips();                                 // 切页时收起可能还开着的说明气泡
   refreshLayoutBtn(true);                        // 进排版页时按当前选中数决定按钮可用性与提示
   refreshMoveBtns();
+  // 参考线页的状态（画布尺寸、显隐/锁定）进页时现读一次。
+  // 只在 name==='guide' 时调用：初始化时的 switchPage('rename') 早于参考线那一块的
+  // 定义，提前进去会撞上 const 的暂时性死区
+  if (name === 'guide') { refreshGuideDocState(); refreshGuideMenuState(); }
 }
 bindPillGroup('sliceModePills', 'data-slicemode', (m) => { sliceMode = m; });
 
@@ -1334,7 +1351,7 @@ bindTip(document.getElementById('renameInfo'), document.getElementById('renameTi
   '在图层面板<b>选中若干图层 / 组</b>，四种方式改名，改动<b>只作用于选中项本身</b>（选中组时改的是组名，不会进组里动子图层）：<br><b>替换</b>——把原名里的「查找内容」换成新文字，没匹配到的原样不动；<b>重新命名</b>——整个名称直接换掉；<b>加前缀 / 加后缀</b>——在原名前后拼接。<br>打开<b>启用编号 n</b> 后，模板里<b>单独的字母 n</b> 会被替换成连续数字（Button、Icon 里的 n 不算）；可设起始值、递增量、数字位数（不足补 0），以及沿图层面板<b>从上到下</b>还是<b>从下到上</b>编号。<br>下方<b>预览</b>实时显示「原名称 → 新名称」，重名会标出<b class="tag-red">⚠同名</b>；新旧名相同、替换后为空、未匹配到的行都不会写回 PS。');
 
 tiles.forEach((t) => t.addEventListener('click', () => {
-  if (slicing || splitting || converting || grouping || laying || moving || drawing) return;  // 任务进行中不切页
+  if (slicing || splitting || converting || grouping || laying || moving || drawing || gdBusy) return;  // 任务进行中不切页
   const page = t.getAttribute('data-page');
   if (page) switchPage(page);
 }));
@@ -1414,6 +1431,668 @@ pickFolderBtn.addEventListener('mouseover', () => {
 pickFolderBtn.addEventListener('mouseout', () => {
   if (pathTip) pathTip.style.display = 'none';
 });
+
+// ---- 参考线助手：新建版面 / 收藏版面 / 最近使用 / 快速参考线 / 参考线控制 ----
+// 全部几何与记录逻辑在 lib/guide-core.js（有单测），PS 调用在 ps/guides.js；
+// 这里只做「读界面 → 调几何 → 交给 PS → 写记录 → 重渲染」。
+//
+// 放在文件末尾是有意的：本块要用到上面定义的 bindTip / allTips / closeAllDropdowns /
+// ddItemClicked 等，插在它们前面会撞上 const 的暂时性死区。
+
+const GD_CREATE_LABEL = '新建参考线版面';      // 主按钮的空闲文案（忙碌时临时换掉）
+
+let gdBusy = false;              // 创建 / 应用 / 清除进行中：禁止并发与切页
+let gdRecent = [];               // 最近使用（第一位最新，上限 20）
+let gdFavs = [];                 // 收藏版面（不受 20 条上限影响）
+let gdVisible = null;            // 参考线显示状态；null = 读不到，退回本地记忆
+let gdLocked = null;
+let gdNoDoc = true;              // 当前无打开文档（需求 §30）
+let gdNameDecider = null;        // 起名弹窗的 Promise resolver
+let gdHistDecider = null;        // 清空历史确认的 Promise resolver
+let gdLayoutSeen = 0;            // 记下过几次版面（判断这次弹窗到底有没有记录成功）
+
+// ---- 小工具 ----
+
+function gdOff(id, off) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('btn-off', !!off);
+}
+
+/** 记录时间显示："09-04 11:20"（跨年的老记录也只显示月日，列表里够用了） */
+function gdTime(ms) {
+  const d = new Date(Number(ms) || Date.now());
+  const p = (n) => (n < 10 ? '0' + n : String(n));
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** 收藏名称：去空白、限长 24（需求 §13），空则回落到默认名 */
+function gdCleanName(v, dflt) {
+  const s = String(v ?? '').trim().slice(0, 24);
+  return s || dflt;
+}
+
+// 原样快照（raw）没有版面参数，别让它和「没读出参数」的记录撞在一起
+const gdFavIndexOf = (cfg) => gdFavs.findIndex(
+  (f) => !f.raw && signatureOf(f.cfg) === signatureOf(cfg),
+);
+
+// ---- 持久化（需求 §28）----
+//
+// 面板里没有任何参数输入框了 —— 版面全在 Photoshop 原生弹窗里填，插件只存
+// 「建过什么」：最近使用 20 条 + 收藏版面。两个键都是整份 JSON 存取。
+function saveGuideLists() {
+  try { prefSet('guide.recent', JSON.stringify(gdRecent)); } catch { /* 忽略 */ }
+  try { prefSet('guide.favs', JSON.stringify(gdFavs)); } catch { /* 忽略 */ }
+}
+function loadGuideLists() {
+  try { gdRecent = JSON.parse(prefGet('guide.recent', '[]')) || []; } catch { gdRecent = []; }
+  try { gdFavs = JSON.parse(prefGet('guide.favs', '[]')) || []; } catch { gdFavs = []; }
+  if (!Array.isArray(gdRecent)) gdRecent = [];
+  if (!Array.isArray(gdFavs)) gdFavs = [];
+}
+
+/** 记一条版面到「最近使用」：参数完全相同的不堆新条目，只提到第一位（需求 §10） */
+function recordGuideLayout(cfg, canvas) {
+  const c = normalizeCfg(cfg);
+  gdRecent = pushRecent(gdRecent, { cfg: c, canvas, at: Date.now() });
+  saveGuideLists();
+  refreshGuideRecords();
+  return c;
+}
+
+// ---- 版面记录：最近使用 / 收藏版面各一个入口按钮，点开弹窗列出全部 ----
+// 两块共用同一个弹窗（#gdListOverlay），标题与每条的操作按钮随 gdListMode 变化。
+
+let gdListMode = 'recent';       // 'recent' | 'fav'
+
+/** 只绑下拉框本身的开合（清除参考线那个箭头菜单用） */
+function bindDropdownBox(ddId) {
+  const dd = document.getElementById(ddId);
+  if (!dd) return;
+  dd.addEventListener('click', () => {
+    ddBoxClicked = true;
+    if (ddItemClicked) { ddItemClicked = false; return; }   // 选项已处理，别再切换开合
+    const wasOpen = dd.classList.contains('open');
+    closeAllDropdowns();
+    if (!wasOpen) dd.classList.add('open');
+  });
+}
+
+/** 入口按钮上带条数，不用点开也知道有没有东西 */
+function refreshGuideRecordBtns() {
+  const rb = document.getElementById('gdRecentBtn');
+  const fb = document.getElementById('gdFavBtn');
+  if (rb) rb.textContent = gdRecent.length ? `最近使用 (${gdRecent.length})` : '最近使用';
+  if (fb) fb.textContent = gdFavs.length ? `收藏版面 (${gdFavs.length})` : '收藏版面';
+  applyGuideDisabled();
+}
+
+function guideItemHtml(title, sub, acts) {
+  return `<div class="gd-item">
+    <div class="gd-item-main">
+      <div class="gd-item-title">${title}</div>
+      <div class="gd-item-sub">${sub}</div>
+    </div>
+    <div class="gd-item-acts">${acts}</div>
+  </div>`;
+}
+
+/** 重绘弹窗里的记录列表。动作编码在 data-act="动作:序号" 里 */
+function renderGuideList() {
+  const fav = gdListMode === 'fav';
+  const list = fav ? gdFavs : gdRecent;
+  const box = document.getElementById('gdList');
+  document.getElementById('gdListTitle').textContent = fav ? '收藏版面' : '最近使用';
+  // 「清空历史」只对最近使用有意义；收藏要逐条取消，避免一键清光辛苦攒的模板
+  show('gdListClear', !fav && !!gdRecent.length);
+
+  // 没有文档时「应用」不可用，其余（改名 / 删除）只动插件数据，照常可点
+  const applyOff = gdNoDoc ? ' btn-off' : '';
+  box.innerHTML = list.length
+    ? list.map((r, i) => {
+      const d = describeRecord(r);
+      return fav
+        ? guideItemHtml(
+          `★ ${esc(r.name)}`,
+          `${esc(d.title)} · ${esc(d.detail)}<br>${esc(formatCanvas(r.canvas))}`,
+          `<span class="gd-mini gd-apply${applyOff}" data-act="fav-apply:${i}">应用</span>`
+          + `<span class="gd-mini" data-act="fav-rename:${i}">改名</span>`
+          + `<span class="gd-mini" data-act="fav-del:${i}">删除</span>`,
+        )
+        : guideItemHtml(
+          esc(d.title),
+          `${esc(d.detail)}<br>${esc(formatCanvas(r.canvas))} · ${gdTime(r.at)}`,
+          `<span class="gd-mini gd-apply${applyOff}" data-act="rec-apply:${i}">应用</span>`
+          + `<span class="gd-mini gd-star" data-act="rec-star:${i}">${gdFavIndexOf(r.cfg) >= 0 ? '★' : '☆'}</span>`
+          + `<span class="gd-mini" data-act="rec-del:${i}">删除</span>`,
+        );
+    }).join('')
+    : (fav
+      ? '<div class="gd-empty">还没有收藏。<br>在「最近使用」里点 ☆，或用「收藏当前版面」把画布上现成的参考线存下来。</div>'
+      : '<div class="gd-empty">还没有记录。<br>创建一次参考线版面后会自动出现在这里，之后点「应用」即可一键恢复。</div>');
+
+  // innerHTML 换掉了旧节点，旧监听随之消失，这里重新挂一遍。
+  // 选择器只用 class —— 光秃秃的属性选择器 [data-xxx] 在 UXP 下没验证过
+  const ACTIONS = {
+    'fav-apply': (i) => { closeGuideList(); applyGuideRecord(gdFavs[i]); },
+    'fav-rename': (i) => renameFavorite(i),
+    'fav-del': (i) => deleteFavorite(i),
+    'rec-apply': (i) => { closeGuideList(); applyGuideRecord(gdRecent[i]); },
+    'rec-star': (i) => toggleFavorite(i),
+    'rec-del': (i) => deleteRecent(i),
+  };
+  Array.from(document.querySelectorAll('#gdList .gd-mini')).forEach((el) => {
+    const [kind, idx] = String(el.getAttribute('data-act') || '').split(':');
+    const fn = ACTIONS[kind];
+    if (!fn) return;
+    el.addEventListener('click', () => fn(parseInt(idx, 10)));
+  });
+}
+
+function openGuideList(mode) {
+  if (gdBusy) return;
+  gdListMode = mode;
+  renderGuideList();
+  document.getElementById('gdListOverlay').style.display = 'flex';
+}
+function closeGuideList() {
+  document.getElementById('gdListOverlay').style.display = 'none';
+}
+/** 记录变动后：列表开着就就地重绘，入口按钮上的条数也跟着更新 */
+function refreshGuideRecords() {
+  refreshGuideRecordBtns();
+  if (document.getElementById('gdListOverlay').style.display !== 'none') renderGuideList();
+}
+
+// ---- 无文档 / 忙碌 / 列表为空时的按钮可用性（需求 §30）----
+
+function applyGuideDisabled() {
+  const noDoc = gdNoDoc || gdBusy;            // 需要当前文档才能做的事
+  gdOff('gdCreateBtn', noDoc);
+  for (const id of ['gdVisibleBtn', 'gdLockBtn', 'gdClearBtn']) gdOff(id, noDoc);
+  Array.from(document.querySelectorAll('#guidePage .gd-btn')).forEach((b) => {
+    if (b.getAttribute('data-quick')) b.classList.toggle('btn-off', noDoc);
+  });
+  // 两个记录入口：列表为空时点开也没东西，直接置灰；改名 / 删除不需要文档，所以只看条数
+  gdOff('gdRecentBtn', gdBusy || !gdRecent.length);
+  gdOff('gdFavBtn', gdBusy || !gdFavs.length);
+  gdOff('gdFavNowBtn', noDoc);                // 收藏当前版面要读当前文档里的参考线
+}
+
+/** 画布尺寸与按钮可用性（同步、廉价，文档变化通知里也调它） */
+function refreshGuideDocState() {
+  const canvas = hasDoc() ? readCanvas() : null;
+  gdNoDoc = !canvas;
+  const el = document.getElementById('gdCanvas');
+  if (el) el.textContent = canvas ? formatCanvas(canvas) : '未打开文档';
+  applyGuideDisabled();
+  if (currentPage === 'guide' && gdNoDoc) setStatus('请先打开一个 Photoshop 文档。');
+}
+
+/** 显隐 / 锁定状态（要走 batchPlay，只在进页与操作后读） */
+async function refreshGuideMenuState() {
+  if (gdNoDoc) return;
+  gdVisible = await readGuidesVisible();
+  gdLocked = await readGuidesLocked();
+  refreshGuideCtrlLabels();
+}
+
+function refreshGuideCtrlLabels() {
+  const v = gdVisible === null ? true : gdVisible;      // 读不到就按「显示中」显示
+  const l = gdLocked === null ? false : gdLocked;
+  const vb = document.getElementById('gdVisibleBtn');
+  const lb = document.getElementById('gdLockBtn');
+  if (vb) vb.textContent = v ? '隐藏参考线' : '显示参考线';
+  if (lb) lb.textContent = l ? '解锁参考线' : '锁定参考线';
+}
+
+// ---- 执行：创建 / 应用 / 快速 / 清除 / 显隐 / 锁定 ----
+
+/** 主按钮忙碌态（本页所有耗时操作共用） */
+function setGuideBusy(on, label) {
+  gdBusy = on;
+  setTilesDisabled(on);
+  const lbl = document.getElementById('gdCreateBtn').querySelector('.btn-label');
+  lbl.textContent = on ? (label || '处理中…') : GD_CREATE_LABEL;
+  applyGuideDisabled();
+}
+
+/**
+ * 「新建参考线版面」：直接打开 Photoshop 原生弹窗（需求 §7 的新形态）。
+ *
+ * 参数不在面板里填，因此：
+ *   · 弹窗走的是菜单项那条路，初值完全由 Photoshop 自己记：首次出厂默认，之后是上一次的设置；
+ *   · 弹窗自带「预览」，点确定才创建，直接关掉弹窗文档里什么都不留 —— 两种状态由 PS 保证；
+ *   · 用户在弹窗里填了什么，插件靠三条途径拿（通知 / batchPlay 返回值 / 前后对比反推），
+ *     记录因此是「他实际建的那一版」，而不是面板里的猜测。
+ */
+async function runNewGuideLayout() {
+  if (gdBusy) return;
+  refreshGuideDocState();
+  if (gdNoDoc) return setStatus('请先打开一个 Photoshop 文档。');
+
+  const seen = gdLayoutSeen;
+  setGuideBusy(true, '等待弹窗…');
+  setStatus('已打开 Photoshop 的「新建参考线版面」：勾上「预览」可边改边看，点「确定」才创建。');
+  try {
+    // 走菜单项打开，弹窗里的初值由 PS 自己记：首次出厂默认，之后是上一次的设置。
+    // prefill 只在菜单项这条路走不通时兜底（见 guides.js）
+    const r = await openGuideLayoutDialog({ prefill: gdRecent.length ? gdRecent[0].cfg : null });
+    // 途径一：PS 随 batchPlay 回传的「实际执行的参数」
+    if (r.desc) takeGuideLayoutDesc(r.desc);
+    // 途径二：动作通知，异步来的，可能比 batchPlay 的返回晚一点，等一小会儿（最多 ~0.5 秒），没有就走反推
+    for (let i = 0; !r.cancelled && i < 10 && gdLayoutSeen === seen; i++) {
+      await new Promise((res) => setTimeout(res, 50));
+    }
+    if (r.cancelled) {
+      setStatus('已取消，文档里的参考线没有变化');
+    } else if (gdLayoutSeen > seen) {
+      // 状态栏只报一句摘要就够了，完整参数在「最近使用」里能看到；
+      // 有没认出来的参数键才追一段 —— 列 / 行没进记录时，这行就是定位线索
+      const odd = unknownGuideLayoutKeys(r.desc);
+      setStatus(`已创建参考线版面：${describeCfg(gdRecent[0].cfg).title}`
+        + (odd.length ? `；有没认出来的参数：${formatGuideLayoutParams(r.desc, odd)}` : ''));
+    } else if (takeGuideLayoutGuides(r.before, r.after)) {
+      // 途径三：谁都没送参数回来，就对比弹窗前后的参考线，把这一版反推出来。
+      // 菜单项那条路 batchPlay 不回传参数，通知也不是每个版本都发 —— 全靠这条兜底
+      setStatus(`已创建参考线版面：${describeCfg(gdRecent[0].cfg).title}`);
+    } else {
+      // 三条途径都没结果 → 如实说明，不编一条假记录。
+      // 顺带把 PS 回传的键名报出来：键名对不上时这行提示就是唯一的线索
+      const keys = guideLayoutKeys(r.desc);
+      setStatus('已创建参考线版面，但没能读出这一版的参数，本次没有记入「最近使用」'
+        + (keys.length ? `（Photoshop 回传的键：${keys.join('、')}）` : ''));
+    }
+    if (!r.cancelled && !r.native) {
+      // 菜单项这条路没走通 → 弹窗是插件按上一条记录填的，PS 自己的记忆用不上，说清楚
+      setStatus(statusEl.textContent + '；本次弹窗由插件按上一条记录预填（菜单项打不开）');
+    }
+  } catch (e) {
+    setStatus('打开「新建参考线版面」失败：' + errMsg(e));
+  } finally {
+    setGuideBusy(false);
+  }
+}
+
+/**
+ * 一键应用历史 / 收藏版面（需求 §11 / §31）。不弹窗，直接重放那一版。
+ * 走 Photoshop 自己的 newGuideLayout，所以记录里存「宽度自动」时会按【当前画布】
+ * 重算，同一条记录在 1920 和 2560 的稿子上都对得上。
+ * 万一那条描述符执行不了，退回插件自己算坐标、逐条建（几何有单测兜底）。
+ */
+async function applyGuideRecord(rec) {
+  if (gdBusy || !rec) return;
+  refreshGuideDocState();
+  if (gdNoDoc) return setStatus('请先打开一个 Photoshop 文档。');
+  if (rec.raw && rec.guides) return applyRawGuides(rec);
+  const cfg = normalizeCfg(rec.cfg);
+  const canvas = readCanvas();
+
+  setGuideBusy(true, '应用中…');
+  try {
+    let via = 'ps';
+    try {
+      await applyGuideLayout(cfg);
+    } catch {
+      const plan = computeGuides(cfg, canvas);       // 兜底：自己算、自己画
+      if (plan.error) throw new Error(plan.error);
+      await applyGuides(plan, { clearFirst: cfg.clearFirst, commandName: '应用参考线版面' });
+      via = 'plugin';
+    }
+    // 重放也算「用过一次」：提到最近使用第一位（签名相同不会堆出第二条）
+    recordGuideLayout(cfg, canvas);
+    const d = describeCfg(cfg);
+    setStatus(`已应用「${rec.name ? rec.name : d.title}」：${d.detail}`
+      + (via === 'plugin' ? '（原生版面命令不可用，已由插件直接创建）' : ''));
+  } catch (e) {
+    setStatus('应用版面失败：' + errMsg(e));
+  } finally {
+    setGuideBusy(false);
+  }
+}
+
+/**
+ * 原样快照的重放：那一版不是规则版面（手摆的、拼出来的），没有参数可算，
+ * 就按存下来的坐标逐条建。跨画布不缩放 —— 位置是用户当初挑的，缩了反而不是那一版了。
+ */
+async function applyRawGuides(rec) {
+  const canvas = readCanvas();
+  setGuideBusy(true, '应用中…');
+  try {
+    await applyGuides(rec.guides, { clearFirst: true, commandName: '应用参考线版面' });
+    const d = describeRecord(rec);
+    setStatus(`已应用「${rec.name || d.title}」：${d.title}`
+      + (formatCanvas(rec.canvas) === formatCanvas(canvas)
+        ? '' : `（存的时候画布是 ${formatCanvas(rec.canvas)}，坐标未缩放）`));
+  } catch (e) {
+    setStatus('应用版面失败：' + errMsg(e));
+  } finally {
+    setGuideBusy(false);
+  }
+}
+
+/**
+ * 「收藏当前版面」：把当前文档里【已经画好】的参考线整套存进收藏，不用照着重建一遍。
+ * 能认出规则（几列几行、装订线、边距）就按参数存 —— 换个尺寸的稿子应用时会重算；
+ * 认不出来（手摆的、拼出来的）就按原坐标存成快照，照样能一键还原。
+ */
+async function favoriteCurrentGuides() {
+  if (gdBusy) return;
+  refreshGuideDocState();
+  if (gdNoDoc) return setStatus('请先打开一个 Photoshop 文档。');
+  const canvas = readCanvas();
+  const guides = readExistingGuides();
+  if (!guides.vertical.length && !guides.horizontal.length) {
+    return setStatus('当前文档里还没有参考线，先建一版再收藏。');
+  }
+
+  const empty = { vertical: [], horizontal: [] };
+  const cfg = inferCfgFromGuides(empty, guides, canvas);
+  // 收藏的是「画布上现在这个样子」，应用时自然应当替换掉当时的参考线
+  if (cfg) cfg.clearFirst = true;
+  const rec = cfg
+    ? { cfg, canvas, at: Date.now() }
+    : { raw: true, cfg: null, guides, canvas, at: Date.now() };
+
+  const dup = gdFavs.findIndex((f) => (cfg
+    ? (!f.raw && signatureOf(f.cfg) === signatureOf(cfg))
+    : (f.raw && sameGuides(f.guides, guides))));
+  if (dup >= 0) return setStatus(`这一版已经在收藏里了：「${gdFavs[dup].name}」`);
+
+  const d = describeRecord(rec);
+  const name = await askGuideName('收藏当前版面', d.name);
+  if (name === null) return;                       // 用户取消
+  gdFavs.unshift({ ...rec, name: gdCleanName(name, d.name) });
+  saveGuideLists();
+  refreshGuideRecords();
+  setStatus(`已收藏为「${gdFavs[0].name}」：${d.title}`
+    + (cfg ? '' : '（这一版不是规则版面，按原坐标存下来了）'));
+}
+
+/**
+ * 快速参考线（需求 §24）。
+ * 恒为【追加】：这几个是随手加的辅助线，把用户辛苦排好的版面清掉太粗暴；
+ * 与已有参考线重合的位置会自动跳过，连点也不会堆出重复线。
+ */
+async function runQuickGuides(kind, label) {
+  if (gdBusy) return;
+  refreshGuideDocState();
+  if (gdNoDoc) return setStatus('请先打开一个 Photoshop 文档。');
+  const plan = quickGuides(kind, readCanvas());
+  if (!plan.vertical.length && !plan.horizontal.length) return setStatus('没有可创建的参考线');
+
+  setGuideBusy(true, '创建中…');
+  try {
+    const r = await applyGuides(plan, { clearFirst: false, commandName: label });
+    if (!r.created) setStatus(`${label}：这些位置已经有参考线了，未重复创建`);
+    else setStatus(`${label}：已追加 ${r.created} 条参考线`
+      + (r.skipped ? `，跳过 ${r.skipped} 条重复位置` : ''));
+  } catch (e) {
+    setStatus(`${label}失败：` + errMsg(e));
+  } finally {
+    setGuideBusy(false);
+  }
+}
+
+/** 清除参考线（需求 §20 / §21）。只动当前文档，不碰最近使用与收藏版面 */
+async function runClearGuides(which) {
+  if (gdBusy) return;
+  refreshGuideDocState();
+  if (gdNoDoc) return setStatus('请先打开一个 Photoshop 文档。');
+  const label = which === 'v' ? '纵向参考线' : (which === 'h' ? '横向参考线' : '参考线');
+  setGuideBusy(true, '清除中…');
+  try {
+    const r = await clearGuides(which);
+    setStatus(r.removed ? `已清除 ${r.removed} 条${label}` : `当前文档没有${label}`);
+  } catch (e) {
+    setStatus('清除参考线失败：' + errMsg(e));
+  } finally {
+    setGuideBusy(false);
+  }
+}
+
+/** 显示 / 隐藏（需求 §22）：只改显示状态，参考线数据仍在 */
+async function runToggleGuidesVisible() {
+  if (gdBusy) return;
+  refreshGuideDocState();
+  if (gdNoDoc) return setStatus('请先打开一个 Photoshop 文档。');
+  setGuideBusy(true, '切换中…');
+  try {
+    const s = await toggleGuidesVisible();
+    // 读不到状态就按「刚才是什么、现在就是反面」本地记着
+    gdVisible = s === null ? !(gdVisible === null ? true : gdVisible) : s;
+    refreshGuideCtrlLabels();
+    setStatus(gdVisible ? '参考线已显示' : '参考线已隐藏（参考线本身没有被删除）');
+  } catch (e) {
+    setStatus('切换显示状态失败：' + errMsg(e));
+  } finally {
+    setGuideBusy(false);
+  }
+}
+
+/** 锁定 / 解锁（需求 §23）：避免在画布上误拖动参考线 */
+async function runToggleGuidesLock() {
+  if (gdBusy) return;
+  refreshGuideDocState();
+  if (gdNoDoc) return setStatus('请先打开一个 Photoshop 文档。');
+  setGuideBusy(true, '切换中…');
+  try {
+    const s = await toggleGuidesLock();
+    gdLocked = s === null ? !(gdLocked === null ? false : gdLocked) : s;
+    refreshGuideCtrlLabels();
+    setStatus(gdLocked ? '参考线已锁定，画布上拖不动了' : '参考线已解锁');
+  } catch (e) {
+    setStatus('切换锁定状态失败：' + errMsg(e));
+  } finally {
+    setGuideBusy(false);
+  }
+}
+
+// ---- 监听 Photoshop 的「新建参考线版面」----
+//
+// 记录功能全靠这个通知：PS 每次执行 newGuideLayout（插件按钮开的弹窗、用户自己走
+// 菜单、乃至播放动作）都会带上【实际执行的描述符】，我们把它读回成插件的配置存起来。
+// 于是「用户在弹窗里到底填了什么」不用猜，也顺手把用户手动建的版面也记了下来。
+//
+// 「应用」记录时也会触发这个通知，正好等于「用过一次提到最前」（签名相同不会堆重复）。
+
+/**
+ * 收到一份 newGuideLayout 描述符（来自 batchPlay 的返回值或动作通知）→ 记一条。
+ * 两条途径可能都送到同一版参数，pushRecent 按签名去重，只会把同一条提到最前。
+ * @returns {boolean} 是否记下来了
+ */
+function takeGuideLayoutDesc(desc) {
+  const canvas = readCanvas();
+  const cfg = canvas ? cfgFromGuideLayout(desc, canvas, readResolution()) : null;
+  if (!cfg) return false;                            // 读不出参数：不记半条脏数据
+  recordGuideLayout(cfg, canvas);
+  gdLayoutSeen++;
+  return true;
+}
+
+/**
+ * 拿不到执行参数时的兜底：对比弹窗前后的参考线，把这一版版面反推出来再记一条。
+ * 几何反推在 guide-core.js 里，纯逻辑有单测；认不出来就返回 false，不编假记录。
+ * @returns {boolean} 是否记下来了
+ */
+function takeGuideLayoutGuides(before, after) {
+  const canvas = readCanvas();
+  const cfg = canvas ? inferCfgFromGuides(before, after, canvas) : null;
+  if (!cfg) return false;
+  recordGuideLayout(cfg, canvas);
+  gdLayoutSeen++;
+  return true;
+}
+
+function bindGuideLayoutEvent() {
+  onGuideLayoutCreated((desc) => takeGuideLayoutDesc(desc));
+}
+
+// ---- 收藏管理（需求 §12 / §13 / §14）----
+
+function askGuideName(title, dflt) {
+  document.getElementById('gdNameTitle').textContent = title;
+  const inp = document.getElementById('gdNameInput');
+  inp.value = dflt || '';
+  document.getElementById('gdNameOverlay').style.display = 'flex';
+  return new Promise((res) => { gdNameDecider = res; });
+}
+function resolveGuideName(v) {
+  document.getElementById('gdNameOverlay').style.display = 'none';
+  if (gdNameDecider) { const d = gdNameDecider; gdNameDecider = null; d(v); }
+}
+
+async function toggleFavorite(i) {
+  const rec = gdRecent[i];
+  if (!rec) return;
+  const at = gdFavIndexOf(rec.cfg);
+  if (at >= 0) {                                   // 已收藏 → 再点一次取消
+    gdFavs.splice(at, 1);
+    saveGuideLists();
+    refreshGuideRecords();
+    return setStatus('已从「收藏版面」移除（文档里的参考线不受影响）');
+  }
+  const dflt = describeCfg(rec.cfg).name;
+  const name = await askGuideName('收藏这个版面', dflt);
+  if (name === null) return;                       // 用户取消
+  gdFavs.unshift({
+    name: gdCleanName(name, dflt),
+    cfg: normalizeCfg(rec.cfg),
+    canvas: rec.canvas,
+    at: Date.now(),
+  });
+  saveGuideLists();
+  refreshGuideRecords();
+  setStatus(`已收藏为「${gdFavs[0].name}」`);
+}
+
+async function renameFavorite(i) {
+  const f = gdFavs[i];
+  if (!f) return;
+  const name = await askGuideName('重命名版面', f.name);
+  if (name === null) return;
+  f.name = gdCleanName(name, f.name);
+  saveGuideLists();
+  refreshGuideRecords();
+  setStatus(`已改名为「${f.name}」`);
+}
+
+function deleteFavorite(i) {
+  const f = gdFavs[i];
+  if (!f) return;
+  gdFavs.splice(i, 1);
+  saveGuideLists();
+  refreshGuideRecords();
+  setStatus(`已取消收藏「${f.name}」（只删插件里的记录，不动文档参考线）`);
+}
+
+function deleteRecent(i) {
+  if (!gdRecent[i]) return;
+  gdRecent.splice(i, 1);
+  saveGuideLists();
+  refreshGuideRecords();
+  setStatus('已删除这条记录');
+}
+
+// 清空历史：破坏性且不可撤销，走二次确认（需求 §26）
+function askClearHistory() {
+  document.getElementById('gdHistConfirm').style.display = 'flex';
+  return new Promise((res) => { gdHistDecider = res; });
+}
+function resolveClearHistory(v) {
+  document.getElementById('gdHistConfirm').style.display = 'none';
+  if (gdHistDecider) { const d = gdHistDecider; gdHistDecider = null; d(v); }
+}
+
+// ---- 事件绑定与初始化 ----
+
+loadGuideLists();
+bindGuideLayoutEvent();                            // 先挂通知，再让用户去点弹窗
+
+// 旧版本的残留键：参数曾经存在 guide.cfg，三个开关存在 guide.colCenter / clearFirst /
+// preview。参数与开关现在都在 Photoshop 的弹窗里，插件不再保存，顺手清掉
+for (const k of ['guide.cfg', 'guide.colCenter', 'guide.clearFirst', 'guide.preview']) {
+  try { localStorage.removeItem(k); } catch { /* 不支持则忽略 */ }
+}
+
+document.getElementById('gdCreateBtn').addEventListener('click', () => runNewGuideLayout());
+
+const QUICK_LABEL = { cross: '十字中心', nine: '九宫格' };
+Array.from(document.querySelectorAll('#guidePage [data-quick]')).forEach((btn) => {
+  const kind = btn.getAttribute('data-quick');
+  btn.addEventListener('click', () => runQuickGuides(kind, QUICK_LABEL[kind] || '快速参考线'));
+});
+
+document.getElementById('gdRecentBtn').addEventListener('click', () => openGuideList('recent'));
+document.getElementById('gdFavBtn').addEventListener('click', () => openGuideList('fav'));
+document.getElementById('gdFavNowBtn').addEventListener('click', () => { favoriteCurrentGuides(); });
+document.getElementById('gdListClose').addEventListener('click', () => closeGuideList());
+
+document.getElementById('gdVisibleBtn').addEventListener('click', () => runToggleGuidesVisible());
+document.getElementById('gdLockBtn').addEventListener('click', () => runToggleGuidesLock());
+document.getElementById('gdClearBtn').addEventListener('click', () => runClearGuides('all'));
+
+// 清除参考线的下拉：选项点了就直接执行，不是「选个值」，所以不复用 bindDropdown
+bindDropdownBox('gdClearDd');
+Array.from(document.querySelectorAll('#gdClearDd .dd-item')).forEach((item) => {
+  item.addEventListener('click', () => {
+    ddItemClicked = true;
+    document.getElementById('gdClearDd').classList.remove('open');
+    runClearGuides(item.getAttribute('data-clear'));
+  });
+});
+document.getElementById('gdNameOk').onclick = () =>
+  resolveGuideName(document.getElementById('gdNameInput').value);
+document.getElementById('gdNameCancel').onclick = () => resolveGuideName(null);
+document.getElementById('gdNameInput').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  if (e.preventDefault) e.preventDefault();
+  resolveGuideName(document.getElementById('gdNameInput').value);
+});
+
+// 「清空历史」在最近使用弹窗底部；确认框叠在列表弹窗之上，确认完列表就地刷新成空态
+document.getElementById('gdListClear').addEventListener('click', async () => {
+  if (!gdRecent.length) return;
+  const go = await askClearHistory();
+  if (!go) return;
+  gdRecent = [];
+  saveGuideLists();
+  refreshGuideRecords();
+  setStatus('已清空最近使用（收藏版面与文档参考线不受影响）');
+});
+document.getElementById('gdHistYes').onclick = () => resolveClearHistory(true);
+document.getElementById('gdHistNo').onclick = () => resolveClearHistory(false);
+
+bindTip(document.getElementById('guideInfo'), document.getElementById('guideTip'),
+  '建过的参考线版面自动记下来，下次一键重放。<br>'
+  + '<b>新建参考线版面</b>——开 PS 原生弹窗，确定才创建，数值由 PS 记忆。<br>'
+  + '<b>最近使用</b>——自动记录，留 20 条；点「应用」直接重放。<br>'
+  + '<b>收藏版面</b>——点 ☆ 存成模板，可命名，不限条数。<br>'
+  + '<b>收藏当前版面</b>——把画布上现成的参考线整套存进收藏。<br>'
+  + '<b>快速参考线</b>——点了直接建，追加不覆盖。<br>'
+  + '<b>参考线控制</b>——显隐、锁定、清除（可只清横或竖）。');
+
+refreshGuideRecords();
+refreshGuideCtrlLabels();
+refreshGuideDocState();
+
+// 为什么参数不做在面板里、而是交给原生弹窗（这段结论别再推翻）：
+// 插件自己画的「预览」没法在面板被折叠时撤掉 —— Adobe 的已知问题清单里写着
+// 「uxphidepanel 及对应的 hide 回调从不发生，即使面板已经不可见」（PS-57284），
+// show 也只在面板第一次显示时触发一次，uxpcommand 那条路同样收不到事件。
+// 于是「没确认就不该留下的参考线」会赖在文档里。原生弹窗没这个问题：预览、确定、
+// 取消全由 Photoshop 管，关掉弹窗文档里什么都不留。插件只做它做得好的部分——
+// 把建过的版面记下来，下次一键重放。
+
+// 文档打开 / 关闭 / 切换时刷新画布尺寸与按钮可用性（需求 §29 / §30）。
+// 只在停留在参考线页时才刷，避免在别的功能页做无谓的开销。
+(async () => {
+  try {
+    await action.addNotificationListener(['open', 'close', 'newDocument'], () => {
+      if (currentPage === 'guide') refreshGuideDocState();
+    });
+  } catch { /* 某些版本不触发这些通知：切到本页时也会刷新一次 */ }
+})();
 
 // 顶栏版本号：始终显示 manifest 中的真实版本
 const versionEl = document.getElementById('version');

@@ -166,26 +166,32 @@ input[type="text"]::placeholder { color: #6d8ba3; }
 
 /* ---------- 功能中心磁贴 ---------- */
 /* 无标题、无外框：磁贴自身就是全部视觉，只留和卡片一致的下外边距 */
-.tiles-section { margin-bottom: 10px; }
-/* 四个功能并排一行：磁贴等分剩余宽度，图标与文字都按窄面板压缩 */
-.tiles { display: flex; }
+.tiles-section { margin-bottom: 6px; }
+/* 七个功能排两行（4 + 3）：一行挤七个会把标签压折行。
+   槽定宽 25% + flex-wrap 自然分行，第二行左对齐、宽度与第一行一致。 */
+.tiles { display: flex; flex-wrap: wrap; }
+/* .tile 只是「槽」：负责占位与间距，自身不画任何视觉。
+   视觉盒必须下沉一层 —— 定宽 25% 的 flex 项没法再用 margin 挤出间距
+   （25%+margin 会溢出换行），而 UXP 下 calc(25% - 4px) 不可靠。 */
 .tile {
-  flex: 1 1 0;
+  flex: 0 0 25%;
   min-width: 0;
-  position: relative;
+  padding: 0 2px 4px;
+  cursor: pointer;
+}
+.tile-inner {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin: 0 2px;                     /* 6 个磁贴并排：3px 会挤到标签折行，收到 2px */
+  height: 100%;                      /* 同一行内磁贴等高（标签折行时也不错位） */
   padding: 7px 2px;
   background: #0c2137;
   border: 1px solid #17344e;
   border-radius: 8px;
-  cursor: pointer;
 }
-.tiles .tile:first-child { margin-left: 0; }
-.tiles .tile:last-child { margin-right: 0; }
-.tile > * { pointer-events: none; }       /* 子元素不拦截点击，点直达磁贴 */
+/* 嵌套之后不能只管直接子元素：图标/文字都在 .tile-inner 里，
+   任一层吃了鼠标点击就到不了槽上 */
+.tile * { pointer-events: none; }
 .tile-icon { width: 22px; height: 22px; flex: 0 0 auto; }
 /* 名称保持完整，窄面板下允许折成两行；磁贴等高由 flex 默认 stretch 保证，图标仍横向对齐 */
 .tile-label {
@@ -198,7 +204,7 @@ input[type="text"]::placeholder { color: #6d8ba3; }
   word-break: break-all;             /* 「Symbols 切图」这类含拉丁词的标签也能断开，不撑宽磁贴 */
 }
 /* 选中态：只靠青色描边 + 略深底色高亮，不再画右上角对勾 */
-.tile.active {
+.tile.active .tile-inner {
   background: #0e2c47;
   border-color: #22d3e0;
 }
@@ -415,6 +421,92 @@ input[type="text"]::placeholder { color: #6d8ba3; }
 .color-swatch:active { border-color: #22d3e0; opacity: 0.75; }
 /* 输出为「独立单元格」时，结构开关整行置灰 */
 #tablePage .row-off { opacity: 0.4; pointer-events: none; }
+
+/* ---------- 参考线助手页 ---------- */
+#guidePage { position: relative; }
+
+/* 当前画布尺寸：贴在标题行右端（记录里存「自动」时按它重算） */
+.gd-canvas { margin-left: auto; font-size: 11px; color: #8ba0b3; }
+#gdCreateBtn { margin-top: 10px; }
+
+/* 版面记录弹窗：列表比普通确认框宽，条目多时内部滚动。
+   选择器带上 .overlay 提高优先级 —— .overlay-box 的 max-width:84% 定义在本节【之后】，
+   同优先级下后写的会赢 */
+.overlay .gd-list-box { width: 94%; max-width: 94%; text-align: left; }
+.overlay .gd-list-box .confirm-msg { text-align: center; }
+.gd-list { max-height: 300px; overflow-y: auto; margin-bottom: 12px; }
+/* 一条记录：左侧两行文字，右侧一组小按钮 */
+.gd-item {
+  display: flex;
+  align-items: center;
+  padding: 7px 8px;
+  margin-bottom: 6px;
+  background: #0c1f33;
+  border: 1px solid #18344e;
+  border-radius: 8px;
+}
+.gd-item-main { flex: 1 1 auto; min-width: 0; }
+.gd-item-title { font-size: 12px; font-weight: 600; color: #e6f0f8; }
+.gd-item-sub { margin-top: 3px; font-size: 11px; line-height: 1.5; color: #8ba0b3; }
+.gd-item-acts { flex: 0 0 auto; display: flex; align-items: center; margin-left: 8px; }
+.gd-mini {
+  margin-left: 4px;
+  padding: 3px 7px;
+  font-size: 11px;
+  color: #8ba0b3;
+  border: 1px solid #24425c;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.gd-mini:hover { border-color: #22d3e0; color: #3ce0ef; }
+.gd-mini.btn-off { opacity: 0.4; pointer-events: none; }
+.gd-apply { color: #3ce0ef; border-color: #22d3e0; }
+.gd-star { color: #ffd54a; border-color: #4a4327; }
+.gd-empty { padding: 10px 2px; font-size: 12px; line-height: 1.7; color: #8ba0b3; text-align: center; }
+
+
+/* 小节标题：上方一条分隔线，右侧可放一个文字链接（清空历史） */
+.gd-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 12px 0 8px;
+  padding-top: 12px;
+  border-top: 1px solid #12293f;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e9f2f9;
+}
+
+/* 次级按钮：小尺寸控件一律用 div 不用 button（原生 button 有压不住的 UA 最小宽高） */
+.gd-row { display: flex; align-items: center; margin-bottom: 6px; }
+.gd-ctrl { margin-top: 8px; }
+.gd-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 30px;
+  margin-right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #c3d4e2;
+  background: #0e2438;
+  border: 1px solid #24425c;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.gd-row .gd-btn:last-child { margin-right: 0; }
+.gd-btn:hover { border-color: #22d3e0; color: #3ce0ef; }
+.gd-btn.btn-off { opacity: 0.4; pointer-events: none; }
+.gd-btn-grow { flex: 1 1 auto; }
+/* 清除参考线右侧的箭头：只留放得下箭头的宽度，别跟主按钮平分 */
+.gd-clear-dd { flex: 0 0 34px; height: 30px; margin-left: 0; }
+
+/* 起名弹窗里的输入框：确认按钮之上留一段距离 */
+.gd-name-field { margin-bottom: 14px; text-align: left; }
+/* 清除参考线的箭头只有 34px 宽，菜单得自己撑开，靠右对齐向左展开 */
+.gd-clear-dd .dd-menu { left: auto; right: 0; width: 152px; }
 
 /* ---------- 重命名页 ---------- */
 .field-block label { display: block; font-size: 13px; color: #d5e3ef; margin-bottom: 8px; }
