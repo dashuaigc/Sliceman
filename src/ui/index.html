@@ -619,6 +619,21 @@
 </svg>
             <div class="btn-tip" id="renameTip" style="display:none;"></div>
           </div>
+          <!-- 改名对象：始终是「图层面板里选中的那些」。这一行显示当前选中数，
+               并提供「按名称查找…」入口——弹窗查完把命中的层并进图层面板的选中 -->
+          <div class="field-block field-inline" id="targetRow">
+            <label id="targetInfo">未选中图层或组</label>
+            <!-- 查找入口：青色描边钮 + 放大镜（原来是灰描边的文字链，太不起眼） -->
+            <span class="find-btn" id="slOpenBtn">
+              <svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="search">
+  <g fill="none" stroke="#3ce0ef" stroke-width="14" stroke-linecap="round">
+    <circle cx="54" cy="54" r="34"/>
+    <path d="M79 79 L110 110"/>
+  </g>
+</svg>
+              <span class="find-btn-t">按名称查找</span>
+            </span>
+          </div>
           <div class="field-block">
             <label>重命名方式 <span class="label-sub">（对选中的组/图层生效）</span></label>
             <div class="pill-row" id="renameModePills">
@@ -648,18 +663,18 @@
     <path d="M18 84 H98"/>
   </g>
 </svg>
-            <span class="row-label">启用编号 n</span>
+            <span class="row-label">数字编号 n</span>
             <div class="switch" id="counterSwitch"><svg class="sw" viewBox="0 0 44 24" xmlns="http://www.w3.org/2000/svg"><rect class="sw-track" x="12" y="0" width="20" height="24"/><circle class="sw-track" cx="12" cy="12" r="12"/><circle class="sw-track" cx="32" cy="12" r="12"/><circle class="sw-knob sw-off" cx="12" cy="12" r="9"/><circle class="sw-knob sw-on" cx="32" cy="12" r="9"/></svg></div>
           </div>
           <div id="counterBlock" style="display:none;">
             <!-- 起始/递增同一行：UXP 不支持 grid，用 flex 两等分 -->
             <div class="field-block field-row">
               <div class="field-col">
-                <label>起始数字 <span class="label-sub">（n 的初始值）</span></label>
+                <label>起始数字</label>
                 <div class="tf"><input type="text" id="startNum"></div>
               </div>
               <div class="field-col">
-                <label>递增数字 <span class="label-sub">（默认 1）</span></label>
+                <label>递增数字</label>
                 <div class="tf"><input type="text" id="stepNum"></div>
               </div>
             </div>
@@ -792,6 +807,104 @@
         <div class="confirm-row">
           <button id="gdHistYes" class="danger">清空历史</button>
           <button id="gdHistNo" class="muted">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 按名称查找图层：查完把命中的层并进图层面板的选中，弹窗关闭，剩下的照常用鼠标增减 -->
+    <div id="slOverlay" class="overlay" style="display:none;">
+      <div class="overlay-box sl-dialog">
+        <div class="sl-head">
+          <p class="confirm-msg sl-title">按名称查找图层</p>
+          <span class="sl-x" id="slCloseBtn">✕</span>
+        </div>
+
+        <!-- ① 查找视图：填条件 → 搜索 → 勾选 → 加进查找列表 -->
+        <div id="slSearchView">
+          <div class="field-block">
+            <label>查找内容 <span class="label-sub">（图层 / 组名称里包含的文字）</span></label>
+            <!-- 输入框（右侧带清空 ✕）+ 搜索按钮同一行；框内按回车等同于点搜索 -->
+            <div class="sl-find-row">
+              <div class="tf sl-find-box">
+                <input type="text" id="slFindText" placeholder="如 Button，回车即搜索">
+                <span class="sl-x-mini" id="slFindClear">✕</span>
+              </div>
+              <button id="slSearchBtn" class="sl-find-btn">搜索</button>
+            </div>
+          </div>
+          <div class="field-block field-inline">
+            <label>匹配方式：</label>
+            <div class="pill-row" id="slMatchPills">
+              <span class="pill active" data-match="contains">包含</span>
+              <span class="pill" data-match="exact">完全匹配</span>
+              <span class="pill" data-match="prefix">前缀</span>
+              <span class="pill" data-match="suffix">后缀</span>
+            </div>
+          </div>
+          <div class="field-block field-inline">
+            <label>查找范围：</label>
+            <div class="pill-row" id="slScopePills">
+              <span class="pill active" data-scope="doc">整个文档</span>
+              <span class="pill" data-scope="sel">已选中的组内</span>
+            </div>
+          </div>
+          <div class="field-block field-inline">
+            <label>图层类型：</label>
+            <div class="pill-row" id="slKindPills">
+              <span class="pill active" data-kind="all">全部</span>
+              <span class="pill" data-kind="layer">仅图层</span>
+              <span class="pill" data-kind="group">仅图层组</span>
+            </div>
+          </div>
+          <div class="field-block field-inline">
+            <label>附加条件：</label>
+            <!-- 这两项是多选（各自开关），但样式与上面「图层类型」那排完全一致 -->
+            <div class="pill-row" id="slFlagPills">
+              <span class="pill active" data-flag="hidden">含隐藏图层</span>
+              <span class="pill" data-flag="case">区分大小写</span>
+            </div>
+          </div>
+          <div class="preview-block">
+            <div class="preview-head" id="slCount">输入查找内容后显示结果</div>
+            <div class="sl-tools">
+              <span class="gd-mini" id="slAllBtn">全选</span>
+              <span class="gd-mini" id="slInvBtn">反选</span>
+              <!-- 排序收成折叠下拉（同导出设置那套自绘下拉），默认「图层顺序」。
+                   这一个向下展开：向上会顶到「附加条件」，而下面就是它要排的列表 -->
+              <div class="dropdown sl-sort-dd" id="slSortDd">
+                <span class="dd-value" id="slSortValue">图层顺序</span>
+                <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#3ce0ef" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <div class="dd-menu">
+                  <span class="dd-item active" data-sort="doc">图层顺序</span>
+                  <span class="dd-item" data-sort="name">按名称</span>
+                </div>
+              </div>
+            </div>
+            <div id="slList" class="preview sl-list"></div>
+          </div>
+          <div class="sl-foot">
+            <button id="slAddBtn" class="sl-primary">＋ 添加到查找列表</button>
+            <span class="gd-mini" id="slBackBtn" style="display:none;">返回列表</span>
+          </div>
+        </div>
+
+        <!-- ② 查找项视图：每次添加折成一张小卡，下面是全部结果预览 -->
+        <div id="slListView" style="display:none;">
+          <div class="sl-tools">
+            <span class="sl-sec" id="slGroupsHead">已添加的查找项</span>
+            <span class="gd-mini" id="slClearBtn">清空全部</span>
+          </div>
+          <div id="slGroupList" class="sl-groups"></div>
+          <button id="slMoreBtn" class="sl-more blue">＋ 继续添加</button>
+          <div class="sl-tools">
+            <span class="sl-sec" id="slPrevHead">全部匹配结果预览</span>
+            <span class="gd-mini" id="slPrevAllBtn">全选</span>
+          </div>
+          <div id="slPrevList" class="preview sl-list"></div>
+          <div class="confirm-row sl-row-acts">
+            <button id="slOkBtn" class="ok">确认</button>
+            <button id="slCancelBtn" class="muted">取消</button>
+          </div>
         </div>
       </div>
     </div>

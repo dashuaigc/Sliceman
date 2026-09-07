@@ -72,6 +72,26 @@ describe('index.html 遵守 UXP 渲染约束', () => {
     expect(html).not.toMatch(/<filter\b|feDropShadow|linearGradient|radialGradient/i);
   });
 
+  it('弹窗本体的 class 不与 panel.js 拼出来的元件同名', () => {
+    // 真机踩过：查找弹窗本体和结果行里的勾选框都叫 .sl-box，弹窗吃到勾选框的
+    // width/height:12px，整个窗被压成一条几十像素高的带子，内容全看不见。
+    const boxClasses = [...html.matchAll(/class="overlay-box ([^"]+)"/g)]
+      .flatMap((m) => m[1].split(/\s+/))
+      .filter(Boolean);
+    expect(boxClasses.length).toBeGreaterThan(0);          // 防止正则失效后静默通过
+    const clash = boxClasses.filter((c) => new RegExp(`class="[^"]*\\b${c}\\b`).test(js));
+    expect(clash).toEqual([]);
+  });
+
+  it('限高一律用固定像素，不用百分比 max-height', () => {
+    // 约定而非已知缺陷：项目里验证过能用的弹窗都是「本体高度由内容决定 + 内部列表按
+    // 固定像素限高」。百分比高度在 UXP 下没验证过，且一旦哪条规则又给本体塞了固定
+    // 高度，配上 overflow 就会把弹窗压成一条带（见 styles.css 里 sl-dialog 那段）。
+    const css = readFileSync(join(root, 'src/ui/styles.css'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(css).not.toMatch(/max-height:\s*\d+%/);
+  });
+
   it('样式表不用 grid / box-shadow / position:fixed（UXP 不支持或高危）', () => {
     const css = readFileSync(join(root, 'src/ui/styles.css'), 'utf8')
       .replace(/\/\*[\s\S]*?\*\//g, '');            // 注释里提到这些词不算

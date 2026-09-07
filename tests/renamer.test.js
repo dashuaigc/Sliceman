@@ -98,6 +98,14 @@ describe('buildRenameRows —— 替换模式', () => {
     );
     expect(rows[0].to).toBe('Button');
   });
+  it('区分大小写：名称里的 Btn 不会被 btn 匹配到', () => {
+    const rows = buildRenameRows(
+      ['Btn_normal', 'btn_hover'],
+      { mode: 'replace', find: 'btn', template: 'icon' },
+    );
+    expect(rows[0]).toMatchObject({ to: 'Btn_normal', unmatched: true });
+    expect(rows[1].to).toBe('icon_hover');
+  });
 });
 
 describe('buildRenameRows —— 重新命名模式', () => {

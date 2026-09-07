@@ -338,6 +338,16 @@ input[type="text"]::placeholder { color: #6d8ba3; }
 }
 /* 选中：亮蓝字 + 青色圆角描边，内部无填充 */
 .pill.active { border-color: #22d3e0; color: #3ce0ef; font-weight: 600; }
+/* 重命名方式那四个例外：分段控件样式（未选＝深底灰边，选中＝青色实心深字），
+   比描边款一眼就能看出当前在哪个方式上。间距改成挂右边，第一个才与上面的标签左对齐 */
+#renameModePills .pill {
+  margin: 3px 6px 0 0;
+  padding: 4px 9px;
+  color: #9fb3c6;
+  background: #0e2438;
+  border-color: #1e3a52;
+}
+#renameModePills .pill.active { color: #04283a; background: #22d3e0; border-color: #22d3e0; }
 
 /* ---------- 一键排版页 ---------- */
 /* 行与行之间统一加分隔线：本页 setting-row 与 switch-row 交替出现，
@@ -546,6 +556,211 @@ input[type="text"]::placeholder { color: #6d8ba3; }
 .preview b { color: #22d3e0; font-weight: 600; }
 .preview .dup { color: #e0555c; }
 
+/* ---------- 「按名称查找图层」弹窗 ---------- */
+/* 入口那一行：标签在左，按钮顶到右边。按钮是深底 + 青色描边 + 放大镜，
+   悬停时底色提亮、描边转亮青（灰描边的文字链在这一行太容易被忽略） */
+#targetRow #slOpenBtn { margin-left: auto; }
+.find-btn {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  padding: 5px 11px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #3ce0ef;
+  background: #0c2437;
+  border: 1px solid #22d3e0;
+  border-radius: 14px;
+  cursor: pointer;
+}
+.find-btn > * { pointer-events: none; }
+.find-btn svg { width: 12px; height: 12px; margin-right: 5px; }
+.find-btn:hover { background: #123449; border-color: #3ce0ef; }
+/* 弹窗本体的 class 是 sl-dialog，别再叫 sl-box —— 结果行里的勾选框就叫 sl-box，
+   撞名时弹窗会吃到勾选框那条 width/height:12px，整个窗被压成一条带子（真机踩过）。
+   高度完全由内容决定，不给本体设 max-height + overflow：这是版面记录弹窗已经验证
+   可用的写法（限高只加在内部列表上，且用固定像素）。为此内部间距一律压紧、结果
+   列表按固定像素限高，保证整窗在常见面板高度里放得下。 */
+.overlay .sl-dialog { width: 94%; max-width: 94%; padding: 12px; text-align: left; }
+.overlay .sl-dialog .confirm-msg { margin: 0; text-align: center; }
+/* 标题行：标题居中占满，右上角一个关闭 ✕ */
+.sl-head { display: flex; align-items: flex-start; margin-bottom: 10px; }
+.sl-title { flex: 1 1 auto; min-width: 0; }
+.sl-x {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  padding: 0 2px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: #8ba0b3;
+  cursor: pointer;
+}
+.sl-x:hover { color: #3ce0ef; }
+.sl-dialog .field-block + .field-block { margin-top: 8px; }
+.sl-dialog .field-block label { margin-bottom: 4px; }
+.sl-dialog .field-inline label { margin-bottom: 0; }
+.sl-dialog .preview-block { margin-top: 10px; }
+.sl-dialog .preview-head { margin-bottom: 6px; color: #c3d4e2; }
+/* 查找内容：输入框吃掉剩余宽度，搜索按钮定宽跟在右边（小一号，不抢输入框的地方） */
+.sl-find-row { display: flex; align-items: center; }
+.sl-find-row .tf { flex: 1 1 auto; min-width: 0; }
+/* 清空 ✕ 放在框【内】但不与 input 重叠 —— UXP 的文字层恒画在最上层，
+   压在 input 上的元素点不到也看不见，所以让 input 与 ✕ 在框内分占两段 */
+.sl-find-box { display: flex; align-items: center; }
+.sl-find-box input[type="text"] { flex: 1 1 auto; min-width: 0; }
+.sl-x-mini {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  font-size: 11px;
+  color: #6f8aa3;
+  cursor: pointer;
+}
+.sl-x-mini:hover { color: #3ce0ef; }
+.sl-find-btn {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;                /* 青底白字（与「添加到查找列表」一致） */
+  background: #22d3e0;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.sl-list { min-height: 40px; max-height: 120px; padding: 8px; line-height: 1.55; }
+/* 结果行：整行可点＝切换勾选。子元素一律 pointer-events:none —— 这样事件目标稳定
+   落在行本身，整个列表只挂一个委托监听（同 .switch > * 的既有处理） */
+.sl-item { display: flex; align-items: flex-start; padding: 1px 0; cursor: pointer; }
+.sl-item > * { pointer-events: none; }
+.sl-box {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  margin: 3px 8px 0 0;
+  font-size: 10px;
+  line-height: 12px;
+  text-align: center;
+  color: #0c1f33;               /* 未勾选时框内没字，勾选后 ✓ 用深底色压在青块上 */
+  border: 1px solid #35566f;
+  border-radius: 3px;
+}
+.sl-item.on .sl-box { background: #22d3e0; border-color: #22d3e0; }
+.sl-name { flex: 1 1 auto; min-width: 0; }
+.sl-path { color: #6f8aa3; }
+.sl-hit { color: #22d3e0; font-weight: 600; }
+.sl-tag { color: #6f8aa3; font-size: 11px; }
+.sl-note { color: #6f8aa3; }
+/* 行尾的类型/来源小字，靠右不参与压缩 */
+.sl-kind { flex: 0 0 auto; margin-left: 8px; font-size: 11px; color: #6f8aa3; }
+
+/* 列表上方的一排小工具（全选 / 反选 / 排序），允许换行 */
+.sl-tools { display: flex; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+.sl-tools .gd-mini { margin: 0 6px 0 0; }
+/* 排序下拉：不吃满剩余宽度（.dropdown 默认 flex:1），定宽顶到右边；
+   菜单改为【向下】展开——上面是「附加条件」那几行，下面正是它要排的结果列表 */
+.sl-sort-dd { flex: 0 0 auto; width: 92px; height: 22px; margin-left: auto; }
+.sl-sort-dd .dd-value { font-size: 11px; }
+.sl-sort-dd .dd-menu { top: 100%; bottom: auto; margin: 4px 0 0; }
+.sl-sort-dd .dd-item { font-size: 11px; }
+/* 分区小标题（已添加的查找项 / 全部匹配结果预览） */
+.sl-sec { flex: 1 1 auto; min-width: 0; font-size: 13px; color: #d5e3ef; }
+.sl-tools .sl-sec + .gd-mini { flex: 0 0 auto; margin-right: 0; }
+/* 「清空全部」会一次抹掉所有查找项：悬停转红以示破坏性（其余 gd-mini 悬停是青色）。
+   带 id 的选择器优先级高于 .gd-mini:hover，不必care 写在它前面还是后面 */
+#slClearBtn:hover { color: #e0555c; border-color: #e0555c; }
+
+/* 查找视图底部：主按钮 + 「返回列表」 */
+.sl-foot { display: flex; align-items: center; margin-top: 12px; }
+.sl-primary {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 9px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;                /* 青底白字：可用态一律白字，置灰态才转灰（见 .btn-off） */
+  background: #22d3e0;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.sl-primary.btn-off { color: #6f8aa3; background: #1c3a4e; pointer-events: none; }
+.sl-foot .gd-mini { flex: 0 0 auto; margin-left: 8px; }
+
+/* 「继续添加」：整行的蓝色按钮（与确认区那套 .blue 同一个蓝；背景在这里写死，
+   免得哪天两节的先后顺序一变，同优先级的 .blue 就压不住 .sl-more 了） */
+.sl-more {
+  display: block;
+  width: 100%;
+  margin: 8px 0 12px;
+  padding: 7px 8px;
+  font-size: 12px;
+  color: #3ce0ef;
+  background: #0c2437;
+  border: 1px solid #24425c;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.sl-more.blue { color: #ffffff; background: #2f74d0; border-color: #2f74d0; }
+
+/* 已添加的查找项：整块按固定像素滚（组数不限，弹窗高度不变） */
+.sl-groups { max-height: 168px; overflow-y: auto; }
+.sl-grp {
+  padding: 7px 8px;
+  margin-bottom: 6px;
+  background: #0c1f33;
+  border: 1px solid #18344e;
+  border-radius: 8px;
+}
+.sl-grp.off { opacity: 0.5; }
+.sl-grp-head { display: flex; align-items: center; }
+.sl-grp-fold { flex: 0 0 auto; width: 14px; font-size: 10px; color: #8ba0b3; cursor: pointer; }
+/* 关键词前的放大镜：一眼看出这张卡是「一次查找」，不是一个图层 */
+.sl-grp-ico { flex: 0 0 auto; width: 11px; height: 11px; margin-right: 5px; }
+.sl-grp-key { flex: 1 1 auto; min-width: 0; font-size: 12px; font-weight: 600; color: #e6f0f8; }
+.sl-grp-n { flex: 0 0 auto; margin: 0 6px; font-size: 11px; color: #6f8aa3; }
+/* 启用/停用：复用面板里那套开关（.switch/.sw 的类名照抄，轨道与滑块的显隐直接继承），
+   只把尺寸压小一号。颜色仍是面板统一的青色，不跟设计稿的绿——同一个面板里别两套色 */
+.sl-sw { flex: 0 0 auto; width: 30px; height: 16px; margin: 0 2px; }
+.sl-sw .sw { width: 30px; height: 16px; }
+/* 编辑 / 删除改成小图标钮；子元素一律不吃点击，事件目标稳定落在钮上
+   （UXP 下 svg 子元素能不能吃到 pointer-events 没验证过，JS 侧另有向上找 data-act 的兜底） */
+.sl-ico-btn { flex: 0 0 auto; padding: 2px 3px; line-height: 0; cursor: pointer; }
+.sl-ico-btn > * { pointer-events: none; }
+.sl-ico-btn svg { width: 17px; height: 17px; }
+.sl-grp-cfg { margin-top: 4px; font-size: 11px; color: #6f8aa3; }
+/* 命中的名字只占一行：装不下的名字自己截断，末尾的 +N 定宽不参与压缩 */
+.sl-grp-chips { display: flex; flex-wrap: nowrap; overflow: hidden; margin-top: 5px; }
+.sl-grp-chips .sl-note { font-size: 11px; }
+.sl-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-right: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #8ba0b3;
+  background: #0a1e33;
+  border: 1px solid #24425c;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.sl-chip.on { color: #d5e3ef; border-color: #22d3e0; }
+.sl-chip.more { flex: 0 0 auto; margin-right: 0; border-style: dashed; cursor: default; }
+/* 四个按钮排成 2×2：每个占一行的四成再靠 flex-grow 平分，两行两列间距一致。
+   UXP 不用 gap（没验证过），间距一律给 margin */
+/* 选择器带上两个 class：基础的 .confirm-row button 写在本节【之后】，同优先级会赢 */
+.confirm-row.sl-row-acts { flex-wrap: wrap; margin: 14px -4px 0; }
+.confirm-row.sl-row-acts button {
+  flex: 1 1 40%;
+  min-width: 0;
+  margin: 0 4px 8px;
+  padding: 8px 6px;
+}
+.sl-row-acts button.btn-off { opacity: 0.4; pointer-events: none; }
+
 /* ---------- 状态提示 ---------- */
 .status {
   flex: 1 1 auto;            /* 底部栏唯一元素，撑满并居中显示 */
@@ -660,3 +875,4 @@ input[type="text"]::placeholder { color: #6d8ba3; }
 .danger { background: #e34850; }
 .ok     { background: #2d9d78; }
 .muted  { background: #59708a; }
+.blue   { background: #2f74d0; }

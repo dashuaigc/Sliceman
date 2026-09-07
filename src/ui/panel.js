@@ -7,7 +7,9 @@ import { normalize } from '../lib/normalize.js';
 import { readDocumentTree } from '../ps/layer-tree.js';
 import { exportTask, exportSymbol, beginExport, endExport } from '../ps/exporter.js';
 import { hasCounter, buildRenameRows } from '../lib/rename-core.js';
+import { matchLayers, describePath } from '../lib/search-core.js';
 import { readItemIndexes, applyRename } from '../ps/renamer.js';
+import { readAllLayers, selectLayersById } from '../ps/layer-finder.js';
 import { smartSplitLayer } from '../ps/smart-split.js';
 import { convertToSmartObjects } from '../ps/smart-object.js';
 import { createGroups } from '../ps/group-maker.js';
@@ -55,9 +57,18 @@ function collectDescendantIds(group, out) {
   }
 }
 
+// 图层面板里【所有】高亮项，原样返回（同步读取）。
+// activeLayers 就是面板里真正被点亮的那些：选中一个组不会自动带上它的子图层，
+// 所以这里出现「组 + 组内某几层」只可能是用户自己两样都选了 —— 重命名要全部照改。
+function allSelectedLayers() {
+  const doc = app.activeDocument;
+  return doc ? Array.from(doc.activeLayers || []) : [];
+}
+
 // 当前文档中选中的图层/组（同步读取）。
-// 只保留"最外层被选中"的项：选中组时排除其组内子图层，
-// 使预览/改名只作用于选中的组名或图层名本身。
+// 只保留"最外层被选中"的项：选中组时排除其组内子图层。
+// 用于把组当成一个整体处理的功能（切图 / 排版 / 平移 / 建组）——父子各算一次会重复作用。
+// 重命名不走这条：改名是逐个对象改自己的名字，父子同时选中就该各改一次（见 allSelectedLayers）
 function selectedLayers() {
   const doc = app.activeDocument;
   if (!doc) return [];
@@ -452,7 +463,7 @@ let grouping = false;
 async function runCreateGroups() {
   if (grouping) return;
   if (!app.activeDocument) return setStatus('请先打开一个 PSD 文档');
-  const layers = await sortedSelectedLayers(false);
+  const layers = await sortedByPanelOrder(selectedLayers(), false);
   if (!layers.length) return setStatus('请先选择至少一个图层或图层组');
   // 名称在执行前一次读好：建组过程中图层顺序会变，事后再读会错位
   const pairs = layers.map((l) => ({ id: l.id, name: l.name }));
@@ -549,8 +560,10 @@ const TIP_MASKED_FIELD_IDS = [
   'tblLineW', 'tblLineColor', 'tblFillColor', 'tblRadius',
   'gdNameInput',                                                    // 参考线：收藏起名
 ];
+// 「按名称查找图层」弹窗是否开着：它自己带输入框，开着期间页面上的输入框必须一直藏着
+let slOpen = false;
 function setTipMaskedFields(on) {
-  const v = on ? 'hidden' : '';
+  const v = on || slOpen ? 'hidden' : '';
   for (const id of TIP_MASKED_FIELD_IDS) {
     const el = document.getElementById(id);
     if (el) el.style.visibility = v;
@@ -1090,12 +1103,14 @@ function readRenameCfg() {
   };
 }
 
-// 选中层按图层面板顺序排序（编号与预览都按此序）：
+// 把一批选中层按图层面板顺序排序（编号与预览都按此序）：
 // 主路：一次 batchPlay 读回 itemIndex（自面板底部向上递增 → 从上到下 = 降序）；
 // 兜底：itemIndex 读不到时按 doc.layers 遍历序（UXP 面板序，首个=最上）。
+// 组与它的子层同时在列时，组的 itemIndex 大于组内所有子层 → 降序排下来正好是
+// 「组名在前、组内的层紧随其后」，和面板上从上往下读的顺序一致。
+// @param {Array<object>} sel 作用对象（重命名传全部高亮项，建组传最外层项）
 // @param {boolean} [forceUp] 显式指定方向（批量建组恒用 false=从上到下）；省略则读重命名页的方向 pill
-async function sortedSelectedLayers(forceUp) {
-  const sel = selectedLayers();
+async function sortedByPanelOrder(sel, forceUp) {
   if (sel.length <= 1) return sel;
   const up = forceUp !== undefined
     ? forceUp
@@ -1115,7 +1130,7 @@ async function sortedSelectedLayers(forceUp) {
   } catch { return sel; }
 }
 
-// 模式相关字段显隐 + 标签/占位文案（编号设置区由「启用编号 n」开关控制）
+// 模式相关字段显隐 + 标签/占位文案（编号设置区由「数字编号 n」开关控制）
 function updateRenameFields() {
   show('findBlock', renameMode === 'replace');
   document.getElementById('templateLabel').textContent = MODE_LABEL[renameMode];
@@ -1123,11 +1138,20 @@ function updateRenameFields() {
   document.getElementById('counterBlock').style.display = counterSwitchEl.checked ? '' : 'none';
 }
 
+/** 入口那一行的当前选中数（弹窗里「只选这些 / 加入」之后也刷它） */
+function refreshTargetInfo() {
+  // 数的是全部高亮项：选了组又选了组里的层，两样都会被改名，就都得算进这个数
+  const n = allSelectedLayers().length;
+  document.getElementById('targetInfo').textContent = app.activeDocument
+    ? (n ? `已选中 ${n} 个图层/组` : '未选中图层或组')
+    : '未打开文档';
+}
+
 let renderSeq = 0;   // 连续输入时只保留最后一次异步渲染的结果
 async function renderRenamePreview() {
   const seq = ++renderSeq;
   updateRenameFields();
-  const layers = await sortedSelectedLayers();
+  const layers = await sortedByPanelOrder(allSelectedLayers());
   if (seq !== renderSeq) return;                     // 已被更新的渲染取代
   if (!layers.length) { previewList.innerHTML = '<i>未选中图层或组</i>'; return; }
   const cfg = readRenameCfg();
@@ -1140,7 +1164,7 @@ async function renderRenamePreview() {
   const rows = buildRenameRows(layers.map((l) => l.name), cfg);
   // 开着编号但模板里没有独立的 n：提示一句，避免"怎么没编号"的困惑（不阻止执行）
   const hint = cfg.counter && cfg.template && !hasCounter(cfg.template)
-    ? '<i>已启用编号，但模板里没有独立的 n（Button/Icon 里的 n 不算），编号不会出现</i>'
+    ? '<i>已开启数字编号，但模板里没有独立的 n（Button/Icon 里的 n 不算），编号不会出现</i>'
     : '';
   previewList.innerHTML = hint + rows.map((r) => r.unmatched
     ? `<div>${esc(r.from)} <span class="dup">未找到「${esc(cfg.find)}」</span></div>`
@@ -1149,7 +1173,7 @@ async function renderRenamePreview() {
 }
 
 async function runRename() {
-  const layers = await sortedSelectedLayers();
+  const layers = await sortedByPanelOrder(allSelectedLayers());
   if (!layers.length) return setStatus('请先选择需要重命名的图层');
   const cfg = readRenameCfg();
   if (cfg.mode === 'replace' && !cfg.find) return setStatus('请输入查找内容');
@@ -1200,11 +1224,482 @@ stepInput.addEventListener('input', renderRenamePreview);
 startInput.value = '1';                               // HTML 上的 value 特性不可靠，用 JS 赋初值
 stepInput.value = '1';
 
+// ---- 「按名称查找图层」弹窗：两步一窗 ----
+// ① 查找视图：填关键词与条件 → 搜索 → 勾选 → 「添加到查找列表」
+// ② 查找项视图：每次添加折成一张小卡（可停用 / 编辑 / 删除），卡片下方是全部结果预览；
+//    「继续添加」回到 ①，多个关键词就形成多张卡；确认把预览里勾选的层设为图层面板
+//    选中（重命名本身永远只认「图层面板里选中的那些」），取消则整次查找作废。
+const slOverlay = document.getElementById('slOverlay');
+const slFindInput = document.getElementById('slFindText');
+const slListEl = document.getElementById('slList');
+const slCountEl = document.getElementById('slCount');
+const slGroupEl = document.getElementById('slGroupList');
+const slPrevEl = document.getElementById('slPrevList');
+let slResults = [];               // 本次搜索命中的结果行（面板顺序：首个=最上）
+let slChecked = new Set();        // 本次结果里勾选的图层 id
+let slGroups = [];                // 已添加的查找项：{id,cfg,rows,checked:Set,on,open}
+let slSeq = 0;                    // 卡片自增 id
+let slEditing = null;             // 正在编辑的卡片 id（点卡片上的「编辑」进来）
+let slView = 'search';            // 当前在哪个视图
+const SL_LIST_MAX = 300;          // 列表最多画这么多行：UXP 下 DOM 一大就卡
+const SL_CHIP_MAX = 4;            // 卡片里的名字只占一行，最多列这么几个，其余折成 +N
+
+// 卡片上的四个图标都拼在 innerHTML 里，所以描边色写死在标记里（面板里的内联 svg 都这么写）。
+// 一律内联净化 svg，不用位图——位图多了会让 Photoshop 卡死闪退（真机踩过）
+const SL_ICO_FIND = '<svg class="sl-grp-ico" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">'
+  + '<g fill="none" stroke="#3ce0ef" stroke-width="14" stroke-linecap="round">'
+  + '<circle cx="54" cy="54" r="34"/><path d="M79 79 L110 110"/></g></svg>';
+const SL_ICO_EDIT = '<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">'
+  + '<g fill="none" stroke="#8ba0b3" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">'
+  + '<path d="M28 100 L34 76 L86 24 L104 42 L52 94 Z"/><path d="M20 116 H108"/></g></svg>';
+const SL_ICO_DEL = '<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">'
+  + '<g fill="none" stroke="#e0555c" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">'
+  + '<path d="M22 34 H106"/><path d="M50 34 V20 H78 V34"/><path d="M34 34 L40 108 H88 L94 34"/></g></svg>';
+// 启用/停用的开关：形状与面板里的 .switch 完全一致（轨道 + 两个位置的滑块，靠 .on 切显隐）
+const SL_SWITCH = '<svg class="sw" viewBox="0 0 44 24" xmlns="http://www.w3.org/2000/svg">'
+  + '<rect class="sw-track" x="12" y="0" width="20" height="24"/>'
+  + '<circle class="sw-track" cx="12" cy="12" r="12"/><circle class="sw-track" cx="32" cy="12" r="12"/>'
+  + '<circle class="sw-knob sw-off" cx="12" cy="12" r="9"/>'
+  + '<circle class="sw-knob sw-on" cx="32" cy="12" r="9"/></svg>';
+
+const MATCH_LABEL = { contains: '包含', exact: '完全匹配', prefix: '前缀', suffix: '后缀' };
+const KIND_LABEL = { all: '全部', layer: '仅图层', group: '仅图层组' };
+const SCOPE_LABEL = { doc: '整个文档', sel: '已选中的组内' };
+
+function readSearchCfg() {
+  const scope = activePill('slScopePills', 'data-scope') === 'sel' ? 'sel' : 'doc';
+  return {
+    text: slFindInput.value,
+    mode: activePill('slMatchPills', 'data-match') || 'contains',
+    caseSensitive: pillOn('slFlagPills', 'data-flag', 'case'),
+    includeHidden: pillOn('slFlagPills', 'data-flag', 'hidden'),
+    // 背景图层一律参与查找（没有开关）。注意给它改名会被 PS 转成普通图层——
+    // 那是 PS 的行为，不是插件在偷偷改结构，列表里会标出「背景」提醒一下
+    includeBackground: true,
+    kind: activePill('slKindPills', 'data-kind') || 'all',
+    scope,
+    // 「已选中的组内」：以图层面板当前的选中项为范围（组算它的后代，图层算它自己）
+    scopeIds: scope === 'sel' ? selectedLayers().map((l) => l.id) : null,
+  };
+}
+
+/** 卡片上那行条件摘要 */
+function describeSearchCfg(cfg) {
+  return [MATCH_LABEL[cfg.mode] || cfg.mode, SCOPE_LABEL[cfg.scope] || '整个文档', KIND_LABEL[cfg.kind] || '全部']
+    .concat(cfg.caseSensitive ? ['区分大小写'] : [], cfg.includeHidden ? [] : ['不含隐藏'])
+    .join(' · ');
+}
+
+/** 图层名 + 命中片段高亮 */
+function slNameHtml(r) {
+  return r.hit && r.hit.end > r.hit.start
+    ? esc(r.name.slice(0, r.hit.start))
+      + `<span class="sl-hit">${esc(r.name.slice(r.hit.start, r.hit.end))}</span>`
+      + esc(r.name.slice(r.hit.end))
+    : esc(r.name);
+}
+
+/** 行尾小字：组 / 背景 / 隐藏 / 锁定 */
+function slTagText(r) {
+  const tags = [];
+  if (r.kind === 'group') tags.push('图层组');
+  else tags.push('图层');
+  if (r.isBackground) tags.push('背景');     // 改名会被 PS 转成普通图层，值得标一下
+  if (!r.visible) tags.push('隐藏');
+  if (r.locked) tags.push('锁定');
+  return tags.join(' · ');
+}
+
+/**
+ * 一行结果：整行可点＝切换勾选。子元素一律 pointer-events:none —— 这样事件目标稳定
+ * 落在行本身，整个列表只挂一个委托监听（同 .switch > * 的既有处理）。
+ * @param {boolean} on 是否勾选
+ * @param {string} [tail] 行尾小字（默认是类型/状态；预览里换成「来自: 关键词」）
+ */
+function slRowHtml(r, on, tail) {
+  const path = describePath(r.path);
+  return `<div class="sl-item${on ? ' on' : ''}" data-sl="${r.id}">`
+    + `<span class="sl-box">${on ? '✓' : ''}</span>`
+    + `<span class="sl-name">${path ? `<span class="sl-path">${esc(path)} / </span>` : ''}${slNameHtml(r)}</span>`
+    + `<span class="sl-kind">${esc(tail === undefined ? slTagText(r) : tail)}</span></div>`;
+}
+
+// ---- ① 查找视图 ----
+
+/** 排序下拉当前选的值（'doc' | 'name'） */
+function slSortMode() {
+  const a = document.querySelector('#slSortDd .dd-item.active');
+  return a && a.getAttribute('data-sort') === 'name' ? 'name' : 'doc';
+}
+
+/** 结果排序只影响列表怎么看：改名的编号顺序照旧由图层面板顺序（itemIndex）决定 */
+function slSortedResults() {
+  if (slSortMode() !== 'name') return slResults;
+  return slResults.slice().sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** 重画查找视图的统计、列表与主按钮（勾选变动时用，不重新查找） */
+function renderSearchList(hint) {
+  const n = slResults.length;
+  const picked = slResults.filter((r) => slChecked.has(r.id));
+  // 找到多少、勾了多少写在同一行（原来另起一行拆图层/组/隐藏，信息密度不值那一行高度）
+  slCountEl.textContent = n
+    ? `搜索结果（找到 ${n} 项，已勾选 ${picked.length} 项）`
+    : (slFindInput.value ? '没有名称匹配的图层' : '输入查找内容后显示结果');
+
+  const addBtn = document.getElementById('slAddBtn');
+  addBtn.textContent = slEditing === null
+    ? `＋ 添加到查找列表（${picked.length} 项）`
+    : `保存修改（${picked.length} 项）`;
+  addBtn.classList.toggle('btn-off', !picked.length);
+  for (const id of ['slAllBtn', 'slInvBtn']) {
+    document.getElementById(id).classList.toggle('btn-off', !n);
+  }
+  show('slBackBtn', !!slGroups.length);
+
+  if (!n) {
+    slListEl.innerHTML = `<div class="sl-note">${esc(hint || '输入查找内容后显示结果')}</div>`;
+    return;
+  }
+  const rows = slSortedResults();
+  const shown = rows.slice(0, SL_LIST_MAX);
+  let html = shown.map((r) => slRowHtml(r, slChecked.has(r.id))).join('');
+  if (rows.length > shown.length) {
+    html += `<div class="sl-note">…另有 ${rows.length - shown.length} 项未列出</div>`;
+  }
+  slListEl.innerHTML = html;
+}
+
+/**
+ * 按当前条件重查。本次结果默认全勾；正在编辑某张卡片时，卡片里原本没勾的保持没勾
+ * （新命中的行仍默认勾上）。
+ */
+function runSearch() {
+  let hint = '输入查找内容后显示结果';
+  slResults = [];
+  if (!app.activeDocument) hint = '请先打开一个 PSD 文档';
+  else {
+    const cfg = readSearchCfg();
+    if (cfg.scopeIds && !cfg.scopeIds.length) {
+      hint = '查找范围是「已选中的组内」，请先在图层面板选中图层组';
+    } else if (cfg.text) {
+      slResults = matchLayers(readAllLayers(), cfg);
+      hint = '没有名称匹配的图层（可换匹配方式，或关掉区分大小写 / 打开含隐藏图层）';
+    }
+  }
+  const g = slEditing === null ? null : slGroups.find((x) => x.id === slEditing);
+  slChecked = new Set(slResults
+    .filter((r) => !g || !g.rows.some((x) => x.id === r.id) || g.checked.has(r.id))
+    .map((r) => r.id));
+  renderSearchList(hint);
+}
+
+// 结果行的点击（列表整体一个委托监听，innerHTML 重画也不用重新挂）
+slListEl.addEventListener('click', (e) => {
+  const attr = e.target && e.target.getAttribute ? e.target.getAttribute('data-sl') : null;
+  const id = attr ? parseInt(attr, 10) : NaN;
+  if (!Number.isFinite(id)) return;                     // 点在列表空白处
+  if (slChecked.has(id)) slChecked.delete(id); else slChecked.add(id);
+  renderSearchList();
+});
+
+/** 把本次勾选的结果收成一张卡片（编辑模式下替换原卡片），然后回到查找项视图 */
+function addSearchToList() {
+  const picked = slResults.filter((r) => slChecked.has(r.id));
+  if (!picked.length) return;
+  const cfg = readSearchCfg();
+  const group = {
+    id: slEditing === null ? ++slSeq : slEditing,
+    cfg: { ...cfg, scopeIds: null },      // 只留用于展示的条件，id 快照没意义
+    rows: slResults.slice(),
+    checked: new Set(picked.map((r) => r.id)),
+    on: true,
+    open: false,          // 默认折起来：卡片多了才好一眼看全，点头上的 ▶ 再展开
+  };
+  const at = slGroups.findIndex((x) => x.id === group.id);
+  if (at >= 0) group.on = slGroups[at].on;
+  if (at >= 0) slGroups[at] = group; else slGroups.push(group);
+  slEditing = null;
+  slResults = [];
+  slChecked = new Set();
+  slFindInput.value = '';
+  setSearchView('list');
+}
+
+// ---- ② 查找项视图 ----
+
+/** 全部匹配结果预览：启用的卡片里勾选的行，按 id 去重（重复命中只算一次） */
+function slPreviewRows() {
+  const seen = new Set();
+  const out = [];
+  for (const g of slGroups) {
+    if (!g.on) continue;
+    for (const r of g.rows) {
+      if (!g.checked.has(r.id) || seen.has(r.id)) continue;
+      seen.add(r.id);
+      out.push({ ...r, from: g.cfg.text });
+    }
+  }
+  return out;
+}
+
+function renderGroupList() {
+  const total = slGroups.reduce((n, g) => n + g.rows.length, 0);
+  document.getElementById('slGroupsHead').textContent = slGroups.length
+    ? `已添加的查找项（${slGroups.length} 组，共 ${total} 项）`
+    : '已添加的查找项';
+  document.getElementById('slClearBtn').classList.toggle('btn-off', !slGroups.length);
+  if (!slGroups.length) {
+    slGroupEl.innerHTML = '<div class="sl-note">还没有查找项，点下面的「继续添加」查一批图层</div>';
+    return;
+  }
+  slGroupEl.innerHTML = slGroups.map((g) => {
+    // 卡片里只列【勾选中的】那些名字，不画勾选框（既然列出来的都是勾上的，那个 ☑ 是废笔墨）。
+    // 点某个名字＝在这张卡里取消它，它随即从这一行消失，头上的 x/y 项跟着变；
+    // 要把取消掉的勾回来走「编辑」重开查找页
+    const picked = g.rows.filter((r) => g.checked.has(r.id));
+    const chips = picked.slice(0, SL_CHIP_MAX).map((r) =>
+      `<span class="sl-chip on" data-act="chip:${g.id}:${r.id}">${esc(r.name)}</span>`).join('');
+    const more = picked.length > SL_CHIP_MAX
+      ? `<span class="sl-chip more">+${picked.length - SL_CHIP_MAX}</span>` : '';
+    const none = picked.length ? '' : '<span class="sl-note">这一项没有勾选任何图层</span>';
+    return `<div class="sl-grp${g.on ? '' : ' off'}">`
+      + '<div class="sl-grp-head">'
+      + `<span class="sl-grp-fold" data-act="fold:${g.id}">${g.open ? '▼' : '▶'}</span>`
+      + SL_ICO_FIND
+      + `<span class="sl-grp-key">${esc(g.cfg.text)}</span>`
+      + `<span class="sl-grp-n">${g.checked.size}/${g.rows.length} 项</span>`
+      + `<span class="sl-sw switch${g.on ? ' on' : ''}" data-act="on:${g.id}">${SL_SWITCH}</span>`
+      + `<span class="sl-ico-btn" data-act="edit:${g.id}">${SL_ICO_EDIT}</span>`
+      + `<span class="sl-ico-btn" data-act="del:${g.id}">${SL_ICO_DEL}</span>`
+      + '</div>'
+      + (g.open
+        ? `<div class="sl-grp-cfg">${esc(describeSearchCfg(g.cfg))}</div>`
+          + `<div class="sl-grp-chips">${chips}${more}${none}</div>`
+        : '')
+      + '</div>';
+  }).join('');
+}
+
+function renderPreview() {
+  const rows = slPreviewRows();
+  document.getElementById('slPrevHead').textContent = `全部匹配结果预览（共 ${rows.length} 项）`;
+  const ok = document.getElementById('slOkBtn');
+  ok.textContent = rows.length ? `确认（选中 ${rows.length} 项）` : '确认';
+  ok.classList.toggle('btn-off', !rows.length);
+  document.getElementById('slPrevAllBtn').classList.toggle('btn-off', !slGroups.length);
+  if (!rows.length) {
+    slPrevEl.innerHTML = '<div class="sl-note">还没有勾选任何图层</div>';
+    return;
+  }
+  const shown = rows.slice(0, SL_LIST_MAX);
+  let html = shown.map((r) => slRowHtml(r, true, `来自: ${r.from}`)).join('');
+  if (rows.length > shown.length) {
+    html += `<div class="sl-note">…另有 ${rows.length - shown.length} 项未列出（会一并选中）</div>`;
+  }
+  slPrevEl.innerHTML = html;
+}
+
+function renderSearchGroups() {
+  renderGroupList();
+  renderPreview();
+}
+
+/** 预览里点某一行 = 在它所属的（每一张）卡片里取消勾选 */
+slPrevEl.addEventListener('click', (e) => {
+  const attr = e.target && e.target.getAttribute ? e.target.getAttribute('data-sl') : null;
+  const id = attr ? parseInt(attr, 10) : NaN;
+  if (!Number.isFinite(id)) return;
+  for (const g of slGroups) g.checked.delete(id);
+  renderSearchGroups();
+});
+
+/**
+ * 从事件目标往上找 data-act。卡片上的编辑/删除/开关是「span 包一个 svg」，CSS 已给子元素
+ * pointer-events:none，但 UXP 对 svg 子元素吃不吃这条没验证过——点在描边上时目标可能是
+ * <path>，所以再往上找几层兜底。
+ */
+function slActOf(target) {
+  let el = target;
+  for (let i = 0; el && i < 4; i++) {
+    if (el.getAttribute) {
+      const a = el.getAttribute('data-act');
+      if (a) return a;
+    }
+    el = el.parentNode;
+  }
+  return null;
+}
+
+/** 卡片上的各种操作：折叠 / 启用 / 编辑 / 删除 / 单个名字的勾选 */
+slGroupEl.addEventListener('click', (e) => {
+  const act = e.target ? slActOf(e.target) : null;
+  if (!act) return;
+  const [kind, gid, rid] = act.split(':');
+  const g = slGroups.find((x) => x.id === parseInt(gid, 10));
+  if (!g) return;
+  if (kind === 'fold') g.open = !g.open;
+  else if (kind === 'on') g.on = !g.on;
+  else if (kind === 'del') slGroups = slGroups.filter((x) => x !== g);
+  else if (kind === 'chip') {
+    const id = parseInt(rid, 10);
+    if (g.checked.has(id)) g.checked.delete(id); else g.checked.add(id);
+  } else if (kind === 'edit') {
+    slEditing = g.id;
+    slFindInput.value = g.cfg.text;
+    setPillActive('slMatchPills', 'data-match', g.cfg.mode);
+    setPillActive('slScopePills', 'data-scope', g.cfg.scope);
+    setPillActive('slKindPills', 'data-kind', g.cfg.kind);
+    setPillOn('slFlagPills', 'data-flag', 'case', g.cfg.caseSensitive);
+    setPillOn('slFlagPills', 'data-flag', 'hidden', g.cfg.includeHidden);
+    setSearchView('search');
+    return;
+  }
+  renderSearchGroups();
+});
+
+// ---- 开 / 关 / 视图切换 / 确认 ----
+
+/** @param {'search'|'list'} v */
+function setSearchView(v) {
+  slView = v;
+  show('slSearchView', v === 'search');
+  show('slListView', v === 'list');
+  if (v === 'search') {
+    runSearch();
+    try { slFindInput.focus(); } catch { /* 某些版本 focus 不可用，忽略 */ }
+  } else renderSearchGroups();
+}
+
+function openSearchDialog() {
+  if (!app.activeDocument) return setStatus('请先打开一个 PSD 文档');
+  slOpen = true;
+  // 每次打开都从零开始：查找项只在一次弹窗里有效，否则第二次确认会把上一批又提交一遍
+  slGroups = [];
+  slResults = [];
+  slChecked = new Set();
+  slEditing = null;
+  slFindInput.value = '';
+  setPillOn('slFlagPills', 'data-flag', 'hidden', true);   // 含隐藏图层：每次打开都回到默认勾选
+  // UXP 已知问题：文字编辑控件恒绘制在所有 DOM 之上，浮层出现时必须把页面上的
+  // 输入框藏起来，否则「查找内容 / 替换为」那几个框会压在弹窗上面
+  setTipMaskedFields(true);
+  slOverlay.style.display = 'flex';
+  setSearchView('search');
+}
+
+function closeSearchDialog() {
+  slOpen = false;
+  slOverlay.style.display = 'none';
+  setTipMaskedFields(false);
+}
+
+/**
+ * 确认：把预览里的层设为图层面板的当前选中，弹窗退场。
+ *
+ * 用「设为」而不是「追加」：查到的这些就是这次要改的对象，原来点亮着的（比如查找
+ * 范围用的那个父组）不该跟着一起被改名。确认后照旧能用鼠标继续增减。
+ */
+async function applySearchSelection() {
+  const rows = slPreviewRows();
+  if (!rows.length) return;
+  // 攒的过程中可能有图层被删掉（弹窗不阻塞 PS 操作），执行前剔掉已不存在的
+  const alive = new Set(readAllLayers().map((node) => node.id));
+  const ids = rows.map((r) => r.id).filter((id) => alive.has(id));
+  const gone = rows.length - ids.length;
+  if (!ids.length) return setStatus('选中的图层都已不存在，请重新查找');
+  const n = await selectLayersById(ids);
+  closeSearchDialog();
+  refreshTargetInfo();
+  renderRenamePreview();
+  const parts = [`已选中 ${n} 个图层/组（可继续用鼠标增减）`];
+  if (gone) parts.push(`${gone} 个已不存在，已跳过`);
+  setStatus(parts.join('，'));
+}
+
+document.getElementById('slOpenBtn').addEventListener('click', () => openSearchDialog());
+document.getElementById('slCloseBtn').addEventListener('click', () => closeSearchDialog());
+document.getElementById('slCancelBtn').addEventListener('click', () => closeSearchDialog());
+const applySl = () => applySearchSelection().catch((e) => {
+  closeSearchDialog();
+  setStatus('选中失败：' + errMsg(e));
+});
+document.getElementById('slOkBtn').addEventListener('click', () => applySl());
+
+// 查找视图：搜索 / 全选 / 反选 / 加入列表 / 返回列表
+// 边打字边出结果；「搜索」按钮与框内回车都是「照现在的条件重新查一遍」——
+// 在 PS 里增删过图层后用得上（回车不等于确认，确认在查找项视图上）
+slFindInput.addEventListener('input', () => runSearch());
+document.getElementById('slSearchBtn').addEventListener('click', () => runSearch());
+slFindInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); runSearch(); }
+});
+document.getElementById('slFindClear').addEventListener('click', () => {
+  slFindInput.value = '';
+  runSearch();
+  try { slFindInput.focus(); } catch { /* 忽略 */ }
+});
+document.getElementById('slAllBtn').addEventListener('click', () => {
+  slChecked = new Set(slResults.map((r) => r.id));
+  renderSearchList();
+});
+document.getElementById('slInvBtn').addEventListener('click', () => {
+  slChecked = new Set(slResults.filter((r) => !slChecked.has(r.id)).map((r) => r.id));
+  renderSearchList();
+});
+document.getElementById('slAddBtn').addEventListener('click', () => addSearchToList());
+document.getElementById('slBackBtn').addEventListener('click', () => {
+  slEditing = null;                    // 放弃这次编辑 / 查找，原卡片保持不动
+  setSearchView('list');
+});
+
+// 查找项视图：继续添加 / 清空全部 / 预览全选
+document.getElementById('slMoreBtn').addEventListener('click', () => {
+  slEditing = null;
+  slFindInput.value = '';
+  setSearchView('search');
+});
+document.getElementById('slClearBtn').addEventListener('click', () => {
+  slGroups = [];
+  renderSearchGroups();
+});
+document.getElementById('slPrevAllBtn').addEventListener('click', () => {
+  // 预览「全选」＝把每张启用卡片里的行全勾回来（用于误取消后恢复）
+  for (const g of slGroups) if (g.on) g.checked = new Set(g.rows.map((r) => r.id));
+  renderSearchGroups();
+});
+
+// 查找条件：pill 选择跨会话记忆
+bindPillGroup('slMatchPills', 'data-match', (v) => { prefSet('rename.match', v); runSearch(); });
+bindPillGroup('slScopePills', 'data-scope', (v) => { prefSet('rename.scope', v); runSearch(); });
+bindPillGroup('slKindPills', 'data-kind', (v) => { prefSet('rename.kind', v); runSearch(); });
+// 排序是折叠下拉（不是 pill）：走面板里那套自绘下拉，选项点完回调重画列表。
+// bindDropdown 是函数声明，提升过；它内部用到的两个标志位只在点击时才读，不会撞死区
+bindDropdown('slSortDd', 'slSortValue', () => { prefSet('rename.sort', slSortMode()); renderSearchList(); });
+setDropdownValue('slSortDd', 'slSortValue', 'data-sort', prefGet('rename.sort', 'doc'));
+bindTogglePills('slFlagPills', () => {
+  prefSet('rename.f.case', pillOn('slFlagPills', 'data-flag', 'case') ? '1' : '0');
+  runSearch();
+});
+setPillActive('slMatchPills', 'data-match', prefGet('rename.match', 'contains'));
+setPillActive('slScopePills', 'data-scope', prefGet('rename.scope', 'doc'));
+setPillActive('slKindPills', 'data-kind', prefGet('rename.kind', 'all'));
+setPillOn('slFlagPills', 'data-flag', 'case', prefGet('rename.f.case', '0') === '1');
+// 「含隐藏图层」恒默认勾选（不跨会话记忆）：查找的默认口径就是「全都找出来」，
+// 关掉只在本次弹窗内有效；下一次打开又是勾上的
+for (const k of ['rename.f.bg', 'rename.f.hidden']) {
+  try { localStorage.removeItem(k); } catch { /* 旧版「含背景图层」/「含隐藏」的残留，清掉 */ }
+}
+
 // 图层选择变化时，实时刷新预览（best-effort，不支持则忽略）
 (async () => {
   try {
     await action.addNotificationListener(['select'], () => {
-      renderRenamePreview(); refreshLayoutBtn(); refreshMoveBtns();
+      renderRenamePreview(); refreshTargetInfo(); refreshLayoutBtn(); refreshMoveBtns();
+      // 正停在查找视图、且范围是「已选中的组内」：范围变了才重查（否则白白把勾选打回全勾）
+      if (slOpen && slView === 'search' && activePill('slScopePills', 'data-scope') === 'sel') {
+        runSearch();
+      }
     });
   } catch { /* 某些版本不触发 select 通知，靠输入/聚焦刷新 */ }
 })();
@@ -1339,7 +1834,10 @@ bindTip(document.getElementById('groupInfo'), document.getElementById('groupTip'
 bindTip(document.getElementById('layoutInfo'), document.getElementById('layoutTip'),
   '在图层面板<b>选中 2 个以上</b>的图层 / 组 / 文字 / 形状 / 智能对象，点击后按<b>横向</b>或<b>竖向</b>自动排成一排：<br>顺序<b>不看图层面板</b>，而是按对象当前在画布中的实际位置——横排先从上到下识别「行」、行内从左到右；竖排先从左到右识别「列」、列内从上到下。<br><b>间距是相邻两个对象真实边缘之间的距离</b>（不是中心距），带投影/外发光的图层按主体边界算。<br>排序后的第一个对象作为<b>锚点保持原位</b>，其余依次贴过去，整批版面不会漂走。<br>只改位置：不栅格化、不合并、不改图层类型 / 尺寸 / 层级 / 组内结构，图层组整体移动。隐藏图层若被选中也参与排版并保持隐藏；<b>锁定图层会中止排版</b>并提示解锁（插件不擅自解锁）。<br>开启「自动扩展画布」后，只向真正超出的方向扩出透明画布并留出「画布边距」；整个操作在历史记录中为一步，可一次撤销。');
 bindTip(document.getElementById('moveInfo'), document.getElementById('moveTip'),
-  '在图层面板<b>选中一个或多个</b>图层 / 组，填好 X、Y 的方向与距离后点「移动」，所有选中对象<b>按同一个偏移量整体平移</b>——对象之间的相对位置、排列关系完全不变。<br>是<b>相对位移</b>不是绝对坐标：不需要指定左上角 / 中心点之类的基点，每个对象都从自己当前的位置起算，移动距离完全一致。<br>距离框<b>留空即为 0</b>，该轴不动；填<b>负数</b>会自动转成正数并翻转方向。框内按 <b>Enter</b> 直接执行，按 <b>↑/↓</b> 加减 1px、<b>Shift+↑/↓</b> 加减 10px。<br>数值执行后不清零，连点「移动」即可按同一距离<b>累加</b>；走过头就点一下反方向箭头再移一次。<br>选中父组和它的子图层时自动去重，只移动父组，子图层不会走出双倍距离；锁定图层与背景图层自动跳过、不影响其余对象；允许移动到画布外，<b>不会自动改变画布尺寸</b>。每次点击在历史记录中为一步，可一次撤销。');
+  '选中一个或多个图层 / 组，填方向与距离 → 所有对象<b>按同一偏移整体平移</b>，相对位置不变（相对位移，不是坐标）。<br>'
+  + '距离<b>留空＝0</b>（该轴不动），填<b>负数</b>自动翻转方向；框内 <b>Enter</b> 执行，<b>↑/↓</b> ±1px、<b>Shift+↑/↓</b> ±10px。<br>'
+  + '数值不清零，连点即按同一距离<b>累加</b>。<br>'
+  + '选中父组和它的子层时只移动父组（不会走双倍）；锁定层与背景层跳过。可移到画布外，画布尺寸不变；每次一步可撤销。');
 
 bindTip(document.getElementById('tableInfo'), document.getElementById('tableTip'),
   '按行列生成<b>矢量形状</b>表格，不是像素、不是选区，生成后颜色、大小、圆角都能继续改。<br>'
@@ -1348,7 +1846,11 @@ bindTip(document.getElementById('tableInfo'), document.getElementById('tableTip'
   + '点色块可开拾色器。表格画在<b>当前视图正中</b>，整次绘制可一次撤销。');
 
 bindTip(document.getElementById('renameInfo'), document.getElementById('renameTip'),
-  '在图层面板<b>选中若干图层 / 组</b>，四种方式改名，改动<b>只作用于选中项本身</b>（选中组时改的是组名，不会进组里动子图层）：<br><b>替换</b>——把原名里的「查找内容」换成新文字，没匹配到的原样不动；<b>重新命名</b>——整个名称直接换掉；<b>加前缀 / 加后缀</b>——在原名前后拼接。<br>打开<b>启用编号 n</b> 后，模板里<b>单独的字母 n</b> 会被替换成连续数字（Button、Icon 里的 n 不算）；可设起始值、递增量、数字位数（不足补 0），以及沿图层面板<b>从上到下</b>还是<b>从下到上</b>编号。<br>下方<b>预览</b>实时显示「原名称 → 新名称」，重名会标出<b class="tag-red">⚠同名</b>；新旧名相同、替换后为空、未匹配到的行都不会写回 PS。');
+  '改名对象＝<b>图层面板里选中的那些</b>；组和组里的层都点亮了，就各改一次。<br>'
+  + '手点太慢用<b>「按名称查找」</b>：弹窗里查一批勾一批，攒成卡片，确认后一次性成为选中。<br>'
+  + '四种方式：<b>替换</b>（换掉原名里的查找内容）/ <b>重新命名</b>（整名替换）/ <b>加前缀 / 加后缀</b>。<br>'
+  + '开<b>数字编号 n</b> 后，模板里<b>单独的 n</b> 变连续数字（Button 里的 n 不算），可设起始 / 递增 / 位数 / 方向。<br>'
+  + '预览显示「原名称 → 新名称」，重名标<b class="tag-red">⚠同名</b>，没变化的行不写回 PS。给<b>背景图层</b>改名会被 PS 转成普通图层。');
 
 tiles.forEach((t) => t.addEventListener('click', () => {
   if (slicing || splitting || converting || grouping || laying || moving || drawing || gdBusy) return;  // 任务进行中不切页
@@ -1363,7 +1865,8 @@ switchPage('rename');                            // 初始进入重命名页（�
 // 选项 handler → 下拉框 handler → document handler，前者置位后者据此让路。
 let ddItemClicked = false;      // 本次点击命中了某个选项
 let ddBoxClicked = false;       // 本次点击落在某个下拉框内
-function bindDropdown(ddId, valueId) {
+/** @param {(item:object)=>void} [onPick] 选完一项后的回调（导出设置那两个不需要，查找排序需要） */
+function bindDropdown(ddId, valueId, onPick) {
   const dd = document.getElementById(ddId);
   const valueEl = document.getElementById(valueId);
   if (!dd || !valueEl) return;
@@ -1374,6 +1877,7 @@ function bindDropdown(ddId, valueId) {
     valueEl.textContent = item.textContent;
     dd.classList.remove('open');
     ddItemClicked = true;
+    if (onPick) onPick(item);
   }));
   dd.addEventListener('click', () => {
     ddBoxClicked = true;
@@ -1385,6 +1889,18 @@ function bindDropdown(ddId, valueId) {
 }
 function closeAllDropdowns() {
   Array.from(document.querySelectorAll('.dropdown')).forEach((d) => d.classList.remove('open'));
+}
+/** 按 data 属性把下拉恢复到某一项（跨会话记忆的初值靠它落地） */
+function setDropdownValue(ddId, valueId, attr, value) {
+  const dd = document.getElementById(ddId);
+  const valueEl = document.getElementById(valueId);
+  if (!dd || !valueEl) return;
+  const items = Array.from(dd.querySelectorAll('.dd-item'));
+  const hit = items.find((it) => it.getAttribute(attr) === value);
+  if (!hit) return;                              // 记着的值已不在选项里：保留标记里的默认项
+  items.forEach((it) => it.classList.remove('active'));
+  hit.classList.add('active');
+  valueEl.textContent = hit.textContent;
 }
 bindDropdown('formatDd', 'formatValue');
 bindDropdown('scaleDd', 'scaleValue');
@@ -2090,6 +2606,8 @@ refreshGuideDocState();
   try {
     await action.addNotificationListener(['open', 'close', 'newDocument'], () => {
       if (currentPage === 'guide') refreshGuideDocState();
+      refreshTargetInfo();                 // 换文档后重命名页那一行的选中数也得跟着变
+      renderRenamePreview();
     });
   } catch { /* 某些版本不触发这些通知：切到本页时也会刷新一次 */ }
 })();
@@ -2099,6 +2617,7 @@ const versionEl = document.getElementById('version');
 if (versionEl) versionEl.textContent = 'v' + manifest.version;
 
 renderRenamePreview();                                // 初始渲染一次
+refreshTargetInfo();                                   // 入口那一行的选中数
 updateSliceLabel();                                    // 初始化主按钮文字
 refreshLayoutBtn();                                    // 初始化排版按钮可用性
 refreshMoveBtns();                                     // 初始化平移按钮可用性
