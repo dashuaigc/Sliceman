@@ -6,7 +6,7 @@ import {
   ERR_COLS, ERR_ROWS, ERR_EMPTY,
   guideLayoutDescriptor, sameGuides, cfgFromGuideLayout, unitToPx,
   guideLayoutKeys, unknownGuideLayoutKeys, formatGuideLayoutParams, inferCfgFromGuides,
-  describeRecord,
+  describeRecord, guidesInclude,
 } from '../src/lib/guide-core.js';
 
 const CANVAS = { width: 1920, height: 1080 };
@@ -396,6 +396,27 @@ describe('guideLayoutDescriptor', () => {
     expect(d.guideLayout.colCount).toBe(4);
     expect(d.guideLayout.marginRight).toEqual(px(40));
     expect(d.colCount).toBeUndefined();
+  });
+});
+
+describe('guidesInclude（判断原生命令是不是空转了）', () => {
+  it('期望的每条都在文档里才算生效', () => {
+    const actual = { vertical: [40, 485, 1880], horizontal: [40, 1040] };
+    expect(guidesInclude(actual, { vertical: [40, 1880], horizontal: [1040] })).toBe(true);
+    expect(guidesInclude(actual, { vertical: [40, 960], horizontal: [1040] })).toBe(false);
+    expect(guidesInclude(actual, { vertical: [], horizontal: [] })).toBe(true);
+  });
+  it('容差 1px：插件算的坐标与 PS 版面引擎差零点几不算没生效', () => {
+    expect(guidesInclude({ vertical: [40.4], horizontal: [] }, { vertical: [40] })).toBe(true);
+    expect(guidesInclude({ vertical: [42], horizontal: [] }, { vertical: [40] })).toBe(false);
+  });
+  it('文档里一条线都没有 = 没生效（这就是真机上「点应用没反应」的形状）', () => {
+    expect(guidesInclude({ vertical: [], horizontal: [] }, { vertical: [40], horizontal: [40] }))
+      .toBe(false);
+  });
+  it('空输入不抛错', () => {
+    expect(guidesInclude(null, null)).toBe(true);
+    expect(guidesInclude(null, { vertical: [1] })).toBe(false);
   });
 });
 

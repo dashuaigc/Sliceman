@@ -16,7 +16,7 @@
 // 坐标基准是【标尺原点】：用户若在 PS 里拖动过标尺原点，参考线位置会整体偏移。
 //   这与 PS 原生「新建参考线版面」的行为一致，不额外补偿。
 
-import { sortDedupe, guideLayoutDescriptor, sameGuides } from '../lib/guide-core.js';
+import { sortDedupe, guideLayoutDescriptor, sameGuides, guidesInclude } from '../lib/guide-core.js';
 
 const { app, action, core } = require('photoshop');
 
@@ -342,16 +342,23 @@ export async function openGuideLayoutDialog(opts = {}) {
  * 同一条记录在 1920 和 2560 的稿子上都对得上。
  * @param {object} cfg 版面配置
  */
-export async function applyGuideLayout(cfg) {
+export async function applyGuideLayout(cfg, expected) {
   const doc = app.activeDocument;
   if (!doc) throw new Error('请先打开一个 Photoshop 文档');
   let lastErr = null;
   for (const nested of [false, true]) {             // 先用真机抓到的平铺形状，再退嵌套形状
+    const before = readExistingGuides();
     const desc = { ...guideLayoutDescriptor(cfg, { nested }), _options: dontDisplay };
     try {
       await runAsOneStep(doc, () => action.batchPlay([desc], {}), '应用参考线版面');
-      return;
-    } catch (e) { lastErr = e; }
+    } catch (e) { lastErr = e; continue; }
+    // ⚠️ 不抛错 ≠ 真的画了线：描述符形状不对时 PS 会把它收下来空转，
+    // 表现就是「点应用毫无反应，也没有报错」。所以按【文档实际变化】判定成功，
+    // 不是按 batchPlay 有没有抛。这一形状空转就接着试下一种，都不行再抛给调用方兜底。
+    const after = readExistingGuides();
+    if (!sameGuides(before, after)) return;                       // 文档真的变了
+    if (expected && guidesInclude(after, expected)) return;       // 本来就是这一版，重放无变化是正常的
+    lastErr = new Error('Photoshop 接受了 newGuideLayout，但文档里没有出现参考线');
   }
   throw lastErr || new Error('newGuideLayout 执行失败');
 }

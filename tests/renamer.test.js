@@ -128,14 +128,14 @@ describe('buildRenameRows —— 重新命名模式', () => {
 });
 
 describe('buildRenameRows —— 前缀 / 后缀模式', () => {
-  it('加前缀保留原名', () => {
+  it('前缀模式保留原名', () => {
     const rows = buildRenameRows(
       ['Button', 'Icon', 'BG'],
       { mode: 'prefix', template: 'UI_' },
     );
     expect(rows.map((r) => r.to)).toEqual(['UI_Button', 'UI_Icon', 'UI_BG']);
   });
-  it('加后缀', () => {
+  it('后缀模式', () => {
     const rows = buildRenameRows(['Button'], { mode: 'suffix', template: '_Normal' });
     expect(rows[0].to).toBe('Button_Normal');
   });

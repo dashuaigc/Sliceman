@@ -63,6 +63,33 @@ describe('panel.js 引用的 DOM id 都存在于 index.html', () => {
   });
 });
 
+describe('左侧功能栏与 panel.js 的契约', () => {
+  // 功能入口从顶部磁贴改成左侧竖排后，切页仍然只靠「.tile 这个 class + data-page 属性」
+  //（panel.js 的 querySelectorAll('.tile') / switchPage / setTilesDisabled 都认它们）。
+  // 谁把 class 改了名或漏搬一个入口，面板不会报错，只会「点了没反应」——静态钉住。
+  const tiles = [...html.matchAll(/<div class="tile(?: active)?" data-page="([^"]+)"/g)]
+    .map((m) => m[1]);
+
+  it('功能栏里有 7 个 .tile，且都带 data-page', () => {
+    expect(tiles).toEqual(['rename', 'split', 'batch', 'layout', 'table', 'guide', 'slice']);
+  });
+
+  it('每个 data-page 在 switchPage 里都有对应的显隐分支', () => {
+    const body = /function switchPage\(name\) \{([\s\S]*?)\n\}/.exec(js);
+    expect(body).toBeTruthy();
+    const missing = tiles.filter((p) => !body[1].includes(`name === '${p}'`));
+    expect(missing).toEqual([]);
+  });
+
+  it('功能栏与内容列的骨架都在（工作区 = .rail + .pages）', () => {
+    for (const cls of ['workspace', 'rail', 'rail-foot', 'pages']) {
+      expect(html).toContain(`class="${cls}"`);
+    }
+    // 设置钮已从顶栏移进功能栏底部：顶栏那层壳不该再有
+    expect(html).not.toContain('topbar-actions');
+  });
+});
+
 describe('index.html 遵守 UXP 渲染约束', () => {
   it('不出现位图 <img>（多张位图会让 PS 进程 native 崩溃）', () => {
     expect(html).not.toMatch(/<img\b/i);

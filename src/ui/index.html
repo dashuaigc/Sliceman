@@ -6,30 +6,23 @@
   </head>
   <body>
     <div class="app">
-      <!-- 顶部栏（视觉，仅品牌与入口图标） -->
+      <!-- 顶部栏：只放品牌与版本号（设置钮已移到左侧功能栏底部） -->
       <header class="topbar">
         <div class="brand">
           <span class="ps-logo">PS</span>
           <span class="brand-name">Sliceman</span>
           <span class="version" id="version">v1.1.0</span>
         </div>
-        <div class="topbar-actions">
-          <svg class="ic-btn" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="settings">
-  <g fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M58 14 H70 L73 27 C77 28 81 30 84 32 L96 25 L104 34 L97 46 C99 50 101 54 102 58 L115 62 V74 L102 77 C101 81 99 85 97 88 L104 100 L96 108 L84 101 C80 103 77 105 73 106 L70 119 H58 L55 106 C51 105 47 103 44 101 L32 108 L24 100 L31 88 C29 84 27 81 26 77 L13 74 V62 L26 58 C27 54 29 50 31 46 L24 34 L32 25 L44 32 C47 30 51 28 55 27 Z"/>
-    <circle cx="64" cy="68" r="17"/>
-  </g>
-</svg>
-        </div>
       </header>
 
-      <!-- 功能中心：置顶，各自切换页面（无标题、无外框，只留磁贴）。
-           七个功能排成两行（4 + 3）：一行挤七个会把标签压折行，靠 .tiles 的 flex-wrap
-           + .tile 定宽 25% 分行；.tile 只当「槽」，视觉盒下沉到 .tile-inner，
-           这样槽与槽之间才留得出间距（UXP 下 calc 不可靠，不用 calc 算宽）。
-           切图排在末尾——顺序按使用频率，不是按重要性 -->
-      <section class="tiles-section">
-        <div class="tiles">
+      <!-- 工作区：左侧功能栏（竖排图标 + 名称小字）+ 右侧内容列。
+           功能栏与顶栏、状态栏都固定不动，只有内容列自己滚 —— 竖排后功能入口不再占
+           纵向空间，内容区比原来的两行磁贴多出约 100px 高。
+           ⚠️ .tile 这个 class 和 data-page 属性是与 panel.js 的契约（switchPage /
+           setTilesDisabled 都靠它们找元素）。改名或漏搬一个，面板不会报错，只会
+           「点了没反应」—— tests/ui-ids.test.js 静态钉住了这一点 -->
+      <div class="workspace">
+        <nav class="rail" id="rail">
           <div class="tile active" data-page="rename">
             <div class="tile-inner">
               <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
@@ -123,21 +116,32 @@
               <span class="tile-label">切图</span>
             </div>
           </div>
-        </div>
-      </section>
+          <!-- 设置：原来在右上角顶栏，现移到功能栏底部（和参考图一致；目前仍是装饰入口） -->
+          <div class="rail-foot">
+            <svg class="ic-btn" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="settings">
+    <g fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M58 14 H70 L73 27 C77 28 81 30 84 32 L96 25 L104 34 L97 46 C99 50 101 54 102 58 L115 62 V74 L102 77 C101 81 99 85 97 88 L104 100 L96 108 L84 101 C80 103 77 105 73 106 L70 119 H58 L55 106 C51 105 47 103 44 101 L32 108 L24 100 L31 88 C29 84 27 81 26 77 L13 74 V62 L26 58 C27 54 29 50 31 46 L24 34 L32 25 L44 32 C47 30 51 28 55 27 Z"/>
+      <circle cx="64" cy="68" r="17"/>
+    </g>
+  </svg>
+          </div>
+        </nav>
+        <div class="pages" id="pages">
 
       <!-- 项目名称（仅切图页需要，用于导出名前缀） -->
       <section class="card" id="projectCard" style="display:none;">
         <!-- 标题与输入框同一行；原来的说明文案改当输入框 placeholder -->
         <div class="card-head card-head-inline">
           <h3 class="card-title">项目名称</h3>
-          <div class="head-field"><input type="text" id="projectName" placeholder="配置本次项目的名称（可选）"></div>
+          <div class="head-field"><input type="text" id="projectName" placeholder="本次项目的名称(可选)"></div>
         </div>
       </section>
 
       <!-- 切图方式（仅切图页显示）：完整切图 / Symbols 两套规则合并到同一页，用 pill 切换 -->
       <section class="card" id="sliceModeCard" style="display:none;">
-        <div class="setting-row" style="padding-top:0;">
+        <!-- 标签与两个选项各占一行：内容列变窄后挤在一行会把「Symbols 切图」折断 -->
+        <div class="setting-row setting-stack" style="padding-top:0;">
+          <div class="stack-head">
           <svg class="row-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="crop">
   <g fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
     <path d="M38 50 V39 C38 34 42 30 47 30 H58"/>
@@ -147,6 +151,7 @@
   </g>
 </svg>
           <span class="row-label">切图方式</span>
+          </div>
           <div class="setting-value" id="sliceModePills">
             <span class="pill active" data-slicemode="all">完整切图</span>
             <span class="pill" data-slicemode="symbols">Symbols 切图</span>
@@ -639,8 +644,8 @@
             <div class="pill-row" id="renameModePills">
               <span class="pill active" data-mode="replace">替换</span>
               <span class="pill" data-mode="new">重新命名</span>
-              <span class="pill" data-mode="prefix">加前缀</span>
-              <span class="pill" data-mode="suffix">加后缀</span>
+              <span class="pill" data-mode="prefix">前缀</span>
+              <span class="pill" data-mode="suffix">后缀</span>
             </div>
           </div>
           <!-- 查找/替换同一行；非替换模式下 findBlock 整列隐藏，右列自动占满 -->
@@ -732,6 +737,9 @@
         <span class="btn-label">一键排版</span>
       </button>
 
+
+        </div><!-- /.pages -->
+      </div><!-- /.workspace -->
 
       <!-- 底部栏（视觉入口） -->
       <footer class="bottombar">

@@ -6,9 +6,16 @@ html, body { height: 100%; }
 
 body {
   margin: 0;
-  padding: 6px;                      /* 代替 .app 外边距；body 自身不滚动 */
+  /* 代替 .app 外边距；body 自身不滚动。左侧只留 3px：功能栏的深色条最多只能出血到
+     .app 的背景边（.app 有 overflow:hidden），所以磁贴左侧那道留白是由这圈外框提供的
+     —— 外框宽多少，左边就看着留多少。要磁贴左右各留 3px，这里就得是 3px */
+  padding: 6px 6px 6px 3px;
   position: relative;                /* 确认弹层 absolute 相对可视区（不随内容滚动）定位的参照 */
-  font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  /* 中文优先：Mac 走苹方、Windows 走微软雅黑，中英文都由同一套字体渲染，
+     不会出现「PNG 用 Segoe UI、旁边的中文用雅黑」这种基线错位。
+     苹方排在雅黑之前是有原因的：装了 Office 的 Mac 上也有微软雅黑，
+     反过来写会让这些 Mac 掉进雅黑。 */
+  font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", -apple-system, sans-serif;
   color: #d7e5f2;
   background: #04101d;               /* 面板底色 */
   overflow: hidden;                  /* body 不滚动，改由 .app 内部滚动 → 弹窗遮罩才能稳定居中 */
@@ -18,49 +25,103 @@ body {
 .app {
   display: flex;
   flex-direction: column;
-  height: 100%;                      /* 撑满可视区，内容超高时在 .app 内部滚动 */
+  height: 100%;                      /* 撑满可视区 */
   margin: 0;
-  padding: 12px;
-  overflow-y: auto;
+  /* 左内边距几乎归零：功能栏与品牌行直接贴左（左侧的视觉留白由 body 的 3px 外框提供）。
+     2px 是下限 —— .app 圆角 14px，左上角那段弧在 y<14px 处会往里啃：logo 顶边落在
+     y=12（上内边距），该处弧线只往里收约 0.1px，x=2 仍在背景内；再往左就会探出圆角 */
+  padding: 12px 10px 12px 2px;
+  overflow: hidden;                  /* 自己不滚：顶栏与状态栏固定，滚动交给 .pages */
   background: #071829;
   border-radius: 14px;
 }
-/* 固定高度的 flex 列里，子元素默认会被压缩重叠；禁止收缩，让内容自然堆叠并整体滚动 */
+/* 固定高度的 flex 列里，子元素默认会被压缩重叠；禁止收缩，让内容自然堆叠 */
 .app > * { flex-shrink: 0; }
+/* 工作区：左侧功能栏 + 右侧内容列，吃掉顶栏与状态栏之外的全部高度。
+   选择器带上 class 才压得住上面那条 .app > * { flex-shrink:0 }（同优先级但更靠后不保险）。
+   min-height:0 是关键：不给的话 flex 项的最小高度按内容算，内容列永远撑破而不是自己滚 */
+.app > .workspace { display: flex; flex: 1 1 auto; min-height: 0; }
+/* 功能栏：竖排七个功能 + 底部设置。整条比内容区更深一档（内容区是 .app 的 #071829，
+   这里压到接近面板最外层的底色），靠明暗分区，不再画竖线或分隔线。
+   margin-left:-2px 是出血：把【背景】拉到面板左边缘，深色条才是贴边的一整条，
+   而不是浮在中间的一块。
+   ⚠️ 磁贴的「居中」要按【眼睛看到的那条深带】算，不是按这个盒子算：
+   body 有 6px 内边距，那圈外框色 #04101d 与这里的 #020c16 几乎同色、视觉上连成一条；
+   而 .app 的 overflow:hidden 又让负边距最多只能出血到 .app 的背景边（窗口 x=3），
+   再往外会被裁掉。于是窗口 0..3 是外框、3..45 是深色条，看着是一整条 0..45 的深带。
+   所以水平内边距全给右侧、左侧归零：左边那道留白由 body 的外框（3px）提供，
+   右边由这里的 padding-right（3px）提供，磁贴看着就左右各 3px、正中。
+   两边各写一半反而会变成「左＝外框+内边距、右＝内边距」，那就是先前看到的偏右。
+   42px = 深色条总宽（box-sizing:border-box，flex-basis 含内边距），磁贴得 39px。
+   自身可滚 —— 面板拉得很矮时不至于把底部的设置钮挤没 */
+.rail {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 42px;
+  width: 42px;
+  margin-left: -2px;
+  padding: 4px 3px 0 0;
+  overflow-y: auto;
+  background: #020c16;
+  border-radius: 0 8px 8px 0;
+}
+/* 设置钮沉到功能栏底部 */
+.rail-foot {
+  display: flex;
+  justify-content: center;
+  margin-top: auto;
+  padding-top: 8px;
+}
+.rail .ic-btn { margin: 0 0 2px; }
+/* 内容列：唯一的滚动区 */
+.pages {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-left: 8px;
+  overflow-y: auto;
+}
 
 /* ---------- 顶部栏 ---------- */
+/* 只剩品牌 + 版本号（设置钮已移到功能栏底部），要求：logo 左边缘与下方功能栏的
+   磁贴左边缘对齐成一条竖线。
+   ⚠️ 真机上这一行会跑到面板中间去 —— 样式表里没有任何居中规则，UXP 为什么不让这个
+   flex 顶栏像标准 flex 那样撑满父级，我没查清。所以三处一起钉死，任一条生效都能靠左：
+     width:100%          —— 万一它按内容收缩了，强制撑满
+     justify-content     —— 明确写出 flex-start，不吃任何默认值
+     .brand margin-right:auto —— 即使 justify-content 被别处改成 center 也照样推到左边 */
 .topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 2px 2px 12px;
+  justify-content: flex-start;
+  width: 100%;
+  padding: 0 2px 8px 0;              /* 左侧归零：与 .app 的内容盒左边缘（即磁贴左边）齐平 */
 }
-.brand { display: flex; align-items: center; }
+.brand { display: flex; align-items: center; margin-right: auto; }
 .ps-logo {
-  width: 30px;
-  height: 30px;
-  border-radius: 7px;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
   background: #04152a;
-  border: 2px solid #22d3e0;
+  border: 1px solid #22d3e0;
   color: #3ce0ef;
-  font-size: 13px;
+  font-size: 10px;
   font-weight: 900;
   letter-spacing: -0.5px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.brand-name { margin-left: 8px; font-size: 18px; font-weight: 700; color: #eef5fb; }
+.brand-name { margin-left: 6px; font-size: 14px; font-weight: 700; color: #eef5fb; }
 .version {
-  margin-left: 8px;
-  font-size: 11px;
+  margin-left: 6px;
+  font-size: 10px;
   color: #8aa2b6;
   background: #10293e;
-  padding: 2px 7px;
-  border-radius: 5px;
+  padding: 1px 5px;
+  border-radius: 4px;
 }
-.topbar-actions { display: flex; align-items: center; }
-.ic-btn { width: 19px; height: 19px; margin-left: 14px; opacity: 0.72; cursor: pointer; }
+.ic-btn { width: 19px; height: 19px; opacity: 0.72; cursor: pointer; }
+.ic-btn:hover { opacity: 1; }
 
 /* ---------- 卡片通用 ---------- */
 .card {
@@ -164,51 +225,50 @@ input[type="text"]::placeholder { color: #6d8ba3; }
 /* 画布边距整行置灰时，外框跟着淡下去，别只淡文字 */
 .row-off .num-box { opacity: 0.6; }
 
-/* ---------- 功能中心磁贴 ---------- */
-/* 无标题、无外框：磁贴自身就是全部视觉，只留和卡片一致的下外边距 */
-.tiles-section { margin-bottom: 6px; }
-/* 七个功能排两行（4 + 3）：一行挤七个会把标签压折行。
-   槽定宽 25% + flex-wrap 自然分行，第二行左对齐、宽度与第一行一致。 */
-.tiles { display: flex; flex-wrap: wrap; }
-/* .tile 只是「槽」：负责占位与间距，自身不画任何视觉。
-   视觉盒必须下沉一层 —— 定宽 25% 的 flex 项没法再用 margin 挤出间距
-   （25%+margin 会溢出换行），而 UXP 下 calc(25% - 4px) 不可靠。 */
+/* ---------- 功能栏里的功能项 ---------- */
+/* 竖排一列，每项＝图标 + 名称小字。留着名称是有意的：七个图标里「分割 / 排版 / 表格」
+   形近，纯图标得靠猜；名字都 ≤3 字（10px 字号约 30px 宽），39px 的磁贴里放得下：
+   39 − 1px 边框×2 = 37px 可用。所以磁贴左右不留内边距，宽度全给标签 */
 .tile {
-  flex: 0 0 25%;
+  flex: 0 0 auto;
+  width: 100%;
   min-width: 0;
-  padding: 0 2px 4px;
+  padding: 0 0 3px;                  /* 项与项之间的间距 */
   cursor: pointer;
 }
+/* .tile 只是「槽」：负责占位与间距，视觉盒下沉到 .tile-inner —— 这样槽与槽之间才
+   留得出间距（给定宽 flex 项直接加 margin 会溢出） */
 .tile-inner {
   display: flex;
   flex-direction: column;
   align-items: center;
-  height: 100%;                      /* 同一行内磁贴等高（标签折行时也不错位） */
-  padding: 7px 2px;
+  padding: 4px 0;                    /* 整项高度 ≈ 4+18+3+12+4+2 = 43px（原来 50px） */
   background: #0c2137;
   border: 1px solid #17344e;
-  border-radius: 8px;
+  border-radius: 6px;
 }
 /* 嵌套之后不能只管直接子元素：图标/文字都在 .tile-inner 里，
    任一层吃了鼠标点击就到不了槽上 */
 .tile * { pointer-events: none; }
-.tile-icon { width: 22px; height: 22px; flex: 0 0 auto; }
-/* 名称保持完整，窄面板下允许折成两行；磁贴等高由 flex 默认 stretch 保证，图标仍横向对齐 */
+.tile-icon { width: 18px; height: 18px; flex: 0 0 auto; }
 .tile-label {
-  margin-top: 5px;
+  margin-top: 3px;
   font-size: 10px;
-  line-height: 1.25;
+  line-height: 1.15;
   text-align: center;
   color: #c3d4e2;
   max-width: 100%;
-  word-break: break-all;             /* 「Symbols 切图」这类含拉丁词的标签也能断开，不撑宽磁贴 */
+  word-break: break-all;             /* 万一以后加了长名字，折行而不是撑宽功能栏 */
 }
-/* 选中态：只靠青色描边 + 略深底色高亮，不再画右上角对勾 */
+/* 选中态：整块填充高亮（不是只描一圈线），青色描边只用来收边。
+   底色用中等深度的青，不用 #22d3e0 那种实心亮青 —— 七个图标的描边是浅色
+   (#EDE9FE) 加青色点缀 (#22d3e0)，压在亮青底上会糊成一片；这个深度下两者都看得清，
+   也不必为选中态另做一套图标 */
 .tile.active .tile-inner {
-  background: #0e2c47;
+  background: #125e75;
   border-color: #22d3e0;
 }
-.tile.active .tile-label { color: #eaf7fb; }
+.tile.active .tile-label { color: #ffffff; font-weight: 600; }
 
 /* ---------- 开关行 ---------- */
 .switch-row { display: flex; align-items: center; padding: 10px 2px; }
@@ -239,6 +299,10 @@ input[type="text"]::placeholder { color: #6d8ba3; }
 .setting-row + .setting-row { border-top: 1px solid #12293f; }
 .setting-row .row-label { flex: 0 0 auto; }
 .setting-value { margin-left: auto; display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+/* 标签一行、选项另起一行（切图方式用）：内容列变窄后，「切图方式 + 完整切图 + Symbols 切图」三块挤一行会折得很难看 */
+.setting-stack { flex-direction: column; align-items: stretch; }
+.setting-stack .stack-head { display: flex; align-items: center; }
+.setting-stack .setting-value { margin: 8px 0 0; justify-content: flex-start; }
 /* 导出设置一行：位置(图标) + 格式下拉 + 倍率下拉 */
 .export-row { display: flex; align-items: center; padding: 2px; }
 .export-row .row-label { flex: 0 0 auto; margin-left: 0; }
@@ -543,8 +607,12 @@ input[type="text"]::placeholder { color: #6d8ba3; }
 .preview-head { font-size: 13px; color: #d5e3ef; margin-bottom: 8px; }
 .preview {
   min-height: 44px;
-  max-height: 240px;
-  overflow: auto;
+  /* 限高 + 自动滚动：一次显示 4 行，多了自己滚，预览不会把「应用重命名」顶到屏幕外。
+     114px 是算出来的：4 行 × (12px × 1.9 行高) = 91.2，加上下内边距 20 与上下边框 2
+     （全局 box-sizing:border-box，max-height 含内边距与边框）。
+     固定像素、不用百分比 —— 见 ui-ids.test.js 里那条约定 */
+  max-height: 114px;
+  overflow-y: auto;
   padding: 10px;
   font-size: 12px;
   line-height: 1.9;
@@ -769,7 +837,7 @@ input[type="text"]::placeholder { color: #6d8ba3; }
   font-size: 12px;
   color: #7fd4dd;
   text-align: center;
-  line-height: 1.5;          /* 过长时自动换行、完整展示；\n 强制分行 */
+  line-height: 1.4;        /* 过长时自动换行、完整展示；\n 强制分行 */
   white-space: pre-line;
 }
 
@@ -833,7 +901,7 @@ input[type="text"]::placeholder { color: #6d8ba3; }
   align-items: center;
   justify-content: space-between;
   margin-top: auto;                  /* 撑到面板底部 */
-  padding: 12px 4px 2px;
+  padding: 6px 4px 0;                /* 压扁：状态栏常驻，它占的高度都是从内容区里拿的 */
   border-top: 1px solid #12293f;
 }
 .foot-item { flex: 0 0 auto; display: flex; align-items: center; font-size: 12px; color: #7c93a8; }

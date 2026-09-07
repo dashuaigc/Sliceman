@@ -417,6 +417,23 @@ export function guideLayoutDescriptor(rawCfg, opts = {}) {
 }
 
 /**
+ * expected 里的每条参考线是不是都已经在 actual 里。
+ *
+ * 用途：判断「newGuideLayout 播完了但其实什么都没画」。batchPlay 不报错 ≠ 真的生效 ——
+ * 描述符形状不对时 PS 会把它收下来空转（真机现象：点记录里的「应用」毫无反应也不报错）。
+ * 容差默认给 1px 而不是 EPS：这里要答的是「有没有画」，不是「画得准不准」，
+ * 松一点可以避免插件算的坐标与 PS 版面引擎差个零点几就误判成没生效。
+ * @param {{vertical:number[], horizontal:number[]}} actual 文档里现有的
+ * @param {{vertical:number[], horizontal:number[]}} expected 期望出现的
+ */
+export function guidesInclude(actual, expected, eps = 1) {
+  const covered = (list, v) => (list || []).some((x) => Math.abs(x - v) <= eps);
+  const all = (a, e) => (e || []).every((v) => covered(a, v));
+  return all(actual && actual.vertical, expected && expected.vertical)
+    && all(actual && actual.horizontal, expected && expected.horizontal);
+}
+
+/**
  * 两批参考线是不是一模一样（用来判断「原生弹窗被取消了 = 文档没变化」）。
  * @param {{vertical:number[], horizontal:number[]}} a
  * @param {{vertical:number[], horizontal:number[]}} b

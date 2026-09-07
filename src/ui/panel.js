@@ -126,8 +126,8 @@ function setSlicing(on) {
     sliceBtn.classList.remove('slicing');
     sliceBtn.style.display = '';               // 确保结束后按钮恢复显示
     updateSliceLabel();
-    stopConfirm.style.display = 'none';       // 结束时收起确认块
-    overwriteConfirm.style.display = 'none';
+    showOverlay(stopConfirm, false);       // 结束时收起确认块
+    showOverlay(overwriteConfirm, false);
     escPause = false;
     pauseDecider = null;
     overwriteDecider = null;
@@ -138,7 +138,7 @@ function setSlicing(on) {
 // 弹出"同名文件"确认，返回 'overwrite' | 'skip' | 'overwriteAll' | 'skipAll'
 function askOverwrite(name, ext) {
   document.getElementById('overwriteName').textContent = `${name}.${ext}`;
-  overwriteConfirm.style.display = 'flex';
+  showOverlay(overwriteConfirm, true);
   setStatus(`发现同名文件：${name}.${ext}`);
   return new Promise((res) => { overwriteDecider = res; });
 }
@@ -151,7 +151,7 @@ function requestStop(reason) {
 
 // 弹出"是否终止"确认，返回 'terminate' | 'continue'
 function askTerminate() {
-  stopConfirm.style.display = 'flex';
+  showOverlay(stopConfirm, true);
   sliceBtn.style.display = 'none';   // 已暂停：隐藏"停止切图"，它只在任务进行中显示
   setStatus('已暂停：是否终止任务？');
   return new Promise((res) => { pauseDecider = res; });
@@ -299,7 +299,7 @@ async function runExport(makeTasks, emptyMsg) {
         let action = overwriteAll;
         if (!action) {
           const d = await askOverwrite(currentName, ext);
-          overwriteConfirm.style.display = 'none';
+          showOverlay(overwriteConfirm, false);
           if (d === 'overwriteAll') { overwriteAll = 'overwrite'; action = 'overwrite'; }
           else if (d === 'skipAll') { overwriteAll = 'skip'; action = 'skip'; }
           else action = d;
@@ -332,7 +332,7 @@ async function runExport(makeTasks, emptyMsg) {
       if (escPause || userCancelled) {
         escPause = false;
         const decision = await askTerminate();
-        stopConfirm.style.display = 'none';
+        showOverlay(stopConfirm, false);
         sliceBtn.style.display = '';        // 恢复显示（继续则重新进入进行中状态）
         if (decision === 'terminate') {
           await cleanupAndRestore(ps.docId, originalHistory);
@@ -567,6 +567,36 @@ function setTipMaskedFields(on) {
   for (const id of TIP_MASKED_FIELD_IDS) {
     const el = document.getElementById(id);
     if (el) el.style.visibility = v;
+  }
+}
+
+// ---- 浮层的显隐都走这里 ----
+// ⚠️ UXP 的原生滚动条和文字编辑控件是一个毛病：恒画在所有 DOM 之上，z-index 管不着。
+// 页面里任何一个能滚的盒子，它的滚动条都会【横穿弹窗】（真机截图确认）。所以浮层期间
+// 把它们的 overflow 一律关掉 —— 滚动条随之消失，而弹窗后面本来也不该滚。
+// 要关的是【页面侧】的滚动盒：内容列、功能栏，以及重命名页那个限高 240px 的预览框。
+// 弹窗自己内部的滚动盒（.gd-list / .sl-list / .sl-groups）不能关，它们是弹窗的一部分。
+// 锁定状态从「有没有浮层还开着」现算，不用计数器：改名弹窗是压在版面记录弹窗上面开的，
+// 关掉上面那个时下面那个还在，布尔开关会提前解锁。
+const OVERLAY_IDS = [
+  'stopConfirm', 'tableConfirm', 'overwriteConfirm',
+  'gdListOverlay', 'gdNameOverlay', 'gdHistConfirm', 'slOverlay',
+];
+const SCROLL_LOCK_IDS = ['pages', 'rail', 'previewList'];
+/** @param {string|object} idOrEl 浮层的 id 或元素 */
+function showOverlay(idOrEl, on) {
+  const el = typeof idOrEl === 'string' ? document.getElementById(idOrEl) : idOrEl;
+  if (el) el.style.display = on ? 'flex' : 'none';
+  // 只认 'flex'：显示浮层只走这一个值，比反过来排除 'none' / 空串更不容易看错
+  const anyOpen = OVERLAY_IDS.some((id) => {
+    const o = document.getElementById(id);
+    return !!o && o.style.display === 'flex';
+  });
+  for (const id of SCROLL_LOCK_IDS) {
+    const box = document.getElementById(id);
+    // 锁用 overflow 简写（连横向一起关，长图层名不至于甩出一条横滚动条）；
+    // 解锁写空串还给样式表，别硬写 'auto' —— 各家的原值不一样（有的只 overflow-y）
+    if (box) box.style.overflow = anyOpen ? 'hidden' : '';
   }
 }
 
@@ -907,11 +937,11 @@ function refreshTableUi() {
 
 function askTableConfirm(count) {
   document.getElementById('tblCellCount').textContent = String(count);
-  document.getElementById('tableConfirm').style.display = 'flex';
+  showOverlay('tableConfirm', true);
   return new Promise((res) => { tableDecider = res; });
 }
 function resolveTableConfirm(v) {
-  document.getElementById('tableConfirm').style.display = 'none';
+  showOverlay('tableConfirm', false);
   if (tableDecider) { const d = tableDecider; tableDecider = null; d(v); }
 }
 document.getElementById('tblConfirmYes').onclick = () => resolveTableConfirm(true);
@@ -1072,7 +1102,7 @@ setupSwitch('layoutExpand', prefGet('layout.expand', '0') === '1', () => {
 });
 updateLayoutMarginRow();
 
-// ---- 批量重命名：替换 / 重新命名 / 加前缀 / 加后缀 + n 连续编号，输入即预览 ----
+// ---- 批量重命名：替换 / 重新命名 / 前缀 / 后缀 + n 连续编号，输入即预览 ----
 const previewList = document.getElementById('previewList');
 const findInput = document.getElementById('findText');
 const templateInput = document.getElementById('templateText');
@@ -1584,13 +1614,13 @@ function openSearchDialog() {
   // UXP 已知问题：文字编辑控件恒绘制在所有 DOM 之上，浮层出现时必须把页面上的
   // 输入框藏起来，否则「查找内容 / 替换为」那几个框会压在弹窗上面
   setTipMaskedFields(true);
-  slOverlay.style.display = 'flex';
+  showOverlay(slOverlay, true);
   setSearchView('search');
 }
 
 function closeSearchDialog() {
   slOpen = false;
-  slOverlay.style.display = 'none';
+  showOverlay(slOverlay, false);
   setTipMaskedFields(false);
 }
 
@@ -1848,7 +1878,7 @@ bindTip(document.getElementById('tableInfo'), document.getElementById('tableTip'
 bindTip(document.getElementById('renameInfo'), document.getElementById('renameTip'),
   '改名对象＝<b>图层面板里选中的那些</b>；组和组里的层都点亮了，就各改一次。<br>'
   + '手点太慢用<b>「按名称查找」</b>：弹窗里查一批勾一批，攒成卡片，确认后一次性成为选中。<br>'
-  + '四种方式：<b>替换</b>（换掉原名里的查找内容）/ <b>重新命名</b>（整名替换）/ <b>加前缀 / 加后缀</b>。<br>'
+  + '四种方式：<b>替换</b>（换掉原名里的查找内容）/ <b>重新命名</b>（整名替换）/ <b>前缀 / 后缀</b>。<br>'
   + '开<b>数字编号 n</b> 后，模板里<b>单独的 n</b> 变连续数字（Button 里的 n 不算），可设起始 / 递增 / 位数 / 方向。<br>'
   + '预览显示「原名称 → 新名称」，重名标<b class="tag-red">⚠同名</b>，没变化的行不写回 PS。给<b>背景图层</b>改名会被 PS 转成普通图层。');
 
@@ -2109,10 +2139,10 @@ function openGuideList(mode) {
   if (gdBusy) return;
   gdListMode = mode;
   renderGuideList();
-  document.getElementById('gdListOverlay').style.display = 'flex';
+  showOverlay('gdListOverlay', true);
 }
 function closeGuideList() {
-  document.getElementById('gdListOverlay').style.display = 'none';
+  showOverlay('gdListOverlay', false);
 }
 /** 记录变动后：列表开着就就地重绘，入口按钮上的条数也跟着更新 */
 function refreshGuideRecords() {
@@ -2240,18 +2270,24 @@ async function applyGuideRecord(rec) {
   if (gdBusy || !rec) return;
   refreshGuideDocState();
   if (gdNoDoc) return setStatus('请先打开一个 Photoshop 文档。');
-  if (rec.raw && rec.guides) return applyRawGuides(rec);
-  const cfg = normalizeCfg(rec.cfg);
   const canvas = readCanvas();
+  // 原样快照，或者「收藏当前版面」存下的、画布尺寸没变过的记录：按坐标还原，
+  // 保证与收藏时看到的一模一样（换了尺寸的稿子才走下面的参数重算）
+  if (rec.guides && (rec.raw || formatCanvas(rec.canvas) === formatCanvas(canvas))) {
+    return applyRawGuides(rec);
+  }
+  const cfg = normalizeCfg(rec.cfg);
+
+  // 先把「这一版应该长什么样」算出来：既当原生命令空转时的判据，也当兜底方案
+  const plan = computeGuides(cfg, canvas);
 
   setGuideBusy(true, '应用中…');
   try {
     let via = 'ps';
     try {
-      await applyGuideLayout(cfg);
+      await applyGuideLayout(cfg, plan.error ? null : plan);
     } catch {
-      const plan = computeGuides(cfg, canvas);       // 兜底：自己算、自己画
-      if (plan.error) throw new Error(plan.error);
+      if (plan.error) throw new Error(plan.error);  // 兜底：自己算、自己画
       await applyGuides(plan, { clearFirst: cfg.clearFirst, commandName: '应用参考线版面' });
       via = 'plugin';
     }
@@ -2276,6 +2312,8 @@ async function applyRawGuides(rec) {
   setGuideBusy(true, '应用中…');
   try {
     await applyGuides(rec.guides, { clearFirst: true, commandName: '应用参考线版面' });
+    // 参数化的记录即便走坐标还原，也照旧算「用过一次」，提到最近使用第一位
+    if (rec.cfg) recordGuideLayout(rec.cfg, canvas);
     const d = describeRecord(rec);
     setStatus(`已应用「${rec.name || d.title}」：${d.title}`
       + (formatCanvas(rec.canvas) === formatCanvas(canvas)
@@ -2306,12 +2344,21 @@ async function favoriteCurrentGuides() {
   const cfg = inferCfgFromGuides(empty, guides, canvas);
   // 收藏的是「画布上现在这个样子」，应用时自然应当替换掉当时的参考线
   if (cfg) cfg.clearFirst = true;
+  // 认出参数也把【坐标一起存】：应用时同尺寸画布按坐标原样还原，换了尺寸才用参数重算。
+  // 只存参数不够 —— 推断出的参数未必能原样算回这批线。真实例子：「4 列 + 左右边距 100、
+  // 没有横线」只能被推断成「边距 上0 下0 左100 右100」（边距是一个整体开关，没法只开左右），
+  // 而这套参数还会多画出画布上下两条边线。收藏当前版面的承诺是「应用后和现在一模一样」，
+  // 这种损耗不能留给用户去发现。
   const rec = cfg
-    ? { cfg, canvas, at: Date.now() }
+    ? { cfg, guides, canvas, at: Date.now() }
     : { raw: true, cfg: null, guides, canvas, at: Date.now() };
 
+  // 参数相同还要坐标也相同才算重复：不同的线有可能推断出同一套参数，
+  // 而现在坐标是会被原样还原的，判成重复就等于「按了收藏却什么都没存下来」。
+  // 旧版存的记录没有 guides 字段，那就仍按参数签名判（保持兼容）
   const dup = gdFavs.findIndex((f) => (cfg
-    ? (!f.raw && signatureOf(f.cfg) === signatureOf(cfg))
+    ? (!f.raw && signatureOf(f.cfg) === signatureOf(cfg)
+      && (!f.guides || sameGuides(f.guides, guides)))
     : (f.raw && sameGuides(f.guides, guides))));
   if (dup >= 0) return setStatus(`这一版已经在收藏里了：「${gdFavs[dup].name}」`);
 
@@ -2450,11 +2497,11 @@ function askGuideName(title, dflt) {
   document.getElementById('gdNameTitle').textContent = title;
   const inp = document.getElementById('gdNameInput');
   inp.value = dflt || '';
-  document.getElementById('gdNameOverlay').style.display = 'flex';
+  showOverlay('gdNameOverlay', true);
   return new Promise((res) => { gdNameDecider = res; });
 }
 function resolveGuideName(v) {
-  document.getElementById('gdNameOverlay').style.display = 'none';
+  showOverlay('gdNameOverlay', false);
   if (gdNameDecider) { const d = gdNameDecider; gdNameDecider = null; d(v); }
 }
 
@@ -2512,11 +2559,11 @@ function deleteRecent(i) {
 
 // 清空历史：破坏性且不可撤销，走二次确认（需求 §26）
 function askClearHistory() {
-  document.getElementById('gdHistConfirm').style.display = 'flex';
+  showOverlay('gdHistConfirm', true);
   return new Promise((res) => { gdHistDecider = res; });
 }
 function resolveClearHistory(v) {
-  document.getElementById('gdHistConfirm').style.display = 'none';
+  showOverlay('gdHistConfirm', false);
   if (gdHistDecider) { const d = gdHistDecider; gdHistDecider = null; d(v); }
 }
 

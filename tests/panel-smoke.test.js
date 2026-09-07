@@ -308,6 +308,14 @@ function fakeGuides(list = []) {
   return g;
 }
 
+/** 往假文档里塞一条参考线：模拟 PS 执行 newGuideLayout 后文档确实变了。
+ *  applyGuideLayout 现在按【文档有没有变化】判定成功，不再只看 batchPlay 抛没抛 */
+function addFakeGuide(doc, direction, coordinate) {
+  const g = doc.guides;
+  g[g.length] = { direction, coordinate, delete() { /* 这里不用单条删 */ } };
+  g.length += 1;
+}
+
 /** 造一个假文档：只提供参考线相关代码真正会用到的那几样 */
 function fakeDoc(width, height, guides = []) {
   return {
@@ -395,6 +403,17 @@ describe('重命名：按名称查找弹窗（查找 → 加入列表 → 确认
 
     const b = await loadPanel({ doc: doc([13]) });
     expect(b.document.getElementById('targetInfo').textContent).toBe('已选中 1 个图层/组');
+  });
+
+  it('弹窗期间锁住内容列与功能栏的滚动（UXP 原生滚动条会横穿弹窗）', async () => {
+    const { document } = await loadPanel({ doc: doc() });
+    const boxes = ['pages', 'rail', 'previewList'];             // 内容列 / 功能栏 / 改名预览框
+    for (const id of boxes) expect(document.getElementById(id).style.overflow).toBeUndefined();
+    open(document);
+    for (const id of boxes) expect(document.getElementById(id).style.overflow).toBe('hidden');
+    click(document, 'slCloseBtn');
+    // 解锁是把内联样式清掉、还给样式表，不是硬写 auto
+    for (const id of boxes) expect(document.getElementById(id).style.overflow).toBe('');
   });
 
   it('打开时停在查找视图，并把页面上的输入框藏起来（UXP 文字控件恒在最上层）', async () => {
@@ -1053,7 +1072,12 @@ describe('参考线：原生弹窗 → 通知 → 记录 → 一键重放', () =
   });
 
   it('点记录里的「应用」= 不弹窗直接重放那一版', async () => {
-    const { document, played, notify, recordAction } = await loadPanel({ doc: fakeDoc(1920, 1080) });
+    const doc = fakeDoc(1920, 1080);
+    const { document, played, notify, recordAction } = await loadPanel({
+      doc,
+      // 原生命令生效时文档会多出参考线 —— 插件就是靠这个变化判断「真的画了」
+      onPlay: (d) => { if (d._obj === 'newGuideLayout') addFakeGuide(doc, 'vertical', 40); return null; },
+    });
     await notify('newGuideLayout', layoutEvent());
     fire(document.getElementById('gdRecentBtn'), 'click');
     played.length = 0;
@@ -1068,6 +1092,30 @@ describe('参考线：原生弹窗 → 通知 → 记录 → 一键重放', () =
     expect(dlg[0].rowCount).toBe(3);
     expect(dlg[0].marginRight).toEqual({ _unit: 'pixelsUnit', _value: 40 });
     expect(document.getElementById('status').textContent).toMatch(/已应用/);
+  });
+
+  it('原生命令不报错但一条线都没画出来时，「应用」照样退回插件自己算坐标', async () => {
+    // 真机上的表现就是这个：点「应用」毫无反应，也没有任何报错 —— batchPlay 收下了
+    // 描述符却空转。所以判定成功要看文档变化，不能只看有没有抛错。
+    const doc = fakeDoc(1920, 1080);
+    const { document, played, notify, recordAction } = await loadPanel({
+      doc,
+      onPlay: () => null,                      // 全部「成功」，但文档一条线也没多
+    });
+    await notify('newGuideLayout', layoutEvent());
+    fire(document.getElementById('gdRecentBtn'), 'click');
+    played.length = 0;
+
+    fire(recordAction('rec-apply:0'), 'click');
+    await new Promise((r) => setTimeout(r, 0));
+
+    // 两种描述符形状都试过（平铺 + 嵌套），都空转，最后由插件逐条建
+    expect(played.filter((d) => d._obj === 'newGuideLayout').length).toBe(2);
+    expect(guidesFrom(played)).toEqual({
+      vertical: [40, 485, 505, 950, 970, 1415, 1435, 1880],
+      horizontal: [40, 360, 380, 700, 720, 1040],
+    });
+    expect(document.getElementById('status').textContent).toMatch(/已由插件直接创建/);
   });
 
   it('原生版面命令不可用时，「应用」退回插件自己算坐标', async () => {
@@ -1156,6 +1204,51 @@ describe('参考线：原生弹窗 → 通知 → 记录 → 一键重放', () =
     fire(recordAction('fav-apply:0'), 'click');
     await new Promise((r) => setTimeout(r, 0));
     expect(guidesFrom(played)).toEqual({ vertical: [13, 500], horizontal: [777] });
+  });
+
+  it('收藏当前版面 → 应用：画出来的与收藏时看到的一模一样', async () => {
+    // 用户报的问题就出在这条路上：手建的三等分被推断成「只有边距、没有列也没有行」，
+    // 下发给 PS 的 newGuideLayout 里连 colCount / rowCount 都没有，原生命令空转、
+    // 一条线都不画（也不报错）。此时必须退回插件自己逐条建，且坐标要与原来一致。
+    const doc = fakeDoc(1920, 1080);
+    doc.guides = fakeGuides([
+      ...[640, 1280].map((coordinate) => ({ direction: 'vertical', coordinate })),
+      ...[360, 720].map((coordinate) => ({ direction: 'horizontal', coordinate })),
+    ]);
+    const { document, played, recordAction } = await loadPanel({ doc, onPlay: () => null });
+    fire(document.getElementById('gdFavNowBtn'), 'click');
+    await new Promise((r) => setTimeout(r, 0));
+    fire(document.getElementById('gdNameOk'), 'click');
+    await new Promise((r) => setTimeout(r, 0));
+
+    fire(document.getElementById('gdFavBtn'), 'click');
+    played.length = 0;
+    fire(recordAction('fav-apply:0'), 'click');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(guidesFrom(played)).toEqual({ vertical: [640, 1280], horizontal: [360, 720] });
+  });
+
+  it('收藏当前版面：参数会损耗的版面，同尺寸下按坐标原样还原', async () => {
+    // 「4 列 + 左右边距 100、没有横线」只能被推断成「边距 上0 下0 左100 右100」（边距是
+    // 一个整体开关，没法只开左右），而这套参数还会多画出画布上下两条边线 0 / 1080。
+    // 所以收藏时把坐标一起存下来，同尺寸画布上按坐标还原，不多不少
+    const doc = fakeDoc(1920, 1080);
+    const lines = [100, 515, 535, 950, 970, 1385, 1405, 1820];
+    doc.guides = fakeGuides(lines.map((coordinate) => ({ direction: 'vertical', coordinate })));
+    const { document, played, recordAction } = await loadPanel({ doc, onPlay: () => null });
+    fire(document.getElementById('gdFavNowBtn'), 'click');
+    await new Promise((r) => setTimeout(r, 0));
+    fire(document.getElementById('gdNameOk'), 'click');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.getElementById('status').textContent).toMatch(/已收藏为「4列/);   // 仍按参数展示
+
+    fire(document.getElementById('gdFavBtn'), 'click');
+    played.length = 0;
+    fire(recordAction('fav-apply:0'), 'click');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(guidesFrom(played)).toEqual({ vertical: lines, horizontal: [] });
+    // 也没有绕原生命令：同尺寸就是按坐标还原
+    expect(played.filter((d) => d._obj === 'newGuideLayout')).toEqual([]);
   });
 
   it('收藏当前版面：文档里一条参考线都没有时只提示', async () => {
