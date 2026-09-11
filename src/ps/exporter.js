@@ -1,4 +1,4 @@
-// PS API 封装：把一个导出任务（单图层或蓝色合并组）导出为紧贴像素的 PNG。
+// PS API 封装：把一个导出任务（单图层 / 蓝色组 / 同层蓝色图层合并）导出为紧贴像素的 PNG。
 //
 // ⚠️ 本文件是整个插件最依赖 Photoshop 运行时的部分，无法在 Node 下单测。
 //    必须在 UXP Developer Tool 里对真实 PSD 逐项验证（见 plan Task 6 Step 2）；
@@ -8,16 +8,19 @@
 //   1) 复制整个文档到临时文档（保留结构与图层样式）
 //   2) 先把所有图层设为不可见
 //   3) 只显示目标路径：目标（及其祖先组）可见；合并组则显示其非红、且原本可见
-//      （或 includeHidden 开启）的后代，红色后代保持隐藏 → 实现「红色从合并中排除」
-//   4) 合并可见图层为一层（mergeVisible），图层样式在此被渲染
-//   5) fullBleed 开 → Reveal All 让画布包含超出原画布的像素；关 → 保持原画布裁掉溢出
+//      （或 includeHidden 开启）的后代，红色后代保持隐藏 → 实现「红色从合并中排除」；
+//      同层蓝色图层合并则把 task.members 里那几层一起点亮
+//   4) fullBleed 开 → 先 Reveal All 让画布包含超出原画布的像素；关 → 保持原画布裁掉溢出
+//      ⚠️ 顺序不能反：PS 合并图层时会丢弃画布外的像素，合并之后再扩画布就没得救了
+//   5) 合并可见图层为一层（mergeVisible），图层样式在此被渲染
 //   6) 按透明度 trim；全透明则判为空、跳过
 //   7) 存 PNG，关闭临时文档
 
 import { computeSymbolFrame } from '../lib/symbols.js';
+import { computeBleedRect } from '../lib/export-core.js';
+import { saveDocAs } from './save-image.js';
 
 const { app, action, core } = require('photoshop');
-const uxpFs = require('uxp').storage.localFileSystem;
 
 /**
  * 按所选格式与倍率把当前临时文档导出到目标文件夹。
@@ -44,36 +47,11 @@ async function saveExport(tempDoc, folder, fileName, format, scale) {
     }], {});
   }
 
-  const ext = ({ jpg: 'jpg', webp: 'webp', gif: 'gif', bmp: 'bmp' })[format] || 'png';
-  const file = await folder.createFile(`${fileName}.${ext}`, { overwrite: true });
-
-  if (format === 'jpg') {
-    // JPG 无透明通道，PS 会以白底合并（选 JPG 视为可接受）
-    await tempDoc.saveAs.jpg(file, { quality: 12 }, true);   // quality 0-12，取最高
-  } else if (format === 'gif') {
-    await tempDoc.saveAs.gif(file, {}, true);
-  } else if (format === 'bmp') {
-    await tempDoc.saveAs.bmp(file, {}, true);
-  } else if (format === 'webp') {
-    // DOM saveAs 不支持 WebP，用 batchPlay save；先建好精确文件名再传 sessionToken，避免 PS 追加 "copy"
-    const token = await uxpFs.createSessionToken(file);
-    await action.batchPlay([{
-      _obj: 'save',
-      as: {
-        _obj: 'WebPFormat',
-        compression: { _enum: 'WebPCompression', _value: 'compressionLossless' }, // 无损，保留透明
-        includeXMPData: false, includeEXIFData: false, includePsExtras: false,
-      },
-      in: { _path: token, _kind: 'local' },
-      documentID: tempDoc.id,
-      copy: true,
-      lowerCase: true,
-      saveStage: { _enum: 'saveStageType', _value: 'saveBegin' },
-      _options: { dialogOptions: 'dontDisplay' },
-    }], {});
-  } else {
-    await tempDoc.saveAs.png(file, {}, true);   // asCopy=true
-  }
+  // 各格式的保存细节收在 save-image.js（与批量改尺寸共用同一个出口）。
+  // 切图这边一直是「JPG 最高质量 + WebP 无损」，这里显式传原值，行为不变。
+  await saveDocAs(tempDoc, folder, fileName, {
+    format, jpgQuality: 100, webpLossless: true, overwrite: true,
+  });
 }
 
 /** 递归收集文档内所有图层（含嵌套）。 */
@@ -139,8 +117,9 @@ async function revertToBase() {
 
 /**
  * 导出单个任务到 PNG。
- * @param {object} task {type:'layer'|'merged', node, pathSegments}
- * @param {object} ps   {docId, fileName, workId}
+ * @param {object} task {type:'layer'|'merged', node, members?, pathSegments}
+ *        merged 带 members = 同层蓝色图层合并（合并这几层）；不带 = 蓝色组（合并整组）
+ * @param {object} ps   {docId, workId}
  * @param {object} folder UXP folder entry（用户选的目标文件夹）
  * @param {string} fileName 已去重的最终文件名（不含扩展名）
  * @param {{fullBleed:boolean, includeHidden:boolean, format?:string, scale?:number}} opts
@@ -165,8 +144,20 @@ export async function exportTask(task, ps, folder, fileName, opts) {
         p = p.parent;
       }
 
+      // 顺带记下这一轮真正参与合并的层，第 4 步算扩画布范围要用（省一次全量遍历）
+      const shown = [];
       if (task.type === 'layer') {
         target.visible = true;
+        shown.push(target);
+      } else if (task.members) {
+        // 同层蓝色图层合并：把这几层一起点亮，合并成一张。它们是同一个容器下的兄弟层，
+        // 祖先组上面已经显示过了；红色 / 隐藏的在 walk 里就没进 members，这里不用再筛。
+        for (const m of task.members) {
+          const live = findLayerById(tempDoc, m.id);
+          if (!live) continue;
+          live.visible = true;
+          shown.push(live);
+        }
       } else {
         // 合并组：显示非红、原本可见（或 includeHidden）的后代。
         // 遇到红色节点直接停止下探（不进入其子树），使排除不依赖 PS 的组可见性门控。
@@ -176,22 +167,29 @@ export async function exportTask(task, ps, folder, fileName, opts) {
             const live = findLayerById(tempDoc, n.id);
             if (!live) return;
             if (n.label === 'red') { live.visible = false; return; }  // 红色排除，且不下探
-            if (n.visible || opts.includeHidden) live.visible = true;
+            if (n.visible || opts.includeHidden) { live.visible = true; shown.push(live); }
           }
           for (const c of n.children ?? []) prune(c);
         };
         prune(task.node);
       }
 
-      // 4) 合并可见图层为一层（渲染图层样式）
-      await action.batchPlay([{ _obj: 'mergeVisible' }], {});
-
-      // 5) 超出画布处理
+      // 4) 超出画布处理 —— 必须在合并【之前】做：Photoshop 合并图层时会把画布外的
+      //    像素直接丢掉，合并完再扩画布已经晚了，数据没了。
+      //    ⚠️ 但不能用 revealAll：它连【隐藏】图层也算进去。真机实测——200×200 的画布里
+      //    放一个被挪到 (3000,3000) 且【已隐藏】的层，revealAll 把画布撑到 3080×3080。
+      //    而这里的工作文档装着整个 PSD 的图层（只是被隐藏），于是每导出一张都会把画布
+      //    撑到覆盖全 PSD，后面的 mergeVisible 与 trim 全在这张巨图上做 —— 切图奇慢的真因。
+      //    改成只按【这一轮真会合并的那些层】的并集扩：crop 到超出画布的矩形会补透明，
+      //    等价于一次「只针对目标」的 Reveal All，画布始终是紧的。
       if (opts.fullBleed) {
-        // Reveal All：扩展画布以包含所有像素（含画布外）
-        await action.batchPlay([{ _obj: 'revealAll' }], {});
+        const rect = bleedRect(tempDoc, shown);
+        if (rect) await tempDoc.crop(rect);
       }
-      // fullBleed 关：不 Reveal All，画布保持原尺寸，溢出像素被裁掉
+      // fullBleed 关：不扩画布，保持原尺寸，溢出像素被合并裁掉
+
+      // 5) 合并可见图层为一层（渲染图层样式）
+      await action.batchPlay([{ _obj: 'mergeVisible' }], {});
 
       // 6) 空图层判断：合并结果无像素则跳过
       const merged = tempDoc.activeLayers[0];
@@ -216,6 +214,24 @@ export async function exportTask(task, ps, folder, fileName, opts) {
   }, { commandName: `导出 ${fileName}` });
 }
 
+/**
+ * 从 DOM 读出这一轮参与合并的层的边界，交给纯逻辑算扩画布的目标矩形。
+ * 组容器不参与：组的 bounds 会把隐藏子层也算进来，会把框撑歪。
+ * @param {object} doc 工作文档
+ * @param {Array<object>} shown 这一轮被置为可见的层（可能混着组容器）
+ * @returns {?{left:number, top:number, right:number, bottom:number}} 不需要扩时为 null
+ */
+function bleedRect(doc, shown) {
+  const rects = [];
+  for (const l of shown) {
+    if (!l || l.layers) continue;                    // 组容器跳过
+    const b = l.bounds;
+    if (!b) continue;
+    rects.push({ left: b.left, top: b.top, right: b.right, bottom: b.bottom });
+  }
+  return computeBleedRect(rects, doc.width, doc.height);
+}
+
 /** 取多个矩形的并集。 */
 function unionBounds(a, b) {
   return {
@@ -230,7 +246,7 @@ function unionBounds(a, b) {
  * 导出单个 Symbol 到 PNG（以「定位格」为基准框，四边对称外扩最大超出量）。
  * @param {object} task {type:'symbol', node, dinweigeIds, pathSegments}
  *        node 为 symbol 范围节点：组节点（有 id）或根伪节点（id 为空 → 整张画布）。
- * @param {object} ps   {docId, fileName}
+ * @param {object} ps   {docId, workId}
  * @param {object} folder UXP folder entry
  * @param {string} fileName 已去重的最终文件名（不含扩展名）
  * @param {{includeHidden:boolean, format?:string, scale?:number}} opts

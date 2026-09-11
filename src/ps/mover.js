@@ -11,6 +11,9 @@
 //   被选中组的后代），否则父组和子图层会各自吃一次位移、子图层跑出两倍距离。
 //
 // 保真：move + offset 是原地位移，不栅格化、不改尺寸/旋转/层级/组结构，只改位置。
+//
+// 复制移动：duplicate 之后 PS 会把**副本**留在选中状态，所以后面那条 move 天然就落在副本上，
+//   原对象一动不动 —— 不用记 id、不用回头找副本，还是一条描述符链、一步历史。
 
 import { readLockedIds } from './layer-lock.js';
 
@@ -42,20 +45,28 @@ const moveSelection = (dx, dy) => ({
   to: { _obj: 'offset', horizontal: px(dx), vertical: px(dy) },
   _options: dontDisplay,
 });
+// 就地复制当前选中的全部图层；副本各自留在原对象上方，并接管选中状态
+const duplicateSelection = () => ({
+  _obj: 'duplicate', _target: [{ _ref: 'layer', _enum: 'ordinal', _value: 'targetEnum' }],
+  version: 5, _options: dontDisplay,
+});
 
 /**
  * 按统一偏移量平移选中的对象。
  * @param {number[]} layerIds 最外层选中项的 id（组内子层不要传，见上文父子去重）
  * @param {number} dx 水平位移，右为正
  * @param {number} dy 垂直位移，下为正
- * @returns {Promise<{moved:number, skipped:number, lockedNames:string[]}>}
+ * @param {{copy?:boolean}} [opts] copy=true 时先复制一份、移动副本，原对象留在原位
+ * @returns {Promise<{moved:number, skipped:number, lockedNames:string[], copied:boolean}>}
  *          skipped 为锁定/背景等动不了而被跳过的数量（不影响其余对象）
  */
-export async function moveLayers(layerIds, dx, dy) {
+export async function moveLayers(layerIds, dx, dy, opts = {}) {
+  const copy = opts.copy === true;
   const doc = app.activeDocument;
   if (!doc) throw new Error('请先打开一个 PSD 文档');
-  if (!layerIds?.length) return { moved: 0, skipped: 0, lockedNames: [] };
-  if (!dx && !dy) return { moved: 0, skipped: 0, lockedNames: [] };   // 两轴都是 0：不下发
+  const none = { moved: 0, skipped: 0, lockedNames: [], copied: copy };
+  if (!layerIds?.length) return none;
+  if (!dx && !dy) return none;   // 两轴都是 0：不下发（复制模式也一样，原地叠一份没意义）
 
   // 分类：锁定/背景的跳过，其余照移（与一键排版不同，这里不因为锁定就整体中止）
   const lockedByDesc = await readLockedIds(layerIds);
@@ -71,20 +82,24 @@ export async function moveLayers(layerIds, dx, dy) {
     movable.push(id);
   }
   const skipped = lockedNames.length;
-  if (!movable.length) return { moved: 0, skipped, lockedNames };
+  if (!movable.length) return { moved: 0, skipped, lockedNames, copied: copy };
 
   const needReselect = movable.length !== layerIds.length;   // 有跳过项才动选区
+  // 复制模式下不恢复选区：选中的应该是刚生成的副本（和 PS 自己 Alt+拖 的结果一致），
+  // 恢复回原对象反而会让「再点一次」变成移动原件
+  const restoreSel = needReselect && !copy;
 
   const doMove = async () => {
     // 全部可移动 → 直接对现有选区平移，一条描述符，连选区都不用碰；
     // 有锁定项 → 先把选区收窄到可移动的那些（否则 PS 会因为选区里有锁定层而整体拒绝）
     const desc = [];
     if (needReselect) movable.forEach((id, i) => desc.push(i === 0 ? selectOne(id) : addToSel(id)));
+    if (copy) desc.push(duplicateSelection());          // 之后的 move 落在副本上
     desc.push(moveSelection(dx, dy));
     await action.batchPlay(desc, {});
 
     // 收窄过选区就恢复回用户原来的选择（含被跳过的锁定层）
-    if (needReselect) {
+    if (restoreSel) {
       try {
         const alive = layerIds.filter((id) => findLayerById(doc, id));
         if (alive.length) {
@@ -94,13 +109,14 @@ export async function moveLayers(layerIds, dx, dy) {
     }
   };
 
-  // 单步撤销：整批平移（含收窄/恢复选区）合并成一条「快速平移」历史。
+  // 单步撤销：整批平移（含复制、收窄/恢复选区）合并成一条历史。
   // 不像 group-maker 那样「失败后换模态重试」——平移无法判断前一次是否已生效，
-  // 重试一遍就会移出双倍距离，宁可如实上抛让用户重点一次。
+  // 重试一遍就会移出双倍距离（复制模式还会多留一份副本），宁可如实上抛让用户重点一次。
+  const name = copy ? '复制并平移' : '快速平移';
   if (typeof doc.suspendHistory === 'function') {
-    await doc.suspendHistory(doMove, '快速平移');
+    await doc.suspendHistory(doMove, name);
   } else {
-    await core.executeAsModal(doMove, { commandName: '快速平移' });
+    await core.executeAsModal(doMove, { commandName: name });
   }
-  return { moved: movable.length, skipped, lockedNames };
+  return { moved: movable.length, skipped, lockedNames, copied: copy };
 }

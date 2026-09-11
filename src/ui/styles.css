@@ -4,6 +4,20 @@
 html, body { height: 100%; }
 * { box-sizing: border-box; }
 
+/* 滚动条一律不画，滚动本身照常（内容列、弹窗里的结果列表、日志都能继续滚）。
+   起因：面板一矮内容就溢出，右边杵一条竖轨；它由原生层绘制，永远压在 DOM 之上，
+   z-index 管不着 —— 弹窗、按钮圆角都被它横穿（.pages 那 8px 右内边距就是为它让的路）。
+   三种写法一起上：UXP 的渲染器只认其中哪一条不好说，认不出的会被整条忽略，不影响布局。 */
+* {
+  scrollbar-width: none;               /* 标准属性 */
+  -ms-overflow-style: none;            /* 老 Edge/IE 系 */
+}
+*::-webkit-scrollbar {                 /* WebKit 系：宽高归零 + 不绘制 */
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 body {
   margin: 0;
   /* 代替 .app 外边距；body 自身不滚动。左侧只留 3px：功能栏的深色条最多只能出血到
@@ -30,7 +44,12 @@ body {
   /* 左内边距几乎归零：功能栏与品牌行直接贴左（左侧的视觉留白由 body 的 3px 外框提供）。
      2px 是下限 —— .app 圆角 14px，左上角那段弧在 y<14px 处会往里啃：logo 顶边落在
      y=12（上内边距），该处弧线只往里收约 0.1px，x=2 仍在背景内；再往左就会探出圆角 */
-  padding: 12px 10px 12px 2px;
+  /* 右内边距也压到 2px：原来那 10px 已经挪进 .pages 的 padding-right，
+     让内容列的滚动条落在留白上而不是压着内容（见 .pages）。顶栏/状态栏各自补回，
+     所以看到的左右留白与之前一模一样 */
+  /* 下内边距归零：底部是状态栏，它自己上下各留 9px 把文字垂直居中（见 .bottombar）。
+     留在这里的话只会加在文字下面，文字就永远偏上 */
+  padding: 12px 2px 0;
   overflow: hidden;                  /* 自己不滚：顶栏与状态栏固定，滚动交给 .pages */
   background: #071829;
   border-radius: 14px;
@@ -73,11 +92,16 @@ body {
   padding-top: 8px;
 }
 .rail .ic-btn { margin: 0 0 2px; }
-/* 内容列：唯一的滚动区 */
+/* 内容列：唯一的滚动区。
+   右边必须留出内边距：滚动条画在这个盒子的右边缘，而「开始导出」这类 width:100% 的
+   主按钮右边缘正好也在那儿 —— 滚动条压上去，按钮右侧那两个 6px 圆角就被那条笔直的
+   竖轨吃掉，看着成了直角（UXP 的原生滚动条永远画在 DOM 之上，z-index 管不着，
+   跟弹窗被滚动条遮住是同一个毛病）。留 8px，滚动条落在留白里，四角就都是圆的。
+   这 8px 是从 .app 的 padding-right 挪过来的，页面内容的可见留白没变宽 */
 .pages {
   flex: 1 1 auto;
   min-width: 0;
-  padding-left: 8px;
+  padding: 0 8px;
   overflow-y: auto;
 }
 
@@ -94,7 +118,9 @@ body {
   align-items: center;
   justify-content: flex-start;
   width: 100%;
-  padding: 0 2px 8px 0;              /* 左侧归零：与 .app 的内容盒左边缘（即磁贴左边）齐平 */
+  /* 左侧归零：与 .app 的内容盒左边缘（即磁贴左边）齐平。
+     右侧 10px = 原来 .app 的 padding-right（那 10px 已挪给 .pages），顶栏右缘位置不变 */
+  padding: 0 10px 8px 0;
 }
 .brand { display: flex; align-items: center; margin-right: auto; }
 .ps-logo {
@@ -192,9 +218,15 @@ body {
      input 底色和外框同色，这 2px 看不出来。 */
   padding: 2px 0;
 }
+/* 聚焦高亮：正在输入的那个框描边转亮青，退出即还原。
+   :focus-within 在 UXP 下靠不住（文字编辑是原生层，焦点不一定传进 DOM），
+   这条留着当降级；真正生效的是 panel.js 聚焦时加在外层 div 上的 .focused */
 .num-box:focus-within,
 .head-field:focus-within,
-.tf:focus-within { border-color: #22d3e0; }
+.tf:focus-within,
+.num-box.focused,
+.head-field.focused,
+.tf.focused { border-color: #3ce0ef; }
 
 input[type="text"] {
   /* 关掉平台自绘的控件外观。不关的话 UXP 会在输入框内侧自己画一圈深色装饰，
@@ -260,13 +292,15 @@ input[type="text"]::placeholder { color: #6d8ba3; }
   max-width: 100%;
   word-break: break-all;             /* 万一以后加了长名字，折行而不是撑宽功能栏 */
 }
-/* 选中态：整块填充高亮（不是只描一圈线），青色描边只用来收边。
+/* 选中态：只靠整块填充，不画任何描边 —— 边框色跟底色写成同一个值，
+   这样既不露出未选中那圈 #17344e，也不会多一道亮青轮廓（边框位仍占着，
+   选中/未选中的盒子尺寸才不会差 2px、图标不会跳）。
    底色用中等深度的青，不用 #22d3e0 那种实心亮青 —— 七个图标的描边是浅色
    (#EDE9FE) 加青色点缀 (#22d3e0)，压在亮青底上会糊成一片；这个深度下两者都看得清，
    也不必为选中态另做一套图标 */
 .tile.active .tile-inner {
   background: #125e75;
-  border-color: #22d3e0;
+  border-color: #125e75;
 }
 .tile.active .tile-label { color: #ffffff; font-weight: 600; }
 
@@ -430,34 +464,45 @@ input[type="text"]::placeholder { color: #6d8ba3; }
 /* 说明浮层用 .btn-tip（锚在 .feature-head 下），并由 panel.js 在浮出期间把两个
    输入框的 visibility 藏掉 —— UXP 已知问题：文字编辑控件恒绘制在所有 DOM 之上 */
 
-/* ---------- 批量快速平移（批量处理页内的第三块） ---------- */
-#moveBlock .setting-row + .setting-row { border-top: 1px solid #12293f; }
-/* 本页各行不带图标，标签顶格起，不要基础样式那 10px 的图标间距 */
-#moveBlock .row-label { flex: 0 0 auto; margin-left: 0; }
-/* 两行标签定宽：让「水平方向」「垂直方向」后面的箭头按钮竖直对齐成一列 */
-.axis-label { width: 56px; }
-/* 方向按钮：做成实心方钮而不是细描边 pill —— 选中态填充青色，一眼能看出当前朝哪走 */
-.arrow-pill {
-  min-width: 30px;
-  margin: 0 0 0 6px;
-  padding: 4px 0;
+/* ---------- 快速平移页 ---------- */
+#movePage { position: relative; }
+/* 本页 setting-row 与 switch-row 交替出现，基础样式里的同类相邻选择器接不上（同排版页） */
+#movePage .setting-row + .setting-row,
+#movePage .setting-row + .switch-row,
+#movePage .switch-row + .setting-row { border-top: 1px solid #12293f; }
+/* .switch-row 的标签是 flex:1 1 auto，开关自然被顶到行尾，这里不用另外处理 */
+
+/* 八方向九宫格：UXP 没有 grid，用三行 flex（同改尺寸页的锚点九宫格）。
+   中心 .mv-origin 是原点标记不是选项 —— 它不带 .pill，所以 bindPillGroup /
+   activePill 天然选不中它，尺寸得和方向格一模一样，否则整行会错位。 */
+.mv-grid { display: flex; flex-direction: column; align-items: center; margin-top: 8px; }
+.mv-row { display: flex; justify-content: center; }
+.mv-dir, .mv-origin {
+  width: 40px;
+  height: 32px;
+  margin: 0 4px 4px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 15px;
-  line-height: 1.1;
-  text-align: center;
+  line-height: 1;
+  border-radius: 5px;
+}
+.mv-row .mv-dir:last-child, .mv-row .mv-origin:last-child { margin-right: 0; }
+/* 方向格：实心方钮而不是细描边 pill —— 选中态填充青色，一眼看出当前朝哪走。
+   .pill 的 padding / border-radius / min-width 都要压掉，否则九格大小不齐 */
+.mv-dir {
+  padding: 0;
+  min-width: 0;
   color: #8ba0b3;
   background: #0e2438;
   border: 1px solid #24425c;
-  border-radius: 5px;
+  cursor: pointer;
 }
-.arrow-pill.active {
-  color: #04283a;
-  font-weight: 700;
-  background: #22d3e0;
-  border-color: #22d3e0;
-}
-/* 距离输入框跟在方向按钮右边，不再靠 margin-left:auto 顶到最右 */
-#moveBlock .num-field { flex: 0 0 auto; margin-left: 10px; }
-#moveBlock .num-box { width: 54px; }
+.mv-dir:hover { border-color: #22d3e0; }
+.mv-dir.active { color: #04283a; font-weight: 700; background: #22d3e0; border-color: #22d3e0; }
+/* 原点：不可点、不高亮，只用来说明「从这里往外走」 */
+.mv-origin { font-size: 10px; color: #e0863c; background: transparent; border: 1px solid transparent; }
 /* 输入非数字时把输入框边框标红 */
 .num-box.field-err { border-color: #e0555c; }
 
@@ -603,6 +648,11 @@ input[type="text"]::placeholder { color: #6d8ba3; }
 .pill-row { display: flex; flex-wrap: wrap; }
 .pill-row .pill { margin: 0 6px 0 0; }
 .pill-row .pill:last-child { margin-right: 0; }
+/* 数字位数那四个：面板只有 340px 宽，标题占掉一截后默认会折成两行。
+   强制不换行 + 四等分剩余宽度，"1 位"～"4 位" 一行放得下（左右内边距归零靠等分撑开）。 */
+#digitsPills { flex-wrap: nowrap; }
+#digitsPills .pill { flex: 1 1 0; min-width: 0; margin-right: 4px; padding: 2px 0; text-align: center; }
+#digitsPills .pill:last-child { margin-right: 0; }
 .preview-block { margin-top: 14px; }
 .preview-head { font-size: 13px; color: #d5e3ef; margin-bottom: 8px; }
 .preview {
@@ -623,11 +673,20 @@ input[type="text"]::placeholder { color: #6d8ba3; }
 }
 .preview b { color: #22d3e0; font-weight: 600; }
 .preview .dup { color: #e0555c; }
+/* 预览每行行首的类型图标（组=文件夹 / 图层=图片框）：
+   用 flex 而不是 vertical-align —— UXP 对内联元素的基线对齐不可靠。
+   图标 flex:none 不被压扁；文字 min-width:0 才肯在窄面板里换行。
+   行高仍是 line-height 决定的 22.8px（图标 13px 撑不高它），所以 .preview 那个
+   「4 行 = 114px」的限高算式不受影响。 */
+.preview .pv-row { display: flex; align-items: center; }
+.preview .pv-ico { width: 13px; height: 13px; flex: none; margin-right: 6px; pointer-events: none; }
+.preview .pv-txt { flex: 1; min-width: 0; }
+.preview .pv-more { color: #8ba0b3; }
 
 /* ---------- 「按名称查找图层」弹窗 ---------- */
-/* 入口那一行：标签在左，按钮顶到右边。按钮是深底 + 青色描边 + 放大镜，
-   悬停时底色提亮、描边转亮青（灰描边的文字链在这一行太容易被忽略） */
-#targetRow #slOpenBtn { margin-left: auto; }
+/* 入口就在「批量重命名」大标题那一行：标题贴左，按钮顶到右边。按钮是深底 + 青色描边
+   + 放大镜，悬停时底色提亮、描边转亮青（灰描边的文字链在这一行太容易被忽略） */
+.feature-head .find-btn { margin-left: auto; }
 .find-btn {
   display: flex;
   align-items: center;
@@ -901,11 +960,166 @@ input[type="text"]::placeholder { color: #6d8ba3; }
   align-items: center;
   justify-content: space-between;
   margin-top: auto;                  /* 撑到面板底部 */
-  padding: 6px 4px 0;                /* 压扁：状态栏常驻，它占的高度都是从内容区里拿的 */
+  /* 压扁：状态栏常驻，它占的高度都是从内容区里拿的。
+     右侧 4+10：补回从 .app 挪走的 10px，分隔线还是原来那个长度。
+     上下各 9px：文字要在分隔线与面板下沿之间【垂直居中】。原来是「上 6 下 0 +
+     .app 的 12px 下内边距」，文字贴着上沿。现在 .app 的下内边距归零（见 .app），
+     那 12px 全挪到这里，9+9 与原来的 6+0+12 等高，状态栏总高一点没变 */
+  padding: 9px 14px 9px 4px;
   border-top: 1px solid #12293f;
 }
 .foot-item { flex: 0 0 auto; display: flex; align-items: center; font-size: 12px; color: #7c93a8; }
 .foot-item svg { width: 14px; height: 14px; margin-right: 6px; opacity: 0.7; }
+
+/* ---------- 批量改尺寸页（四步向导） ---------- */
+#resizePage { position: relative; }
+
+/* 本页所有自绘下拉一律【向下】展开：.dd-menu 默认向上弹（bottom:100%），
+   而这一页的下拉都靠上，向上会顶出面板顶边 */
+#resizePage .dd-menu { top: 100%; bottom: auto; margin: 4px 0 0; }
+/* 下拉 / 输入框放进 .setting-value 时必须给定宽：.setting-value 的宽度由内容决定，
+   而 .dropdown 是 flex:1 1 0（基准 0），不给宽会被压成 0 —— 真机上就是「下拉不见了」 */
+#resizePage .setting-value .dropdown { flex: 0 0 auto; width: 136px; margin-left: 0; }
+#resizePage .rz-tf { flex: 0 0 auto; width: 136px; }
+
+/* 步骤指示器：三种状态只靠【填充色】区分，不画描边
+   —— UXP 的 CSS 圆角描边会锯齿，纯填充的圆点看着干净 */
+.rz-steps { display: flex; align-items: flex-start; margin-bottom: 10px; }
+.rz-step { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; cursor: pointer; }
+.rz-step * { pointer-events: none; }
+.rz-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #7c93a8;
+  background: #0e2438;
+}
+.rz-name { margin-top: 4px; font-size: 10px; line-height: 1.2; text-align: center; color: #7c93a8; }
+.rz-step.active .rz-dot { color: #04283a; background: #22d3e0; }
+.rz-step.active .rz-name { color: #eef5fb; font-weight: 600; }
+.rz-step.done .rz-dot { color: #ffffff; background: #125e75; }
+.rz-step.done .rz-name { color: #a8bccd; }
+
+/* 已选清单写在这里：文件名一行一个（\n 靠 pre-line 生效），长名没有空格可断，
+   必须按字符折行 —— 否则整名直接甩出卡片右边（真机截图确认） */
+.rz-hint { margin-top: 8px; white-space: pre-line; word-break: break-all; }
+/* 四个来源 pill 要折行，得自己补下外边距（.pill-row 只给了右外边距） */
+.rz-src .pill, .rz-quick .pill { margin-bottom: 6px; }
+.rz-quick { margin-top: 8px; }
+/* 空白区域填充：四个 pill 加末尾的色块一行放完 —— 选「自定义」时色块一出现就会把
+   「自定义」挤到第二行去（真机反馈），所以这一行不许折行，pill 的内边距也压窄一点 */
+.rz-fill-row { align-items: center; flex-wrap: nowrap; }
+.rz-fill-row .pill { flex: 0 0 auto; margin-right: 4px; padding: 2px 5px; }
+.rz-fill-row .color-swatch { margin-right: 0; }
+/* 已选清单（.preview 那套盒子）：一次显示 5 行，多了自己滚。
+   136px 是算出来的：5 行 × (12px × 1.9 行高) = 114，加上下内边距 20 与上下边框 2
+   （全局 box-sizing:border-box）。固定像素、不用百分比 —— 见 ui-ids.test.js 那条约定 */
+.rz-file-list { max-height: 136px; }
+/* 一行一个文件名：面板只有 300px 宽，长名再兜一层截断（panel.js 那边已压成「头…尾」） */
+.rz-file-row { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* 「改回原文件夹」自己一行，顶到右边（左边原来那行提示搬进问号浮层了） */
+.rz-out-line { display: flex; align-items: flex-start; justify-content: flex-end; }
+.rz-out-line #rzOutReset { flex: 0 0 auto; margin-top: 8px; }
+
+/* 宽 / 高（以及多尺寸那两行）同处一行：两个格子平分，各自能单独显隐 */
+.rz-duo { align-items: center; }
+.rz-duo-cell { flex: 1 1 0; min-width: 0; display: flex; align-items: center; }
+.rz-duo-cell .row-label { flex: 0 0 auto; margin-left: 0; }
+.rz-duo-cell .num-field { margin-left: 8px; }
+.rz-duo-cell .num-box { width: 52px; }
+.rz-duo-cell .unit { margin-left: 4px; }
+/* 多尺寸的两行：右端那个按钮不跟输入框抢宽度（.gd-btn 默认 flex:1 1 0） */
+.rz-add-row { padding: 6px 2px; }
+.rz-add-row + .rz-add-row { border-top: none; }
+.rz-add-btn { flex: 0 0 auto; height: 26px; padding: 0 8px; margin: 0 0 0 8px; }
+.rz-add-label { flex: 0 0 auto; margin-left: 0; }
+.rz-scale-tf { flex: 1 1 0; min-width: 0; margin-left: 8px; }
+
+/* 适应方式：标签那一行挂个问号（说明浮层锚在它下面），四个 pill 一行放完不折行 */
+.rz-label-row { position: relative; display: flex; align-items: center; }
+.rz-label-row label { margin: 0; }
+.rz-label-row .info-ico { margin-left: 6px; }
+.rz-fit-pills { flex-wrap: nowrap; margin-top: 8px; }
+.rz-fit-pills .pill { flex: 0 0 auto; margin-right: 4px; padding: 2px 5px; }
+
+/* 九宫格锚点：UXP 没有 grid，用三行 flex。整块在面板里居中 —— 三行等宽，
+   所以外层 align-items 和每行 justify-content 都给 center 就正了。
+   格子自带 margin-right:4px，行末那一格必须清掉，否则整块会偏左 2px。 */
+.rz-anchor-grid { display: flex; flex-direction: column; align-items: center; }
+.rz-anchor-row { display: flex; justify-content: center; }
+.rz-anchor-row .rz-anchor:last-child { margin-right: 0; }
+.rz-anchor {
+  width: 30px;
+  height: 26px;
+  margin: 0 4px 4px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #9fb3c6;
+  background: #0e2438;
+  border: 1px solid #24425c;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.rz-anchor:hover { border-color: #22d3e0; }
+.rz-anchor.active { color: #04283a; background: #22d3e0; border-color: #22d3e0; }
+
+/* 多尺寸列表 */
+.rz-sizes { margin-top: 8px; }
+.rz-size {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: #d5e3ef;
+  background: #0e2438;
+  border-radius: 6px;
+}
+.rz-size-t { flex: 1 1 auto; }
+.rz-size-del { flex: 0 0 auto; padding: 0 4px; color: #8ba0b3; cursor: pointer; }
+.rz-size-del:hover { color: #e0555c; }
+.rz-empty { padding: 4px 2px; font-size: 12px; color: #6f8aa3; }
+
+/* 进度条 */
+.rz-bar { height: 8px; margin-top: 10px; background: #0e2438; border-radius: 4px; overflow: hidden; }
+.rz-bar-fill { width: 0; height: 100%; background: #22d3e0; border-radius: 4px; }
+
+/* 成功 / 跳过 / 失败三个数 */
+.rz-stats { display: flex; margin-top: 12px; }
+.rz-stat { flex: 1 1 0; display: flex; flex-direction: column; align-items: center; }
+.rz-stat-n { font-size: 18px; font-weight: 700; }
+.rz-stat-t { margin-top: 2px; font-size: 11px; color: #7c93a8; }
+.rz-ok { color: #3ddc97; }
+.rz-skip { color: #e6b95c; }
+.rz-fail { color: #e0555c; }
+
+/* 处理日志：固定像素限高 + 内部滚动（限高一律用 px，不用百分比）。
+   ⚠️ 这是个滚动容器 —— 必须登记进 panel.js 的 SCROLL_LOCK_IDS，
+   否则弹窗打开时 UXP 的原生滚动条会画在弹窗上面 */
+.rz-log { max-height: 132px; overflow-y: auto; margin-top: 12px; padding-right: 6px; }
+.rz-log-row { display: flex; font-size: 11px; line-height: 1.6; color: #a8bccd; }
+.rz-log-n { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rz-log-s { flex: 0 0 auto; margin-left: 8px; }
+
+/* 向导导航：前三步是「上一步 / 下一步」，第四步是「上一步 / 开始批量修改」并排一行。
+   主按钮进了这一行，所以要压掉 .primary-btn 的整宽与 44px 高，跟左边的次级按钮对齐。 */
+.rz-nav { display: flex; align-items: center; margin-top: 4px; }
+.rz-nav .gd-btn { height: 36px; }
+.rz-nav #rzPrevBtn { flex: 0 0 92px; }
+.rz-nav #rzNextBtn { margin-right: 0; }        /* 显示「下一步」时主按钮是藏着的，右边不留空 */
+.rz-nav #rzRunBtn { flex: 1 1 auto; width: auto; height: 36px; margin: 0; font-size: 15px; }
+.rz-primary { color: #04283a; background: #22d3e0; border-color: #22d3e0; font-weight: 600; }
+.rz-primary:hover { color: #04283a; border-color: #22d3e0; }
+/* 处理中：主按钮变成「停止处理」，配色跟着切到红色（与切图那个按钮同一套语义） */
+#rzRunBtn.slicing { background: #e34850; color: #ffffff; }
 
 /* ---------- 确认覆盖层 ---------- */
 /* body 不滚动，overlay 相对 body(=可视区) absolute 定位并显式撑满（UXP 不认 top/bottom:0 撑高）：弹窗始终在面板中央 */

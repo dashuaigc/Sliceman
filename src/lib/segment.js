@@ -65,9 +65,23 @@ function extractRuns(alpha, w, h) {
  */
 export function labelComponents(alpha, w, h, minArea = 1) {
   const { groups } = labelGrid(alpha, w, h);
-  return groups
-    .filter((b) => b.area >= minArea)
-    .map(({ left, top, right, bottom }) => ({ left, top, right, bottom }));
+  return filterByArea(groups, minArea).boxes;
+}
+
+/**
+ * 面积过滤 + 保留映射。
+ * @returns {{boxes:Array, keepOf:Int32Array}} keepOf[i] = 第 i 组在结果里的下标（-1 = 被丢弃）
+ */
+function filterByArea(groups, minArea) {
+  const keepOf = new Int32Array(groups.length).fill(-1);
+  const boxes = [];
+  for (let i = 0; i < groups.length; i++) {
+    const g = groups[i];
+    if (g.area < minArea) continue;
+    keepOf[i] = boxes.length;
+    boxes.push({ left: g.left, top: g.top, right: g.right, bottom: g.bottom });
+  }
+  return { boxes, keepOf };
 }
 
 /**
@@ -183,8 +197,9 @@ function boxGap(a, b) {
  */
 function singleLinkageAutoCut(comps, info) {
   const n = comps.length;
+  const ident = () => { const a = new Int32Array(n); for (let i = 0; i < n; i++) a[i] = i; return a; };
   if (info) info.components = n;
-  if (n <= 1) return comps.slice();
+  if (n <= 1) return { boxes: comps.slice(), groupOf: ident() };
 
   // Prim 最小生成树（n 为块数，量级小，O(n²) 足够）
   const inTree = new Uint8Array(n);
@@ -215,7 +230,7 @@ function singleLinkageAutoCut(comps, info) {
   // 断裂比 ≥2 才认为分层可信；阈值取断裂两端几何中点；否则不合并（返回原块）
   if (cut < 0 || bestRatio < 2) {
     if (info) info.threshold = 0;
-    return comps.map((c) => ({ ...c }));
+    return { boxes: comps.map((c) => ({ ...c })), groupOf: ident() };
   }
   const T = Math.sqrt(uniq[cut] * uniq[cut + 1]);
   if (info) info.threshold = T;
@@ -224,17 +239,21 @@ function singleLinkageAutoCut(comps, info) {
   const dsu = makeDSU(n);
   for (const e of mstEdges) if (e.gap <= T) dsu.union(e.a, e.b);
   const out = new Map();
+  const groupOf = new Int32Array(n).fill(-1);
   for (let i = 0; i < n; i++) {
     const root = dsu.find(i);
     let b = out.get(root);
-    if (!b) { b = { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity }; out.set(root, b); }
+    if (!b) { b = { idx: out.size, left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity }; out.set(root, b); }
+    groupOf[i] = b.idx;
     const s = comps[i];
     b.left = Math.min(b.left, s.left);
     b.top = Math.min(b.top, s.top);
     b.right = Math.max(b.right, s.right);
     b.bottom = Math.max(b.bottom, s.bottom);
   }
-  return Array.from(out.values());
+  const boxes = Array.from(out.values())
+    .map(({ left, top, right, bottom }) => ({ left, top, right, bottom }));
+  return { boxes, groupOf };
 }
 
 /**
@@ -282,13 +301,26 @@ function looksLikeGrid(comps) {
  * @param {{components?:number, threshold?:number, grid?:boolean}} [info] 诊断回填
  */
 export function labelComponentsAdaptive(alpha, w, h, minArea, floorR, info) {
-  const comps = labelComponentsMerged(alpha, w, h, minArea, floorR);
-  if (info) info.components = comps.length;
-  if (comps.length > 1 && looksLikeGrid(comps)) {
+  return adaptiveGroups(alpha, w, h, minArea, floorR, info).boxes;
+}
+
+/**
+ * 自适应标记的带映射版：除了各元素边界，还给出「每格归哪个元素」所需的两级映射。
+ * @returns {{boxes:Array, labels:Int32Array, rawOf:Int32Array, groupOf:Int32Array}}
+ *   labels  每格的【原始连通块】号（-1=空）
+ *   rawOf   原始连通块 → 近距合并后的块号（-1 = 被面积过滤掉的噪点）
+ *   groupOf 合并后的块 → 最终元素号
+ */
+function adaptiveGroups(alpha, w, h, minArea, floorR, info) {
+  const m = mergedGroups(alpha, w, h, minArea, floorR);
+  if (info) info.components = m.boxes.length;
+  const ident = (n) => { const a = new Int32Array(n); for (let i = 0; i < n; i++) a[i] = i; return a; };
+  if (m.boxes.length > 1 && looksLikeGrid(m.boxes)) {
     if (info) { info.threshold = 0; info.grid = true; }
-    return comps.map((c) => ({ ...c }));
+    return { ...m, boxes: m.boxes.map((c) => ({ ...c })), groupOf: ident(m.boxes.length) };
   }
-  return singleLinkageAutoCut(comps, info);
+  const cut = singleLinkageAutoCut(m.boxes, info);
+  return { ...m, boxes: cut.boxes, groupOf: cut.groupOf };
 }
 
 /**
@@ -298,9 +330,21 @@ export function labelComponentsAdaptive(alpha, w, h, minArea, floorR, info) {
  * @param {number} r 膨胀半径（网格格数）；0 退化为普通 labelComponents
  */
 export function labelComponentsMerged(alpha, w, h, minArea = 1, r = 0) {
-  if (r <= 0) return labelComponents(alpha, w, h, minArea);
+  return mergedGroups(alpha, w, h, minArea, r).boxes;
+}
+
+/**
+ * 近距合并的带映射版：返回合并后的块，外加「每格属于哪个原始连通块」与
+ * 「原始块归到哪个合并块」—— 逐像素分割要靠这两张表把格子分派给元素。
+ * @returns {{boxes:Array, labels:Int32Array, rawOf:Int32Array}}
+ */
+function mergedGroups(alpha, w, h, minArea = 1, r = 0) {
   const g1 = labelGrid(alpha, w, h);
-  if (!g1.groups.length) return [];
+  if (!g1.groups.length) return { boxes: [], labels: g1.labels, rawOf: new Int32Array(0) };
+  if (r <= 0) {
+    const { boxes, keepOf } = filterByArea(g1.groups, minArea);
+    return { boxes, labels: g1.labels, rawOf: keepOf };
+  }
   const g2 = labelGrid(dilate(alpha, w, h, r), w, h);
 
   // 原组 → 膨胀组映射（取该组任一有内容格；膨胀必覆盖原内容，故映射必存在）
@@ -310,22 +354,35 @@ export function labelComponentsMerged(alpha, w, h, minArea = 1, r = 0) {
     if (a >= 0 && mergeOf[a] < 0) mergeOf[a] = g2.labels[i];
   }
 
-  // 同一膨胀组的原组求并（边界并集、面积求和）
-  const merged = new Map();
+  // 同一膨胀组的原组求并（边界并集、面积求和），并记下各自由哪些原组构成
+  const idxOf = new Map();
+  const list = [];
   for (let a = 0; a < g1.groups.length; a++) {
-    const m = mergeOf[a] >= 0 ? mergeOf[a] : a;      // 保底：映射缺失则自成一组
+    const key = mergeOf[a] >= 0 ? mergeOf[a] : a;      // 保底：映射缺失则自成一组
     const src = g1.groups[a];
-    let b = merged.get(m);
-    if (!b) { b = { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity, area: 0 }; merged.set(m, b); }
+    let gi = idxOf.get(key);
+    if (gi === undefined) {
+      gi = list.length;
+      idxOf.set(key, gi);
+      list.push({ left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity, area: 0, raws: [] });
+    }
+    const b = list[gi];
     b.left = Math.min(b.left, src.left);
     b.top = Math.min(b.top, src.top);
     b.right = Math.max(b.right, src.right);
     b.bottom = Math.max(b.bottom, src.bottom);
     b.area += src.area;
+    b.raws.push(a);
   }
-  return Array.from(merged.values())
-    .filter((b) => b.area >= minArea)
-    .map(({ left, top, right, bottom }) => ({ left, top, right, bottom }));
+  const rawOf = new Int32Array(g1.groups.length).fill(-1);
+  const boxes = [];
+  for (const b of list) {
+    if (b.area < minArea) continue;                    // 噪点：连带它的格子一起不归属任何元素
+    const oi = boxes.length;
+    for (const a of b.raws) rawOf[a] = oi;
+    boxes.push({ left: b.left, top: b.top, right: b.right, bottom: b.bottom });
+  }
+  return { boxes, labels: g1.labels, rawOf };
 }
 
 /**
@@ -487,30 +544,129 @@ export function orderRowMajor(boxes) {
  * @returns {Array<{left,top,right,bottom}>} 原始像素坐标边界框
  */
 export function findElementBounds(rgba, width, height, opts = {}) {
+  return findElements(rgba, width, height, opts).elements.map((e) => e.box);
+}
+
+/**
+ * 用若干矩形覆盖某个元素占的全部格子，且【不含任何其它元素的格子】。
+ *
+ * 为什么需要它：两个互不相连的元素，外框却常常互相交叠（一个人物伸出的手臂正好
+ * 罩在另一个人物的裙摆上方）。按外框整块复制，另一个人的像素就被切进这一层了——
+ * 这正是"看起来像沿直线切"的那个 bug。改成按这批矩形建选区，选中的就只是自己的像素。
+ *
+ * 做法：拿元素自己的格子当种子，向左右扩到碰上别的元素为止，再整段向下扩到同样为止
+ * ——即"贪心极大矩形"。空格子（透明/噪点）允许被含进来，反正复制过去也是透明，
+ * 所以轮廓平滑的图形通常只要几条横带就能覆盖完，下发给 PS 的选区操作很少。
+ *
+ * @param {Int32Array} cellElem 每格的元素号（-1 = 空格/噪点，谁都可以占）
+ * @param {{left,top,right,bottom}} box 该元素的格子外框（右/下为开区间）
+ * @param {{maxRects?:number, budget?:number, covered?:Int32Array}} [opts]
+ * @returns {Array<{left,top,right,bottom}>|null} null = 太碎（超出上限），调用方应退回整框
+ */
+export function coverCells(cellElem, w, h, target, box, opts = {}) {
+  const maxRects = opts.maxRects ?? 512;
+  let budget = opts.budget ?? 60e6;                 // 格子检查次数上限，挡住病态图形
+  const covered = opts.covered || new Int32Array(w * h);
+  const mark = target + 1;                          // 复用 covered 时靠元素号区分
+  const free = (x, y) => {                          // 这一格允许被本元素的选区含进来
+    const v = cellElem[y * w + x];
+    return v < 0 || v === target;
+  };
+  const rowFree = (y, x0, x1) => {
+    budget -= x1 - x0;
+    for (let x = x0; x < x1; x++) if (!free(x, y)) return false;
+    return true;
+  };
+  const rects = [];
+  for (let y = box.top; y < box.bottom; y++) {
+    for (let x = box.left; x < box.right; x++) {
+      const i = y * w + x;
+      if (cellElem[i] !== target || covered[i] === mark) continue;
+      if (budget < 0) return null;
+      // 行内左右扩（只到本元素外框边界，别把选区甩到画布别处）
+      let x0 = x;
+      while (x0 > box.left && free(x0 - 1, y)) x0--;
+      let x1 = x + 1;
+      while (x1 < box.right && free(x1, y)) x1++;
+      // 整段向下扩（上面的行已经处理过，不必向上扩）
+      let y1 = y + 1;
+      while (y1 < box.bottom && rowFree(y1, x0, x1)) y1++;
+      rects.push({ left: x0, top: y, right: x1, bottom: y1 });
+      for (let yy = y; yy < y1; yy++) {
+        const base = yy * w;
+        for (let xx = x0; xx < x1; xx++) if (cellElem[base + xx] === target) covered[base + xx] = mark;
+      }
+      budget -= (y1 - y) * (x1 - x0);
+      if (rects.length > maxRects) return null;
+    }
+  }
+  return rects;
+}
+
+/**
+ * 一站式（完整版）：RGBA → 每个元素的【外框 + 逐像素选区矩形】，行序排列。
+ * `findElementBounds` 是它只取外框的薄封装。
+ *
+ * @returns {{elements:Array<{box:object, rects:Array<object>, exact:boolean}>, info:object}}
+ *   rects  建选区用的矩形（原始像素坐标，右/下为开区间）；只有一个时就等于 box
+ *   exact  false = 该元素太碎、退回整框（会把邻居的像素带进来，如实告知调用方）
+ */
+export function findElements(rgba, width, height, opts = {}) {
   const factor = opts.factor ?? 2;
   const alphaThreshold = opts.alphaThreshold ?? 8;
   const minAreaPx = opts.minAreaPx ?? 64;          // 原始像素下 < 8x8 视为噪点
   const mergeGapPx = opts.mergeGapPx ?? 'auto';
-  const { alpha, w, h, factor: f } = buildMask(rgba, width, height, factor, alphaThreshold, opts.bgTolerance, opts.info);
+  const info = opts.info instanceof Object ? opts.info : {};
+  const { alpha, w, h, factor: f } = buildMask(rgba, width, height, factor, alphaThreshold, opts.bgTolerance, info);
   const minAreaGrid = Math.max(1, Math.ceil(minAreaPx / (f * f)));
+  const ident = (n) => { const a = new Int32Array(n); for (let i = 0; i < n; i++) a[i] = i; return a; };
 
-  let boxes;
+  let g;
   if (mergeGapPx === 0) {
-    boxes = labelComponents(alpha, w, h, minAreaGrid);
+    const m = mergedGroups(alpha, w, h, minAreaGrid, 0);
+    g = { ...m, groupOf: ident(m.boxes.length) };
   } else if (mergeGapPx === 'auto') {
     // 兜底膨胀：闭合 ≤6px 抗锯齿裂缝，再做自适应间隙合并
     const floorR = Math.max(1, Math.ceil(6 / (2 * f)));
     const diag = {};
-    boxes = labelComponentsAdaptive(alpha, w, h, minAreaGrid, floorR, diag);
-    if (opts.info instanceof Object) {
-      opts.info.components = diag.components;
-      opts.info.thresholdPx = diag.threshold != null ? Math.round(diag.threshold * f) : null;
-      opts.info.grid = !!diag.grid;
-    }
+    g = adaptiveGroups(alpha, w, h, minAreaGrid, floorR, diag);
+    info.components = diag.components;
+    info.thresholdPx = diag.threshold != null ? Math.round(diag.threshold * f) : null;
+    info.grid = !!diag.grid;
   } else {
     // 固定间距：两侧各 r 格 → 闭合 2r 格 = 2r·factor 像素的缝
     const r = Math.max(1, Math.ceil(mergeGapPx / (2 * f)));
-    boxes = labelComponentsMerged(alpha, w, h, minAreaGrid, r);
+    const m = mergedGroups(alpha, w, h, minAreaGrid, r);
+    g = { ...m, groupOf: ident(m.boxes.length) };
   }
-  return orderRowMajor(boxes.map((b) => boxToPixels(b, f, width, height)));
+
+  // 每格归属哪个元素：原始连通块 → 合并块 → 元素（噪点与空格留 -1，谁都可以占）
+  const cellElem = new Int32Array(w * h).fill(-1);
+  for (let i = 0; i < g.labels.length; i++) {
+    const c = g.labels[i];
+    if (c < 0) continue;
+    const mid = g.rawOf[c];
+    if (mid < 0) continue;
+    const e = g.groupOf[mid];
+    if (e >= 0) cellElem[i] = e;
+  }
+
+  const covered = new Int32Array(w * h);
+  let rectTotal = 0;
+  let fallback = 0;
+  const items = g.boxes.map((gb, e) => {
+    const box = boxToPixels(gb, f, width, height);
+    const cover = coverCells(cellElem, w, h, e, gb, { covered, maxRects: opts.maxRects });
+    if (!cover) fallback++;
+    const rects = cover ? cover.map((r) => boxToPixels(r, f, width, height)) : [box];
+    rectTotal += rects.length;
+    return { box, rects, exact: !!cover };
+  });
+  info.rects = rectTotal;
+  info.fallback = fallback;
+
+  // 行序（阅读顺序）重排：orderRowMajor 返回的是同一批 box 对象，据此把元素带过去
+  const byBox = new Map(items.map((it) => [it.box, it]));
+  const elements = orderRowMajor(items.map((it) => it.box)).map((b) => byBox.get(b));
+  return { elements, info };
 }

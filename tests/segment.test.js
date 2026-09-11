@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { labelComponents, labelComponentsMerged, downsampleAlpha, findElementBounds, orderRowMajor } from '../src/lib/segment.js';
+import {
+  labelComponents, labelComponentsMerged, downsampleAlpha, findElementBounds,
+  orderRowMajor, findElements, coverCells,
+} from '../src/lib/segment.js';
 
 /** 造一张 w*h 的 0/1 网格，把给定矩形涂成 1 */
 function grid(w, h, rects = []) {
@@ -350,5 +353,124 @@ describe('orderRowMajor（行序排列：从上到下、每行从左到右）', 
     expect(boxes).toHaveLength(2);
     expect(boxes[0].top).toBe(0);                    // 左上小块排第一
     expect(boxes[1].top).toBeGreaterThan(0);
+  });
+});
+
+describe('逐像素分割：每块的选区矩形只圈自己的像素', () => {
+  // 真机报的 bug：智能分割按【外框】整块复制，而互不相连的两个元素外框常常交叠
+  //（战士伸出的手臂罩在王后的裙摆上方），于是每一层都被切进了邻居的一块。
+  // 这一组钉住修法：每块给一批矩形，只覆盖自己的格子、绕开别人的格子。
+
+  /** 战士（竖条 + 向右伸出的手臂） */
+  const A = [
+    { left: 4, top: 4, right: 24, bottom: 64 },
+    { left: 24, top: 20, right: 70, bottom: 28 },
+  ];
+  /** 王后（竖条 + 向左拖出的裙摆）—— 裙摆落在战士的外框里 */
+  const B = [
+    { left: 90, top: 4, right: 114, bottom: 64 },
+    { left: 50, top: 44, right: 90, bottom: 56 },
+  ];
+  const W = 120, H = 80;
+
+  const inAny = (rects, x, y) => rects.some((r) => x >= r.left && x < r.right && y >= r.top && y < r.bottom);
+  /** 逐像素核对：自己的像素全在选区里，别人的像素一个都不在 */
+  function checkCover(rects, own, foreign) {
+    const missed = [];
+    const leaked = [];
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        if (inAny(own, x, y) && !inAny(rects, x, y)) missed.push([x, y]);
+        if (inAny(foreign, x, y) && inAny(rects, x, y)) leaked.push([x, y]);
+      }
+    }
+    return { missed, leaked };
+  }
+
+  it('外框交叠的两个元素：各自的选区都不含对方的像素，且自己的像素一个不漏', () => {
+    const buf = rgba(W, H, [...A, ...B]);
+    const { elements } = findElements(buf, W, H, { minAreaPx: 4 });
+    expect(elements).toHaveLength(2);
+    const [ea, eb] = elements;
+    // 前提复现：两个外框确实交叠（否则这条用例证明不了什么）
+    expect(ea.box.right).toBeGreaterThan(eb.box.left);
+    // 光靠外框会漏进对方的像素 —— 先确认这一点，再确认选区矩形没有
+    expect(checkCover([ea.box], A, B).leaked.length).toBeGreaterThan(0);
+
+    expect(ea.exact).toBe(true);
+    expect(checkCover(ea.rects, A, B)).toEqual({ missed: [], leaked: [] });
+    expect(eb.exact).toBe(true);
+    expect(checkCover(eb.rects, B, A)).toEqual({ missed: [], leaked: [] });
+    // 选区是拼出来的（不是一个大矩形），块数还得足够少 —— 每块都要下发给 PS
+    expect(ea.rects.length).toBeGreaterThan(1);
+    expect(ea.rects.length).toBeLessThan(12);
+  });
+
+  it('外框互不交叠时仍只用一个矩形（不平白给 PS 多下发选区操作）', () => {
+    const buf = rgba(100, 100, [
+      { left: 4, top: 4, right: 20, bottom: 20 },
+      { left: 60, top: 60, right: 76, bottom: 80 },
+    ]);
+    const { elements } = findElements(buf, 100, 100, { minAreaPx: 4 });
+    expect(elements).toHaveLength(2);
+    expect(elements.map((e) => e.rects.length)).toEqual([1, 1]);
+    expect(elements[0].rects[0]).toEqual(elements[0].box);
+  });
+
+  it('选区矩形的并集就是外框（落位逻辑仍按外框比对，不能因为拼矩形而跑偏）', () => {
+    const buf = rgba(W, H, [...A, ...B]);
+    const { elements } = findElements(buf, W, H, { minAreaPx: 4 });
+    for (const e of elements) {
+      const u = e.rects.reduce((acc, r) => ({
+        left: Math.min(acc.left, r.left), top: Math.min(acc.top, r.top),
+        right: Math.max(acc.right, r.right), bottom: Math.max(acc.bottom, r.bottom),
+      }));
+      expect(u).toEqual(e.box);
+    }
+  });
+
+  it('findElementBounds 的外框与 findElements 完全一致（旧接口行为不变）', () => {
+    const buf = rgba(W, H, [...A, ...B]);
+    const boxes = findElementBounds(buf, W, H, { minAreaPx: 4 });
+    const { elements } = findElements(buf, W, H, { minAreaPx: 4 });
+    expect(boxes).toEqual(elements.map((e) => e.box));
+  });
+
+  it('coverCells：绕开别人的格子，覆盖自己的全部格子', () => {
+    // 3×3 格：中间一列是别人的（1），左右两列是自己的（0）
+    const cell = new Int32Array([
+      0, 1, 0,
+      0, 1, 0,
+      0, 1, 0,
+    ]);
+    const rects = coverCells(cell, 3, 3, 0, { left: 0, top: 0, right: 3, bottom: 3 });
+    expect(rects).toEqual([
+      { left: 0, top: 0, right: 1, bottom: 3 },
+      { left: 2, top: 0, right: 3, bottom: 3 },
+    ]);
+  });
+
+  it('coverCells：空格子（-1）可以被含进来（复制过去也是透明）', () => {
+    const cell = new Int32Array([0, -1, 0, 0, -1, 0]);
+    const rects = coverCells(cell, 3, 2, 0, { left: 0, top: 0, right: 3, bottom: 2 });
+    expect(rects).toEqual([{ left: 0, top: 0, right: 3, bottom: 2 }]);
+  });
+
+  it('coverCells：碎到超过上限就返回 null（调用方退回整框，不下发上千条选区）', () => {
+    // 梳齿状交错：自己和别人一格一格间隔，覆盖不可能少于齿数
+    const w = 21;
+    const cell = new Int32Array(w).fill(0);
+    for (let x = 1; x < w; x += 2) cell[x] = 1;
+    const box = { left: 0, top: 0, right: w, bottom: 1 };
+    expect(coverCells(cell, w, 1, 0, box, { maxRects: 3 })).toBe(null);
+    expect(coverCells(cell, w, 1, 0, box).length).toBe(11);
+  });
+
+  it('太碎的元素退回整框时如实标记 exact=false', () => {
+    const buf = rgba(W, H, [...A, ...B]);
+    const { elements, info } = findElements(buf, W, H, { minAreaPx: 4, maxRects: 1 });
+    expect(elements.every((e) => e.exact)).toBe(false);
+    expect(info.fallback).toBeGreaterThan(0);
+    for (const e of elements) expect(e.rects).toEqual([e.box]);   // 退回整框 = 旧行为
   });
 });

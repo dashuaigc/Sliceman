@@ -11,7 +11,7 @@
         <div class="brand">
           <span class="ps-logo">PS</span>
           <span class="brand-name">Sliceman</span>
-          <span class="version" id="version">v1.1.0</span>
+          <span class="version" id="version">v1.2.0</span>
         </div>
       </header>
 
@@ -65,6 +65,21 @@
               <span class="tile-label">批处理</span>
             </div>
           </div>
+          <div class="tile" data-page="move">
+            <div class="tile-inner">
+              <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <g fill="none" stroke="#EDE9FE" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M64 18 V110 M18 64 H110"/>
+    <path d="M50 32 L64 18 L78 32"/>
+    <path d="M50 96 L64 110 L78 96"/>
+    <path d="M32 50 L18 64 L32 78"/>
+    <path d="M96 50 L110 64 L96 78"/>
+  </g>
+  <circle cx="64" cy="64" r="9" fill="#22d3e0"/>
+</svg>
+              <span class="tile-label">平移</span>
+            </div>
+          </div>
           <div class="tile" data-page="layout">
             <div class="tile-inner">
               <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
@@ -100,6 +115,17 @@
   </g>
 </svg>
               <span class="tile-label">参考线</span>
+            </div>
+          </div>
+          <div class="tile" data-page="resize">
+            <div class="tile-inner">
+              <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <rect x="14" y="26" width="66" height="66" rx="7" fill="none" stroke="#EDE9FE" stroke-width="7"/>
+  <rect x="58" y="56" width="56" height="46" rx="6" fill="none" stroke="#22d3e0" stroke-width="7"/>
+  <path d="M92 20 H114 V42" fill="none" stroke="#EDE9FE" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M114 20 L88 46" fill="none" stroke="#EDE9FE" stroke-width="7" stroke-linecap="round"/>
+</svg>
+              <span class="tile-label">改尺寸</span>
             </div>
           </div>
           <div class="tile" data-page="slice">
@@ -161,20 +187,24 @@
         <div class="mode-tip" id="modeTip" style="display:none;"></div>
       </section>
 
-      <!-- 智能分割说明（仅智能分割页显示） -->
-      <section class="card" id="splitIntro" style="display:none;">
-        <!-- 标题 + 问号图标；说明只在悬停问号时浮出（与批量处理页同一套） -->
-        <div class="feature-head">
-          <span class="feature-title">智能分割</span>
-          <svg class="info-ico" id="splitInfo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
+      <!-- 分割页：智能分割 + 参考线分割 同页并列。
+           排版照批量处理页那一套：每个功能各一块 .btn-wrap，主按钮紧跟自己的卡片下面
+           —— 两个功能同页时，按钮不能都堆在面板底部，否则分不清哪个按钮属于谁。 -->
+      <div id="splitPage" style="display:none;">
+        <div class="btn-wrap">
+          <section class="card" id="splitIntro">
+            <!-- 标题 + 问号图标；说明只在悬停问号时浮出（与批量处理页同一套） -->
+            <div class="feature-head">
+              <span class="feature-title">智能分割</span>
+              <svg class="info-ico" id="splitInfo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
   <circle cx="64" cy="64" r="45" fill="none" stroke="#9fb3c6" stroke-width="9"/>
   <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#9fb3c6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
   <circle cx="66" cy="95" r="6" fill="#9fb3c6"/>
 </svg>
-          <div class="btn-tip" id="splitTip" style="display:none;"></div>
-        </div>
-        <div class="switch-row">
-          <svg class="row-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="merge">
+              <div class="btn-tip" id="splitTip" style="display:none;"></div>
+            </div>
+            <div class="switch-row">
+              <svg class="row-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="merge">
   <g fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
     <circle cx="34" cy="34" r="14"/>
     <circle cx="94" cy="34" r="14"/>
@@ -183,10 +213,50 @@
     <path d="M48 34 H80 M48 94 H80 M34 48 V80 M94 48 V80"/>
   </g>
 </svg>
-          <span class="row-label">保持元素完整</span>
-          <div class="switch" id="splitMerge"><svg class="sw" viewBox="0 0 44 24" xmlns="http://www.w3.org/2000/svg"><rect class="sw-track" x="12" y="0" width="20" height="24"/><circle class="sw-track" cx="12" cy="12" r="12"/><circle class="sw-track" cx="32" cy="12" r="12"/><circle class="sw-knob sw-off" cx="12" cy="12" r="9"/><circle class="sw-knob sw-on" cx="32" cy="12" r="9"/></svg></div>
+              <span class="row-label">保持元素完整</span>
+              <div class="switch" id="splitMerge"><svg class="sw" viewBox="0 0 44 24" xmlns="http://www.w3.org/2000/svg"><rect class="sw-track" x="12" y="0" width="20" height="24"/><circle class="sw-track" cx="12" cy="12" r="12"/><circle class="sw-track" cx="32" cy="12" r="12"/><circle class="sw-knob sw-off" cx="12" cy="12" r="9"/><circle class="sw-knob sw-on" cx="32" cy="12" r="9"/></svg></div>
+            </div>
+          </section>
+          <button id="splitBtn" class="primary-btn">
+            <svg class="play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="split">
+  <path d="M45 31 L98 64 L45 97 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>
+</svg>
+            <span class="btn-label">开始智能分割</span>
+          </button>
         </div>
-      </section>
+
+        <div class="btn-wrap batch-next">
+          <section class="card" id="gsCard">
+            <div class="feature-head">
+              <span class="feature-title">参考线分割</span>
+              <svg class="info-ico" id="gsInfo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
+  <circle cx="64" cy="64" r="45" fill="none" stroke="#9fb3c6" stroke-width="9"/>
+  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#9fb3c6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="66" cy="95" r="6" fill="#9fb3c6"/>
+</svg>
+              <!-- 当前参考线切出多少块：进页 / 换文档时现读，随时可见 -->
+              <span class="gd-canvas" id="gsGrid"></span>
+              <div class="btn-tip" id="gsTip" style="display:none;"></div>
+            </div>
+            <div class="switch-row">
+              <svg class="row-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="merge visible">
+  <g fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M30 24 H98 M30 46 H98 M30 68 H98"/>
+    <path d="M64 84 V106 M52 94 L64 106 L76 94"/>
+  </g>
+</svg>
+              <span class="row-label">合并可见内容</span>
+              <div class="switch" id="gsMerged"><svg class="sw" viewBox="0 0 44 24" xmlns="http://www.w3.org/2000/svg"><rect class="sw-track" x="12" y="0" width="20" height="24"/><circle class="sw-track" cx="12" cy="12" r="12"/><circle class="sw-track" cx="32" cy="12" r="12"/><circle class="sw-knob sw-off" cx="12" cy="12" r="9"/><circle class="sw-knob sw-on" cx="32" cy="12" r="9"/></svg></div>
+            </div>
+          </section>
+          <button id="gsBtn" class="primary-btn">
+            <svg class="play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="split by guides">
+  <path d="M45 31 L98 64 L45 97 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>
+</svg>
+            <span class="btn-label">按参考线分割</span>
+          </button>
+        </div>
+      </div>
 
 
 
@@ -229,48 +299,103 @@
           </button>
         </div>
 
-        <!-- 批量快速平移：X/Y 各一行（方向 + 距离），距离留空即该轴不动 -->
-        <div class="btn-wrap batch-next" id="moveBlock">
-          <div class="feature-head">
-            <span class="feature-title">批量快速平移</span>
-            <svg class="info-ico" id="moveInfo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
+      </div>
+
+      <!-- 快速平移页：九宫格选方向（中心那个点只是原点标记，不可点），
+           下面按方向显隐距离框 —— 正向只要一个值，斜向要水平 + 垂直两个值 -->
+      <section class="card" id="movePage" style="display:none;">
+        <div class="feature-head">
+          <span class="feature-title">快速平移</span>
+          <svg class="info-ico" id="moveInfo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
   <circle cx="64" cy="64" r="45" fill="none" stroke="#9fb3c6" stroke-width="9"/>
   <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#9fb3c6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
   <circle cx="66" cy="95" r="6" fill="#9fb3c6"/>
 </svg>
-            <div class="btn-tip" id="moveTip" style="display:none;"></div>
-          </div>
+          <div class="btn-tip" id="moveTip" style="display:none;"></div>
+        </div>
 
-          <div class="setting-row">
-            <span class="row-label axis-label">水平方向</span>
-            <div class="setting-value" id="moveXDirPills">
-              <span class="pill arrow-pill" data-dir="left">←</span>
-              <span class="pill arrow-pill active" data-dir="right">→</span>
+        <div class="setting-row setting-stack">
+          <div class="stack-head">
+            <svg class="row-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="direction">
+  <g fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M64 22 V106 M22 64 H106"/>
+    <path d="M52 34 L64 22 L76 34"/>
+    <path d="M52 94 L64 106 L76 94"/>
+    <path d="M34 52 L22 64 L34 76"/>
+    <path d="M94 52 L106 64 L94 76"/>
+  </g>
+</svg>
+            <span class="row-label">移动方向</span>
+          </div>
+          <!-- 中心是 .mv-origin 不是 .pill —— bindPillGroup / activePill 只认 .pill，
+               于是它天然不可选中，不用另外写排除逻辑 -->
+          <div class="mv-grid" id="moveDirPills">
+            <div class="mv-row">
+              <span class="pill mv-dir" data-dir="upLeft">↖</span>
+              <span class="pill mv-dir" data-dir="up">↑</span>
+              <span class="pill mv-dir" data-dir="upRight">↗</span>
             </div>
-            <div class="num-field">
-              <div class="num-box"><input type="text" id="moveX" placeholder="0"></div><span class="unit">px</span>
+            <div class="mv-row">
+              <span class="pill mv-dir" data-dir="left">←</span>
+              <span class="mv-origin">●</span>
+              <span class="pill mv-dir active" data-dir="right">→</span>
+            </div>
+            <div class="mv-row">
+              <span class="pill mv-dir" data-dir="downLeft">↙</span>
+              <span class="pill mv-dir" data-dir="down">↓</span>
+              <span class="pill mv-dir" data-dir="downRight">↘</span>
             </div>
           </div>
+        </div>
 
-          <div class="setting-row">
-            <span class="row-label axis-label">垂直方向</span>
-            <div class="setting-value" id="moveYDirPills">
-              <span class="pill arrow-pill" data-dir="up">↑</span>
-              <span class="pill arrow-pill active" data-dir="down">↓</span>
-            </div>
-            <div class="num-field">
-              <div class="num-box"><input type="text" id="moveY" placeholder="0"></div><span class="unit">px</span>
-            </div>
+        <!-- 两个距离行按方向显隐：← → 只出水平，↑ ↓ 只出垂直，四个斜向两行都出 -->
+        <div class="setting-row" id="moveXRow">
+          <svg class="row-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="horizontal">
+  <g fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M22 64 H106"/>
+    <path d="M40 46 L22 64 L40 82"/>
+    <path d="M88 46 L106 64 L88 82"/>
+  </g>
+</svg>
+          <span class="row-label">水平距离</span>
+          <div class="setting-value num-field">
+            <div class="num-box"><input type="text" id="moveX" placeholder="0"></div><span class="unit">px</span>
           </div>
+        </div>
 
-          <button id="moveBtn" class="primary-btn">
-            <svg class="play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="move">
+        <div class="setting-row" id="moveYRow">
+          <svg class="row-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="vertical">
+  <g fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M64 22 V106"/>
+    <path d="M46 40 L64 22 L82 40"/>
+    <path d="M46 88 L64 106 L82 88"/>
+  </g>
+</svg>
+          <span class="row-label">垂直距离</span>
+          <div class="setting-value num-field">
+            <div class="num-box"><input type="text" id="moveY" placeholder="0"></div><span class="unit">px</span>
+          </div>
+        </div>
+
+        <!-- 复制移动：默认关。开启后移动的是副本，原对象留在原位 -->
+        <div class="switch-row">
+          <svg class="row-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="copy">
+  <g fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M40 78 H26 C21 78 18 75 18 70 V26 C18 21 21 18 26 18 H70 C75 18 78 21 78 26 V40"/>
+    <rect x="50" y="50" width="60" height="60" rx="8"/>
+  </g>
+</svg>
+          <span class="row-label">复制移动</span>
+          <div class="switch" id="moveCopy"><svg class="sw" viewBox="0 0 44 24" xmlns="http://www.w3.org/2000/svg"><rect class="sw-track" x="12" y="0" width="20" height="24"/><circle class="sw-track" cx="12" cy="12" r="12"/><circle class="sw-track" cx="32" cy="12" r="12"/><circle class="sw-knob sw-off" cx="12" cy="12" r="9"/><circle class="sw-knob sw-on" cx="32" cy="12" r="9"/></svg></div>
+        </div>
+
+        <button id="moveBtn" class="primary-btn">
+          <svg class="play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="move">
   <path d="M45 31 L98 64 L45 97 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>
 </svg>
-            <span class="btn-label">批量快速平移</span>
-          </button>
-        </div>
-      </div>
+          <span class="btn-label" id="moveBtnLabel">快速平移</span>
+        </button>
+      </section>
 
       <!-- 一键排版页：方向 / 对齐 / 间距 / 扩画布 / 边距，紧凑排成五行 -->
       <section class="card" id="layoutPage" style="display:none;">
@@ -521,6 +646,345 @@
         </div>
       </section>
 
+      <!-- 批量改尺寸页：四步向导。
+           ⚠️ 与 panel.js 的契约：.rz-step 的 data-step 与 #rzPane1..4 一一对应，
+           导航只认这两样（tests/ui-ids.test.js 静态钉住）。
+           小按钮一律用 div.gd-btn 而不是 <button> —— 原生 button 有压不住的 UA 最小宽高。 -->
+      <div id="resizePage" style="display:none;">
+        <!-- 步骤指示器：圆点靠填充区分状态（不画描边，UXP 的 CSS 圆角描边会锯齿） -->
+        <div class="rz-steps" id="rzSteps">
+          <div class="rz-step active" data-step="1"><span class="rz-dot">1</span><span class="rz-name">选择图片</span></div>
+          <div class="rz-step" data-step="2"><span class="rz-dot">2</span><span class="rz-name">尺寸设置</span></div>
+          <div class="rz-step" data-step="3"><span class="rz-dot">3</span><span class="rz-name">输出设置</span></div>
+          <div class="rz-step" data-step="4"><span class="rz-dot">4</span><span class="rz-name">开始处理</span></div>
+        </div>
+
+        <!-- ① 图片来源 -->
+        <section class="card rz-pane" id="rzPane1">
+          <div class="feature-head">
+            <span class="feature-title">图片来源</span>
+            <svg class="info-ico" id="rzInfo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
+  <circle cx="64" cy="64" r="45" fill="none" stroke="#9fb3c6" stroke-width="9"/>
+  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#9fb3c6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="66" cy="95" r="6" fill="#9fb3c6"/>
+</svg>
+            <div class="btn-tip" id="rzTip" style="display:none;"></div>
+          </div>
+          <!-- 默认「选择图片」：这个功能是给磁盘上成批的图用的，当前文档只是顺带支持 -->
+          <div class="pill-row rz-src" id="rzSrcPills">
+            <span class="pill" data-src="doc">当前文档</span>
+            <span class="pill active" data-src="files">选择图片</span>
+            <span class="pill" data-src="folder">选择文件夹</span>
+          </div>
+          <div class="gd-row gd-ctrl" id="rzPickRow">
+            <div class="gd-btn gd-btn-grow" id="rzPickBtn">选择图片文件…</div>
+          </div>
+          <div class="switch-row" id="rzRecursiveRow" style="display:none;">
+            <span class="row-label">包含子文件夹</span>
+            <div class="switch" id="rzRecursive"><svg class="sw" viewBox="0 0 44 24" xmlns="http://www.w3.org/2000/svg"><rect class="sw-track" x="12" y="0" width="20" height="24"/><circle class="sw-track" cx="12" cy="12" r="12"/><circle class="sw-track" cx="32" cy="12" r="12"/><circle class="sw-knob sw-off" cx="12" cy="12" r="9"/><circle class="sw-knob sw-on" cx="32" cy="12" r="9"/></svg></div>
+          </div>
+          <p class="hint rz-hint" id="rzSrcInfo">可以一次选中多个图片文件。</p>
+          <!-- 已选清单：一行一个文件名，一次显示 5 行，多了自己滚（限高在 .rz-file-list） -->
+          <div class="preview rz-file-list" id="rzFileList" style="display:none;"></div>
+        </section>
+
+        <!-- ② 尺寸设置 -->
+        <section class="card rz-pane" id="rzPane2" style="display:none;">
+          <div class="feature-head">
+            <span class="feature-title">尺寸设置</span>
+            <span class="gd-canvas" id="rzPreviewInfo"></span>
+          </div>
+
+          <div class="field-block field-inline">
+            <label>预设</label>
+            <div class="dropdown rz-preset-dd" id="rzPresetDd">
+              <span class="dd-value" id="rzPresetValue">自定义</span>
+              <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#3ce0ef" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div class="dd-menu" id="rzPresetMenu"></div>
+            </div>
+          </div>
+          <div class="gd-row gd-ctrl">
+            <div class="gd-btn" id="rzSavePreset">存为预设</div>
+            <div class="gd-btn" id="rzManagePreset">管理…</div>
+          </div>
+
+          <div class="field-block field-inline rz-mode-row">
+            <label>调整模式</label>
+            <div class="dropdown rz-mode-dd" id="rzModeDd">
+              <span class="dd-value" id="rzModeValue">固定宽高</span>
+              <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#3ce0ef" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div class="dd-menu">
+                <span class="dd-item active" data-mode="wh">固定宽高</span>
+                <span class="dd-item" data-mode="w">固定宽度</span>
+                <span class="dd-item" data-mode="h">固定高度</span>
+                <span class="dd-item" data-mode="long">最长边</span>
+                <span class="dd-item" data-mode="short">最短边</span>
+                <span class="dd-item" data-mode="percent">百分比缩放</span>
+                <span class="dd-item" data-mode="times">尺寸倍数</span>
+                <span class="dd-item" data-mode="max">最大尺寸限制</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 参数区：随模式显隐（宽高 / 单边 / 百分比 / 倍数 / 上限）。
+               宽和高在同一行：两个格子各自能显隐（固定宽度只显宽、固定高度只显高）。 -->
+          <div class="setting-row rz-field rz-duo" id="rzFieldWH">
+            <div class="rz-duo-cell" id="rzCellW">
+              <span class="row-label">宽度</span>
+              <div class="num-field"><div class="num-box"><input type="text" id="rzW"></div><span class="unit">px</span></div>
+            </div>
+            <div class="rz-duo-cell" id="rzCellH">
+              <span class="row-label">高度</span>
+              <div class="num-field"><div class="num-box"><input type="text" id="rzH"></div><span class="unit">px</span></div>
+            </div>
+          </div>
+          <div class="setting-row rz-field" id="rzFieldEdge" style="display:none;">
+            <span class="row-label" id="rzEdgeLabel">最长边</span>
+            <div class="setting-value num-field"><div class="num-box"><input type="text" id="rzEdge"></div><span class="unit">px</span></div>
+          </div>
+          <div class="setting-row rz-field" id="rzFieldPercent" style="display:none;">
+            <span class="row-label">缩放比例</span>
+            <div class="setting-value num-field"><div class="num-box"><input type="text" id="rzPercent"></div><span class="unit">%</span></div>
+          </div>
+          <div class="pill-row rz-quick" id="rzPercentQuick" style="display:none;">
+            <span class="pill" data-percent="25">25%</span>
+            <span class="pill" data-percent="50">50%</span>
+            <span class="pill" data-percent="75">75%</span>
+            <span class="pill" data-percent="150">150%</span>
+            <span class="pill" data-percent="200">200%</span>
+          </div>
+          <div class="setting-row rz-field" id="rzFieldTimes" style="display:none;">
+            <span class="row-label">倍数</span>
+            <div class="setting-value num-field"><div class="num-box"><input type="text" id="rzTimes"></div><span class="unit">x</span></div>
+          </div>
+          <div class="pill-row rz-quick" id="rzTimesQuick" style="display:none;">
+            <span class="pill" data-times="0.5">0.5x</span>
+            <span class="pill" data-times="1">1x</span>
+            <span class="pill" data-times="1.5">1.5x</span>
+            <span class="pill" data-times="2">2x</span>
+            <span class="pill" data-times="3">3x</span>
+            <span class="pill" data-times="4">4x</span>
+          </div>
+          <div class="setting-row rz-field" id="rzFieldMaxW" style="display:none;">
+            <span class="row-label">最大宽度</span>
+            <div class="setting-value num-field"><div class="num-box"><input type="text" id="rzMaxW"></div><span class="unit">px</span></div>
+          </div>
+          <div class="setting-row rz-field" id="rzFieldMaxH" style="display:none;">
+            <span class="row-label">最大高度</span>
+            <div class="setting-value num-field"><div class="num-box"><input type="text" id="rzMaxH"></div><span class="unit">px</span></div>
+          </div>
+
+          <!-- 适应方式：只有「固定宽高」才有意义（其余模式一律等比、画布跟着图）。
+               四种的说明都收进标题后的问号浮层里 —— 一行一句写在下面会把这一页顶得很长。 -->
+          <div class="field-block rz-fit-block" id="rzFitBlock">
+            <div class="rz-label-row">
+              <label>适应方式</label>
+              <svg class="info-ico" id="rzFitInfo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
+  <circle cx="64" cy="64" r="45" fill="none" stroke="#9fb3c6" stroke-width="9"/>
+  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#9fb3c6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="66" cy="95" r="6" fill="#9fb3c6"/>
+</svg>
+              <div class="btn-tip" id="rzFitTip" style="display:none;"></div>
+            </div>
+            <div class="pill-row rz-fit-pills" id="rzFitPills">
+              <span class="pill active" data-fit="contain">等比适应</span>
+              <span class="pill" data-fit="cover">等比填充</span>
+              <span class="pill" data-fit="stretch">拉伸</span>
+              <span class="pill" data-fit="scale">仅缩放</span>
+            </div>
+          </div>
+
+          <!-- 锚点：裁切 / 补边时才用得上 -->
+          <div class="field-block" id="rzAnchorBlock">
+            <label>锚点 <span class="label-sub">裁切或补边时的对齐位置</span></label>
+            <div class="rz-anchor-grid" id="rzAnchorGrid">
+              <div class="rz-anchor-row">
+                <span class="rz-anchor" data-anchor="lt">↖</span>
+                <span class="rz-anchor" data-anchor="ct">↑</span>
+                <span class="rz-anchor" data-anchor="rt">↗</span>
+              </div>
+              <div class="rz-anchor-row">
+                <span class="rz-anchor" data-anchor="lm">←</span>
+                <span class="rz-anchor active" data-anchor="cm">●</span>
+                <span class="rz-anchor" data-anchor="rm">→</span>
+              </div>
+              <div class="rz-anchor-row">
+                <span class="rz-anchor" data-anchor="lb">↙</span>
+                <span class="rz-anchor" data-anchor="cb">↓</span>
+                <span class="rz-anchor" data-anchor="rb">↘</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 空白区域填充：等比适应补出来的边 -->
+          <div class="field-block" id="rzFillBlock">
+            <label>空白区域填充</label>
+            <div class="pill-row rz-fill-row" id="rzFillPills">
+              <span class="pill active" data-fill="none">透明</span>
+              <span class="pill" data-fill="fff">白色</span>
+              <span class="pill" data-fill="000">黑色</span>
+              <span class="pill" data-fill="custom">自定义</span>
+              <span class="color-swatch" id="rzFillSwatch"></span>
+            </div>
+          </div>
+
+          <!-- 多尺寸输出：一个文件只打开一次，每档存一次（只在固定宽高模式可用） -->
+          <div class="switch-row" id="rzMultiRow">
+            <span class="row-label">多尺寸输出</span>
+            <div class="switch" id="rzMulti"><svg class="sw" viewBox="0 0 44 24" xmlns="http://www.w3.org/2000/svg"><rect class="sw-track" x="12" y="0" width="20" height="24"/><circle class="sw-track" cx="12" cy="12" r="12"/><circle class="sw-track" cx="32" cy="12" r="12"/><circle class="sw-knob sw-off" cx="12" cy="12" r="9"/><circle class="sw-knob sw-on" cx="32" cy="12" r="9"/></svg></div>
+          </div>
+          <div id="rzMultiBox" style="display:none;">
+            <div class="rz-sizes" id="rzSizeList"></div>
+            <!-- 想加几档就填几档：默认带出上面的宽高，改成别的再点「添加」 -->
+            <div class="setting-row rz-field rz-duo rz-add-row">
+              <div class="rz-duo-cell">
+                <span class="row-label">宽</span>
+                <div class="num-field"><div class="num-box"><input type="text" id="rzAddW"></div></div>
+              </div>
+              <div class="rz-duo-cell">
+                <span class="row-label">高</span>
+                <div class="num-field"><div class="num-box"><input type="text" id="rzAddH"></div></div>
+              </div>
+              <div class="gd-btn rz-add-btn" id="rzAddSize">添加</div>
+            </div>
+            <!-- 倍率可以填多个，用逗号隔开（如 1,2,3 或 0.5,1,2）；基准是每张原图自己的尺寸 -->
+            <div class="setting-row rz-field rz-duo rz-add-row">
+              <span class="row-label rz-add-label">倍率</span>
+              <div class="tf rz-scale-tf"><input type="text" id="rzScales" placeholder="1,2,3"></div>
+              <div class="gd-btn rz-add-btn" id="rzAddScales">按原图倍率添加</div>
+            </div>
+          </div>
+
+        </section>
+
+        <!-- ③ 输出设置：与切图的「导出设置」同一个形状 —— 位置（文件夹图标）＋ 输出格式同一行。
+             位置**不选**＝每张图存回它自己所在的文件夹；点图标选了就一律存到那一个文件夹。
+             两种情况各是什么意思收进标题后的问号浮层（写成两行提示会把这一页顶得很长）。 -->
+        <section class="card rz-pane" id="rzPane3" style="display:none;">
+          <div class="feature-head">
+            <span class="feature-title">输出设置</span>
+            <svg class="info-ico" id="rzDestInfo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
+  <circle cx="64" cy="64" r="45" fill="none" stroke="#9fb3c6" stroke-width="9"/>
+  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#9fb3c6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="66" cy="95" r="6" fill="#9fb3c6"/>
+</svg>
+            <div class="btn-tip" id="rzDestTip" style="display:none;"></div>
+          </div>
+
+          <div class="export-row">
+            <span class="row-label">位置</span>
+            <!-- 未选时显示文件夹图标；选中后图标换成缩略的文件夹名，完整路径在下面那行 -->
+            <span class="folder-btn" id="rzPickOutBtn">
+              <svg class="folder-ico" id="rzOutIco" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="folder">
+  <g fill="none" stroke="#9fb3c6" stroke-width="8" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M20 43 C20 37 24 34 30 34 H51 L61 44 H99 C105 44 109 48 109 54 V96 C109 101 105 105 99 105 H29 C23 105 20 101 20 95 Z"/>
+  </g>
+</svg>
+              <span class="folder-text" id="rzOutText" style="display:none;"></span>
+            </span>
+            <!-- 位置框与这个下拉都是 flex:1 1 0，平分「位置」标签之后的宽度（同切图那一行） -->
+            <div class="dropdown" id="rzFmtDd">
+              <span class="dd-value" id="rzFmtValue">原格式</span>
+              <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#3ce0ef" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div class="dd-menu">
+                <span class="dd-item active" data-fmt="same">原格式</span>
+                <span class="dd-item" data-fmt="png">PNG</span>
+                <span class="dd-item" data-fmt="jpg">JPG</span>
+                <span class="dd-item" data-fmt="webp">WebP</span>
+                <span class="dd-item" data-fmt="psd">PSD</span>
+                <span class="dd-item" data-fmt="tif">TIFF</span>
+              </div>
+            </div>
+          </div>
+          <!-- 现在输出到哪儿、两种状态各是什么意思，全在标题后的问号浮层里（页面上原来那行提示撤了）；
+               这里只留一个「改回原文件夹」，指定过文件夹之后才出现 -->
+          <div class="rz-out-line">
+            <span class="gd-mini" id="rzOutReset" style="display:none;">改回原文件夹</span>
+          </div>
+          <div class="switch-row" id="rzKeepTreeRow">
+            <span class="row-label">保持原文件夹结构</span>
+            <div class="switch" id="rzKeepTree"><svg class="sw" viewBox="0 0 44 24" xmlns="http://www.w3.org/2000/svg"><rect class="sw-track" x="12" y="0" width="20" height="24"/><circle class="sw-track" cx="12" cy="12" r="12"/><circle class="sw-track" cx="32" cy="12" r="12"/><circle class="sw-knob sw-off" cx="12" cy="12" r="9"/><circle class="sw-knob sw-on" cx="32" cy="12" r="9"/></svg></div>
+          </div>
+          <div class="setting-row" id="rzQualityRow" style="display:none;">
+            <span class="row-label">图片质量</span>
+            <div class="setting-value num-field"><div class="num-box"><input type="text" id="rzQuality"></div><span class="unit">/100</span></div>
+          </div>
+          <div class="switch-row" id="rzWebpRow" style="display:none;">
+            <span class="row-label">WebP 无损</span>
+            <div class="switch" id="rzWebpLossless"><svg class="sw" viewBox="0 0 44 24" xmlns="http://www.w3.org/2000/svg"><rect class="sw-track" x="12" y="0" width="20" height="24"/><circle class="sw-track" cx="12" cy="12" r="12"/><circle class="sw-track" cx="32" cy="12" r="12"/><circle class="sw-knob sw-off" cx="12" cy="12" r="9"/><circle class="sw-knob sw-on" cx="32" cy="12" r="9"/></svg></div>
+          </div>
+
+          <div class="setting-row">
+            <span class="row-label">文件命名</span>
+            <div class="setting-value">
+              <div class="dropdown rz-name-dd" id="rzNameDd">
+                <span class="dd-value" id="rzNameValue">保持原文件名</span>
+                <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#3ce0ef" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <div class="dd-menu">
+                  <span class="dd-item active" data-name="keep">保持原文件名</span>
+                  <span class="dd-item" data-name="suffix">添加后缀</span>
+                  <span class="dd-item" data-name="tpl">自定义模板</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="setting-row" id="rzSuffixRow" style="display:none;">
+            <span class="row-label">后缀内容</span>
+            <div class="setting-value"><div class="tf rz-tf"><input type="text" id="rzSuffix" placeholder="_resized"></div></div>
+          </div>
+          <div class="field-block" id="rzTplRow" style="display:none;">
+            <label>命名模板 <span class="label-sub">可用 {name} {width} {height} {scale}</span></label>
+            <div class="tf"><input type="text" id="rzTpl" placeholder="{name}_{width}x{height}"></div>
+          </div>
+          <!-- 命名示例不在这一页里占一行了：改参数时直接报到底部状态栏（见 rzRenderNameSample） -->
+
+          <div class="setting-row">
+            <span class="row-label">同名文件</span>
+            <div class="setting-value">
+              <div class="dropdown rz-dup-dd" id="rzDupDd">
+                <span class="dd-value" id="rzDupValue">自动重命名</span>
+                <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#3ce0ef" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <div class="dd-menu">
+                  <span class="dd-item active" data-dup="rename">自动重命名</span>
+                  <span class="dd-item" data-dup="overwrite">覆盖</span>
+                  <span class="dd-item" data-dup="skip">跳过</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ④ 开始处理 -->
+        <section class="card rz-pane" id="rzPane4" style="display:none;">
+          <div class="feature-head">
+            <span class="feature-title" id="rzRunTitle">准备就绪</span>
+            <span class="gd-canvas" id="rzRunInfo"></span>
+          </div>
+          <p class="hint rz-hint" id="rzSummary"></p>
+          <div class="rz-bar"><div class="rz-bar-fill" id="rzBarFill"></div></div>
+          <p class="hint rz-hint" id="rzProgText">尚未开始</p>
+          <div class="rz-stats">
+            <div class="rz-stat"><span class="rz-stat-n rz-ok" id="rzOkN">0</span><span class="rz-stat-t">成功</span></div>
+            <div class="rz-stat"><span class="rz-stat-n rz-skip" id="rzSkipN">0</span><span class="rz-stat-t">跳过</span></div>
+            <div class="rz-stat"><span class="rz-stat-n rz-fail" id="rzFailN">0</span><span class="rz-stat-t">失败</span></div>
+          </div>
+          <div class="rz-log" id="rzLog"></div>
+          <div class="gd-row gd-ctrl" id="rzDoneRow" style="display:none;">
+            <div class="gd-btn" id="rzOpenOutBtn">打开输出文件夹</div>
+            <div class="gd-btn" id="rzFailBtn">失败记录</div>
+          </div>
+        </section>
+
+        <!-- 向导导航：主按钮也在这一行里（第 4 步是「上一步 + 开始批量修改」并排） -->
+        <div class="rz-nav" id="rzNav">
+          <div class="gd-btn" id="rzPrevBtn">上一步</div>
+          <div class="gd-btn rz-primary" id="rzNextBtn">下一步</div>
+          <button id="rzRunBtn" class="primary-btn" style="display:none;">
+            <span class="btn-label">开始批量修改</span>
+          </button>
+        </div>
+      </div>
+
       <!-- 完整切图 / Symbols 共享的导出配置（对选中项/隐藏层等真实生效） -->
       <div id="exportConfig" style="display:none;">
         <section class="card">
@@ -622,13 +1086,9 @@
   <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#9fb3c6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
   <circle cx="66" cy="95" r="6" fill="#9fb3c6"/>
 </svg>
-            <div class="btn-tip" id="renameTip" style="display:none;"></div>
-          </div>
-          <!-- 改名对象：始终是「图层面板里选中的那些」。这一行显示当前选中数，
-               并提供「按名称查找…」入口——弹窗查完把命中的层并进图层面板的选中 -->
-          <div class="field-block field-inline" id="targetRow">
-            <label id="targetInfo">未选中图层或组</label>
-            <!-- 查找入口：青色描边钮 + 放大镜（原来是灰描边的文字链，太不起眼） -->
+            <!-- 查找入口和大标题同一行：标题贴左，按钮靠 margin-left:auto 顶到行尾。
+                 改名对象始终是「图层面板里选中的那些」，弹窗查完把命中的层并进选中；
+                 选中数不在这里报 —— 下面的预览逐条列着，底部状态栏也写了总数 -->
             <span class="find-btn" id="slOpenBtn">
               <svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="search">
   <g fill="none" stroke="#3ce0ef" stroke-width="14" stroke-linecap="round">
@@ -638,9 +1098,10 @@
 </svg>
               <span class="find-btn-t">按名称查找</span>
             </span>
+            <div class="btn-tip" id="renameTip" style="display:none;"></div>
           </div>
           <div class="field-block">
-            <label>重命名方式 <span class="label-sub">（对选中的组/图层生效）</span></label>
+            <label>重命名方式</label>
             <div class="pill-row" id="renameModePills">
               <span class="pill active" data-mode="replace">替换</span>
               <span class="pill" data-mode="new">重新命名</span>
@@ -721,13 +1182,8 @@
         <span class="btn-label">应用重命名</span>
       </button>
 
-      <!-- 智能分割页按钮 -->
-      <button id="splitBtn" class="primary-btn" style="display:none;">
-        <svg class="play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="split">
-  <path d="M45 31 L98 64 L45 97 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>
-</svg>
-        <span class="btn-label">开始智能分割</span>
-      </button>
+      <!-- 分割页的两个主按钮不在这里：那一页有两个功能，按钮各自跟在自己的卡片下面
+           （见上面的 #splitPage） -->
 
       <!-- 一键排版页按钮：选中少于 2 个对象时置灰不可点 -->
       <button id="layoutBtn" class="primary-btn" style="display:none;">
@@ -769,6 +1225,17 @@
       </div>
     </div>
 
+    <!-- 参考线切出的块数过多时的性能提醒（每块都要走一轮 复制→粘贴→跨文档复制） -->
+    <div id="gsConfirm" class="overlay" style="display:none;">
+      <div class="overlay-box">
+        <p class="confirm-msg">当前参考线将切出 <b id="gsCellCount"></b> 个图层，<br>块数较多，会比较慢。</p>
+        <div class="confirm-row">
+          <button id="gsConfirmYes" class="ok">继续分割</button>
+          <button id="gsConfirmNo" class="muted">取消</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 目标文件夹存在同名文件时询问 覆盖/跳过 -->
     <div id="overwriteConfirm" class="overlay" style="display:none;">
       <div class="overlay-box">
@@ -804,6 +1271,40 @@
         <div class="confirm-row">
           <button id="gdNameOk" class="ok">保存</button>
           <button id="gdNameCancel" class="muted">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 改尺寸：预设列表（应用 / 重命名 / 删除，与版面记录同一套壳） -->
+    <div id="rzPresetOverlay" class="overlay" style="display:none;">
+      <div class="overlay-box gd-list-box">
+        <p class="confirm-msg">我的预设</p>
+        <div class="gd-list" id="rzPresetList"></div>
+        <div class="confirm-row">
+          <button id="rzPresetClose" class="muted">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 改尺寸：给预设起名 -->
+    <div id="rzNameOverlay" class="overlay" style="display:none;">
+      <div class="overlay-box">
+        <p class="confirm-msg" id="rzNameTitle">保存为预设</p>
+        <div class="tf gd-name-field"><input type="text" id="rzNameInput" placeholder="如 游戏图标 1024"></div>
+        <div class="confirm-row">
+          <button id="rzNameOk" class="ok">保存</button>
+          <button id="rzNameCancel" class="muted">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 改尺寸：失败记录 -->
+    <div id="rzFailOverlay" class="overlay" style="display:none;">
+      <div class="overlay-box gd-list-box">
+        <p class="confirm-msg">失败记录</p>
+        <div class="gd-list" id="rzFailList"></div>
+        <div class="confirm-row">
+          <button id="rzFailClose" class="muted">关闭</button>
         </div>
       </div>
     </div>

@@ -2,7 +2,7 @@
   "manifestVersion": 5,
   "id": "com.sliceman.plugin",
   "name": "Sliceman",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "main": "index.html",
   "host": {
     "app": "PS",
@@ -62,6 +62,10 @@
     }
   ],
   "requiredPermissions": {
-    "localFileSystem": "request"
+    "localFileSystem": "fullAccess",
+    "launchProcess": {
+      "schemes": ["https"],
+      "extensions": [""]
+    }
   }
 }

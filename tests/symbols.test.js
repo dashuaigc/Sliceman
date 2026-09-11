@@ -18,7 +18,7 @@ describe('findSymbols', () => {
     expect(syms[0].dinweigeIds).toEqual([dwg.id]);
   });
 
-  it('定位格直接在画布根 → 范围为根，路径为空（命名退化为 项目名_PSD名）', () => {
+  it('定位格直接在画布根 → 范围为根，路径为空（命名退化为 项目名；连项目名都没填时收口成 symbol）', () => {
     const dwg = l('定位格');
     const root = g('root', [dwg, l('bg'), l('fg')]);
     const syms = findSymbols(root);

@@ -2,7 +2,7 @@
 // 用法：node scripts/test-real-image.mjs <png路径>
 import { readFileSync } from 'node:fs';
 import { inflateSync } from 'node:zlib';
-import { findElementBounds } from '../src/lib/segment.js';
+import { findElements } from '../src/lib/segment.js';
 
 /** 极简 PNG 解码：仅支持 8-bit RGB(A) 无交错。 */
 function decodePng(buf) {
@@ -59,7 +59,20 @@ function decodePng(buf) {
 const file = process.argv[2] || 'tmp_analysis.png';
 const { rgba, width, height } = decodePng(readFileSync(file));
 const info = {};
-const boxes = findElementBounds(rgba, width, height, { factor: 2, minAreaPx: 64, mergeGapPx: 'auto', info });
-console.log(`图片 ${width}x${height}，模式=${info.mode}，连通块=${info.components}，阈值=${info.thresholdPx}px`);
-console.log(`识别元素 ${boxes.length} 个：`);
-boxes.forEach((b, i) => console.log(`  [${i}] x${b.left} y${b.top} w${b.right - b.left} h${b.bottom - b.top}`));
+const t0 = Date.now();
+const { elements } = findElements(rgba, width, height, { factor: 2, minAreaPx: 64, mergeGapPx: 'auto', info });
+const ms = Date.now() - t0;
+console.log(`图片 ${width}x${height}，模式=${info.mode}，连通块=${info.components}，阈值=${info.thresholdPx}px，耗时 ${ms}ms`);
+console.log(`识别元素 ${elements.length} 个，选区矩形合计 ${info.rects} 块（退回整框 ${info.fallback} 块）：`);
+elements.forEach((e, i) => {
+  const b = e.box;
+  // rects 是真正下发给 PS 的选区：>1 说明这块与邻居外框交叠，靠拼矩形把邻居的像素排除掉
+  console.log(`  [${i}] x${b.left} y${b.top} w${b.right - b.left} h${b.bottom - b.top}  选区 ${e.rects.length} 块${e.exact ? '' : '（太碎，退回整框）'}`);
+});
+// 外框交叠的块两两报一下：这正是「另一个图形被切进来」的场景
+const hit = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+for (let i = 0; i < elements.length; i++) {
+  for (let j = i + 1; j < elements.length; j++) {
+    if (hit(elements[i].box, elements[j].box)) console.log(`  ⚠ [${i}] 与 [${j}] 外框交叠 —— 按外框切会互相带进对方的像素`);
+  }
+}

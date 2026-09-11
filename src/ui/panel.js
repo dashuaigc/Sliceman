@@ -10,7 +10,17 @@ import { hasCounter, buildRenameRows } from '../lib/rename-core.js';
 import { matchLayers, describePath } from '../lib/search-core.js';
 import { readItemIndexes, applyRename } from '../ps/renamer.js';
 import { readAllLayers, selectLayersById } from '../ps/layer-finder.js';
-import { smartSplitLayer } from '../ps/smart-split.js';
+import { smartSplitLayer, splitByGuides } from '../ps/smart-split.js';
+import {
+  planResize, normalizeResizeCfg, fieldsOfMode, buildOutName, formatScale,
+  sanitizeFileName, ellipsizeName, splitName, isSupportedImage, parseScaleList, FITS,
+  sizeCfg, sizeLabel, normalizeSizeList,
+} from '../lib/resize-core.js';
+import {
+  collectImageFiles, parentFolderOf, closeStrayResizeDocs, processOne, revealFolder,
+} from '../ps/resizer.js';
+import { extOf } from '../ps/save-image.js';
+import { cellsFromGuides, ERR_NO_GUIDES } from '../lib/guide-split.js';
 import { convertToSmartObjects } from '../ps/smart-object.js';
 import { createGroups } from '../ps/group-maker.js';
 import { layoutLayers } from '../ps/layouter.js';
@@ -18,7 +28,7 @@ import { moveLayers } from '../ps/mover.js';
 import { validateParams, buildTable, computeLayout } from '../lib/table-core.js';
 import { originAtCenter, isPlausibleCenter } from '../lib/view-core.js';
 import { drawTable, readForegroundHex, pickColor, readViewCenter } from '../ps/table-maker.js';
-import { parseDistance, applySign, toDelta, nudgeValue, formatDist, describeDelta } from '../lib/move-core.js';
+import { parseDistance, dirAxes, planMove, nudgeValue, formatDist, describeDelta } from '../lib/move-core.js';
 import {
   normalizeCfg, computeGuides, quickGuides, cfgFromGuideLayout,
   guideLayoutKeys, unknownGuideLayoutKeys, formatGuideLayoutParams,
@@ -37,6 +47,89 @@ const uxpFs = require('uxp').storage.localFileSystem;
 
 const statusEl = document.getElementById('status');
 function setStatus(msg) { statusEl.textContent = msg; }
+
+// ---- 输入框的通用行为（面板里每个 input[type=text] 都走这一套）----
+// 1) 聚焦时给【外层那个画边框的 div】加 .focused：边框高亮，退出即还原。
+//    UXP 下 :focus-within 靠不住（文字编辑是原生层，焦点不一定传到 DOM 上），
+//    样式表里那条留着当降级，真正生效的是这个类。
+// 2) 点进去就把框清空，不用先删旧值；原值挪到 placeholder 当灰字，全程看得见。
+//    退出时框里还是空的 → 把原值放回去；输了新值 → 就按新值。
+// ⚠️ 清空只改 DOM，【不派发 input 事件】—— 派了就等于告诉各处「用户把值删空了」，
+//    预览会退化、记忆会被写空。代价是「正在编辑、还没输东西」这段时间里框里是空的，
+//    所以读值一律走 fieldValue()，别直接读 .value（万一 blur 没来也不会读成空）。
+const fieldPrev = new Map();        // 输入框 → 聚焦那一刻的原值（退出即删）
+const fieldHolder = new Map();      // 输入框 → 聚焦前的 placeholder（退出时还回去）
+
+/** 读输入框的值：正在编辑且还没输东西时，返回它聚焦前的原值 */
+function fieldValue(el) {
+  const v = String((el && el.value) ?? '');
+  if (v !== '') return v;
+  return fieldPrev.has(el) ? fieldPrev.get(el) : v;
+}
+
+/** 代码主动给输入框写值（预填弹窗、编辑已有查找项）：连暂存的原值一起换掉，
+ *  否则退出输入框时会被旧值盖回去 */
+function fieldSet(el, v) { fieldClear(el); el.value = String(v ?? ''); }
+
+/** 代码主动清空一个输入框（如「清空关键词」）：连暂存的原值一起丢掉，
+ *  否则退出输入框时那个原值又被放回来了 */
+function fieldClear(el) {
+  if (!el) return;
+  restoreHolder(el);
+  fieldPrev.delete(el);
+  el.value = '';
+}
+
+/** 把聚焦时借用的 placeholder 还回去（没借过就什么都不做） */
+function restoreHolder(el) {
+  if (!fieldHolder.has(el)) return;
+  const hold = fieldHolder.get(el);
+  fieldHolder.delete(el);
+  el.placeholder = hold;
+  el.setAttribute('placeholder', hold);
+}
+
+function bindTextField(el) {
+  if (!el) return;
+  const box = el.parentNode;                       // 画边框的是外层 div，不是 input
+  const enter = () => {
+    if (box && box.classList) box.classList.add('focused');
+    if (fieldPrev.has(el)) return;                 // focus 与 focusin 都会来，只认第一次
+    const cur = String(el.value ?? '');
+    fieldPrev.set(el, cur);
+    if (cur === '') return;                        // 本来就是空的：placeholder 不用借
+    fieldHolder.set(el, el.getAttribute('placeholder') || '');
+    el.value = '';
+    el.placeholder = cur;                          // 原值改用灰字显示，退出前一直看得见
+    el.setAttribute('placeholder', cur);
+  };
+  const leave = () => {
+    if (box && box.classList) box.classList.remove('focused');
+    if (!fieldPrev.has(el)) return;
+    const prev = fieldPrev.get(el);
+    fieldPrev.delete(el);
+    restoreHolder(el);
+    if (String(el.value ?? '') !== '') return;     // 输了新值：就按新值，别覆盖
+    el.value = prev;                               // 没改动：把原值放回去
+  };
+  // focus/blur 不冒泡，为保险连会冒泡的 focusin/focusout 一起听；重复触发也幂等
+  el.addEventListener('focus', enter);
+  el.addEventListener('focusin', enter);
+  el.addEventListener('blur', leave);
+  el.addEventListener('focusout', leave);
+}
+
+// 面板里所有的文字输入框。新加输入框必须往这里补一个 id ——
+// ui-ids.test.js 会拿 index.html 里的 <input type="text"> 逐个比对，漏了就红。
+const TEXT_FIELDS = [
+  'projectName', 'moveX', 'moveY', 'layoutGap', 'layoutMargin',
+  'tblW', 'tblH', 'tblRows', 'tblCols', 'tblRowGap', 'tblColGap',
+  'tblLineW', 'tblRadius', 'tblLineColor', 'tblFillColor',
+  'rzW', 'rzH', 'rzEdge', 'rzPercent', 'rzTimes', 'rzMaxW', 'rzMaxH',
+  'rzAddW', 'rzAddH', 'rzScales', 'rzQuality', 'rzSuffix', 'rzTpl',
+  'findText', 'templateText', 'startNum', 'stepNum',
+  'gdNameInput', 'rzNameInput', 'slFindText',
+];
 
 // 让出事件循环一拍：使切图循环中排队的点击/按键（停止、ESC）得以处理
 function tick() { return new Promise((r) => setTimeout(r, 0)); }
@@ -57,18 +150,44 @@ function collectDescendantIds(group, out) {
   }
 }
 
-// 图层面板里【所有】高亮项，原样返回（同步读取）。
-// activeLayers 就是面板里真正被点亮的那些：选中一个组不会自动带上它的子图层，
-// 所以这里出现「组 + 组内某几层」只可能是用户自己两样都选了 —— 重命名要全部照改。
-function allSelectedLayers() {
+// 图层面板里【真正点亮】的那些图层/组（异步：要读文档描述符）。
+// ⚠️ doc.activeLayers 在这件事上靠不住：选中一个【组】时它把组内所有后代一起返回，
+//    于是「只选了组」和「组与组内某层都点亮了」长得一模一样。文档描述符上的
+//    targetLayersIDs 没这个毛病 —— 真机实测（PS 27.7.0）只选组 G 报 1 项、
+//    「G + G 内部的层」报 2 项、「G + 嵌套组里的孙子层」也是 2 项，从不把没点亮的
+//    子层算进来。重命名要的正是这份「用户到底点了谁」。
+// 旧版 PS 没有这个属性时退回 selectedLayers()，也就是「选中组只改组名」。
+async function trueSelectedLayers() {
   const doc = app.activeDocument;
-  return doc ? Array.from(doc.activeLayers || []) : [];
+  if (!doc) return [];
+  let list;
+  try {
+    const [res] = await action.batchPlay([{
+      _obj: 'get',
+      _target: [{ _property: 'targetLayersIDs' }, { _ref: 'document', _enum: 'ordinal', _value: 'targetEnum' }],
+      _options: { dialogOptions: 'dontDisplay' },
+    }], {});
+    list = res?.targetLayersIDs;
+  } catch { /* 读不到，按下面的兜底走 */ }
+  if (!Array.isArray(list)) return selectedLayers();
+  // 列表项是图层引用，序列化形态各版本不一（{_ref,_id} / {_id} / 裸数字），三种都收
+  const byId = new Map();
+  (function walk(cont) {
+    for (const l of cont.layers || []) { byId.set(l.id, l); walk(l); }
+  })(doc);
+  const out = [];
+  for (const item of list) {
+    const id = typeof item === 'number' ? item : (item?._id ?? item?._value);
+    const l = byId.get(id);
+    if (l) out.push(l);
+  }
+  return out;
 }
 
 // 当前文档中选中的图层/组（同步读取）。
 // 只保留"最外层被选中"的项：选中组时排除其组内子图层。
 // 用于把组当成一个整体处理的功能（切图 / 排版 / 平移 / 建组）——父子各算一次会重复作用。
-// 重命名不走这条：改名是逐个对象改自己的名字，父子同时选中就该各改一次（见 allSelectedLayers）
+// 重命名不走这条（它要区分「点没点亮组内的层」），见 trueSelectedLayers。
 function selectedLayers() {
   const doc = app.activeDocument;
   if (!doc) return [];
@@ -97,7 +216,7 @@ const sliceBtn = document.getElementById('sliceBtn');
 const btnLabel = sliceBtn.querySelector('.btn-label');   // 主按钮内的文字节点（按钮含图标+文字，不能整体设 textContent）
 const stopConfirm = document.getElementById('stopConfirm');
 const overwriteConfirm = document.getElementById('overwriteConfirm');
-let currentPage = 'rename';              // 当前功能页：rename | split | batch | layout | slice（初始由 switchPage 定）
+let currentPage = 'rename';              // 当前功能页：与功能栏 .tile 的 data-page 一一对应（初始由 switchPage 定）
 let sliceMode = 'all';                   // 切图页内的方式：all=完整切图 | symbols=按定位格导出
 let slicing = false;
 let cancelRequested = false;   // 停止按钮：完成当前张后直接中止
@@ -233,8 +352,8 @@ async function runExport(makeTasks, emptyMsg) {
   const includeHidden = document.getElementById('includeHidden').checked;
   const fullBleed = document.getElementById('fullBleed').checked;
   // 项目名规范化后为空（如纯符号）视为未填，避免污染出 seg1_ 前缀
-  const project = normalize(projectInput.value) ? projectInput.value : '';
-  const psdName = app.activeDocument.name.replace(/\.[^.]+$/, '');
+  const projectRaw = fieldValue(projectInput);
+  const project = normalize(projectRaw) ? projectRaw : '';
 
   // 导出设置：格式与倍率（可操作控件），扩展名随格式变化
   const format = currentFormat();                      // png|jpg|webp|gif|bmp
@@ -270,7 +389,7 @@ async function runExport(makeTasks, emptyMsg) {
   const t0 = Date.now();                 // 记录开始时间，完成后算耗时
   setSlicing(true);
   let ok = 0, empty = 0, deduped = 0, skipped = 0;
-  const ps = { docId: app.activeDocument.id, fileName: psdName };
+  const ps = { docId: app.activeDocument.id };
   // 用 index 遍历：被 ESC 取消的那张要能重做，故文件名算一次后缓存复用（避免重试误加 _2）
   let i = 0;
   let currentName = null, currentDeduped = false;
@@ -288,8 +407,12 @@ async function runExport(makeTasks, emptyMsg) {
 
       // 文件名：仅在没有"上一次被取消而保留的名字"时才重新计算并登记去重
       if (currentName == null) {
-        const segments = [project, psdName, ...task.pathSegments].filter(s => s !== '' && s != null);
-        const base = buildBaseName(segments);
+        // 不拼 PSD 名：文件名只由「项目名（可选）+ 各级组名 + 图层名」组成，
+        // 完整切图与 Symbols 切图同一套规则、没有例外。
+        // 唯一会一段都不剩的情况是「定位格直接放在画布根」的 Symbols 导出（路径为空），
+        // 此时既没有组名也没有图层名 —— 用固定的 symbol 收口，仍然不掺 PSD 名。
+        const segments = [project, ...task.pathSegments].filter(s => s !== '' && s != null);
+        const base = buildBaseName(segments.length ? segments : ['symbol']);
         currentName = makeUniqueName(base, used);
         currentDeduped = currentName !== base;
       }
@@ -413,6 +536,109 @@ async function runSmartSplit() {
 }
 
 splitBtn.addEventListener('click', () => { runSmartSplit(); });
+
+// ---- 参考线分割：用画布上已有的参考线把内容切成网格，每格复制成一个独立图层 ----
+const gsBtn = document.getElementById('gsBtn');
+// 超过这么多块先问一句：每块都要走一轮「选区 → copy → paste → 跨文档 duplicate」，块多了很慢
+const GS_WARN_CELLS = 40;
+let gsDecider = null;
+
+/** 现读当前文档的参考线并算出网格（参考线是随手拖的，没有通知可听，所以每次都现读） */
+function readGuideGrid() {
+  const canvas = hasDoc() ? readCanvas() : null;
+  if (!canvas) {
+    return { canvas: null, guides: null, cells: [], cols: 0, rows: 0, error: '请先打开一个 Photoshop 文档。' };
+  }
+  const guides = readExistingGuides();
+  return { canvas, guides, ...cellsFromGuides(guides, canvas) };
+}
+
+/** 标题行右侧的小字（切出几块）+ 按钮可用性 */
+function refreshGuideSplitInfo() {
+  const g = readGuideGrid();
+  const el = document.getElementById('gsGrid');
+  if (el) {
+    el.textContent = !g.canvas ? '未打开文档'
+      : g.error === ERR_NO_GUIDES ? '没有参考线'
+        : g.error ? '参考线未切开画布'
+          : `${g.cols} 列 × ${g.rows} 行 → ${g.cells.length} 块`;
+  }
+  gsBtn.classList.toggle('btn-off', !!g.error);
+  return g;
+}
+
+function askGuideSplitConfirm(count) {
+  document.getElementById('gsCellCount').textContent = String(count);
+  showOverlay('gsConfirm', true);
+  return new Promise((res) => { gsDecider = res; });
+}
+function resolveGuideSplitConfirm(v) {
+  showOverlay('gsConfirm', false);
+  if (gsDecider) { const d = gsDecider; gsDecider = null; d(v); }
+}
+document.getElementById('gsConfirmYes').onclick = () => resolveGuideSplitConfirm(true);
+document.getElementById('gsConfirmNo').onclick = () => resolveGuideSplitConfirm(false);
+
+async function runGuideSplit() {
+  if (splitting) return;                         // 两个分割功能共用忙碌标志，不能同时跑
+  const g = refreshGuideSplitInfo();             // 点的这一刻的参考线才算数
+  if (g.error) return setStatus(g.error);
+
+  const merged = document.getElementById('gsMerged').checked;
+  let layer = null;
+  if (!merged) {
+    // 取最外层选中项：选中组时组内子层不重复参与（拍平的是整组）
+    const sel = selectedLayers();
+    if (!sel.length) return setStatus('请先在图层面板选中要分割的图层 / 组，或打开「合并可见内容」');
+    if (sel.length > 1) return setStatus('一次只分割一个对象，请只选中一个图层 / 组');
+    layer = sel[0];
+  }
+  if (g.cells.length > GS_WARN_CELLS) {
+    const ok = await askGuideSplitConfirm(g.cells.length);
+    if (!ok) return setStatus('已取消，文档没有任何改动。');
+  }
+
+  splitting = true;
+  setTilesDisabled(true);
+  const lbl = gsBtn.querySelector('.btn-label');
+  const orig = lbl.textContent;
+  lbl.textContent = '分割中…';
+  gsBtn.style.pointerEvents = 'none';
+  gsBtn.style.opacity = '0.6';
+  let lastStep = '尚未开始';
+  setStatus(`正在按参考线分割：${g.cols} 列 × ${g.rows} 行…`);
+  try {
+    const r = await splitByGuides({
+      layerId: layer ? layer.id : null,
+      merged,
+      guides: g.guides,
+      canvas: g.canvas,
+      groupName: merged ? '参考线切片' : `${layer.name} 切片`,
+      onStep: (msg) => { lastStep = msg; },
+      onProgress: (done, total) => setStatus(`分割中… ${done}/${total} 块`),
+    });
+    if (!r.created) {
+      setStatus(`没有切出图层：${r.cells} 块里没有一块有内容\n（最后一步：${lastStep}）`);
+    } else {
+      setStatus(`完成：${r.cols} 列 × ${r.rows} 行 = ${r.cells} 块`
+        + (r.skipped ? `，跳过 ${r.skipped} 块空白` : '')
+        + `，已新建 ${r.created} 个图层${r.grouped ? '并放进新组' : ''}`
+        + (r.fixed ? `（校正落位 ${r.fixed} 层）` : '')
+        + '\n原对象未改动');
+    }
+  } catch (e) {
+    setStatus(`分割失败：${errMsg(e)}\n（最后成功的一步：${lastStep}）`);
+  } finally {
+    splitting = false;
+    setTilesDisabled(false);
+    lbl.textContent = orig;
+    gsBtn.style.pointerEvents = '';
+    gsBtn.style.opacity = '';
+    refreshGuideSplitInfo();
+  }
+}
+
+gsBtn.addEventListener('click', () => { runGuideSplit(); });
 
 // ---- 批量转智能对象：选中图层逐个转独立 SO，绝不合并 ----
 const smartObjBtn = document.getElementById('smartObjBtn');
@@ -554,16 +780,30 @@ function updateLayoutMarginRow() {
 // 用 visibility 而非 display —— 占位保留，行高不跳、鼠标不会因为布局位移而反复进出。
 // 同一时刻只有一个功能页可见，所以不分页、一律全藏，省掉「这个提示压着哪几个框」的判断。
 const TIP_MASKED_FIELD_IDS = [
-  'layoutGap', 'layoutMargin', 'moveX', 'moveY',      // 一键排版 / 批量快速平移
+  'layoutGap', 'layoutMargin', 'moveX', 'moveY',      // 一键排版 / 快速平移
   'findText', 'templateText', 'startNum', 'stepNum',  // 批量重命名
   'tblRows', 'tblCols', 'tblW', 'tblH', 'tblRowGap', 'tblColGap',   // 快速绘制表格
   'tblLineW', 'tblLineColor', 'tblFillColor', 'tblRadius',
-  'gdNameInput',                                                    // 参考线：收藏起名
+  'rzW', 'rzH', 'rzEdge', 'rzPercent', 'rzTimes', 'rzMaxW', 'rzMaxH',   // 批量改尺寸
+  'rzQuality', 'rzSuffix', 'rzTpl', 'rzAddW', 'rzAddH', 'rzScales',
 ];
 // 「按名称查找图层」弹窗是否开着：它自己带输入框，开着期间页面上的输入框必须一直藏着
 let slOpen = false;
+let tipMaskOn = false;      // 悬停说明浮层开着
+let ddMaskOn = false;       // 自绘下拉的菜单开着
+let ovMaskOn = false;       // 任何一个弹窗开着（由 showOverlay 现算，见下）
 function setTipMaskedFields(on) {
-  const v = on || slOpen ? 'hidden' : '';
+  tipMaskOn = on;
+  applyMaskedFields();
+}
+// 下拉菜单也得藏：改尺寸页的菜单向下展开，正压在宽度 / 高度那几个输入框上
+//（真机截图确认：菜单被输入框切掉一半）。原生编辑层的老毛病，只能躲。
+function setDdMaskedFields(on) {
+  ddMaskOn = on;
+  applyMaskedFields();
+}
+function applyMaskedFields() {
+  const v = tipMaskOn || ddMaskOn || slOpen || ovMaskOn ? 'hidden' : '';
   for (const id of TIP_MASKED_FIELD_IDS) {
     const el = document.getElementById(id);
     if (el) el.style.visibility = v;
@@ -579,10 +819,11 @@ function setTipMaskedFields(on) {
 // 锁定状态从「有没有浮层还开着」现算，不用计数器：改名弹窗是压在版面记录弹窗上面开的，
 // 关掉上面那个时下面那个还在，布尔开关会提前解锁。
 const OVERLAY_IDS = [
-  'stopConfirm', 'tableConfirm', 'overwriteConfirm',
+  'stopConfirm', 'tableConfirm', 'overwriteConfirm', 'gsConfirm',
   'gdListOverlay', 'gdNameOverlay', 'gdHistConfirm', 'slOverlay',
+  'rzPresetOverlay', 'rzNameOverlay', 'rzFailOverlay',
 ];
-const SCROLL_LOCK_IDS = ['pages', 'rail', 'previewList'];
+const SCROLL_LOCK_IDS = ['pages', 'rail', 'previewList', 'rzLog'];
 /** @param {string|object} idOrEl 浮层的 id 或元素 */
 function showOverlay(idOrEl, on) {
   const el = typeof idOrEl === 'string' ? document.getElementById(idOrEl) : idOrEl;
@@ -598,15 +839,20 @@ function showOverlay(idOrEl, on) {
     // 解锁写空串还给样式表，别硬写 'auto' —— 各家的原值不一样（有的只 overflow-y）
     if (box) box.style.overflow = anyOpen ? 'hidden' : '';
   }
+  // 页面上的输入框也得躲开：文字控件与滚动条是同一个毛病，弹窗一开就压在弹窗上面
+  //（真机截图确认：「我的预设」弹窗被下面那页的宽度 / 高度输入框戳穿）。
+  // 弹窗自带的输入框不在 TIP_MASKED_FIELD_IDS 里，不受影响。
+  ovMaskOn = anyOpen;
+  applyMaskedFields();
 }
 
 function readLayoutCfg() {
   return {
     direction: layoutDir,
     align: activePill(layoutDir === 'h' ? 'layoutAlignH' : 'layoutAlignV', 'data-align'),
-    gap: clampPx(layoutGapInput.value, 10),
+    gap: clampPx(fieldValue(layoutGapInput), 10),
     expandCanvas: !!layoutExpandEl.checked,
-    margin: clampPx(layoutMarginInput.value, 10),
+    margin: clampPx(fieldValue(layoutMarginInput), 10),
   };
 }
 
@@ -680,111 +926,119 @@ async function runLayout() {
 
 layoutBtn.addEventListener('click', () => { runLayout(); });
 
-// ---- 快速平移：所有选中对象按同一个 X/Y 偏移量整体平移（相对位移，不是绝对坐标）----
+// ---- 快速平移：所有选中对象朝同一个方向整体平移（相对位移，不是绝对坐标）----
+// 方向从九宫格里挑一个（八方向），距离框按方向显隐：正向一个值，斜向水平 + 垂直两个值。
+// 换算全在 lib/move-core.js（有单测），这里只做「读界面 → 调换算 → 交给 PS」。
 const moveBtn = document.getElementById('moveBtn');
+const moveBtnLabel = document.getElementById('moveBtnLabel');
 const moveXInput = document.getElementById('moveX');
 const moveYInput = document.getElementById('moveY');
+const moveCopyEl = document.getElementById('moveCopy');
 let moving = false;
 
-// 读一个距离输入框：空 → 0（该轴不动）；非数字 → 标红并返回 null（不执行）；
-// 负数 → 取绝对值并翻转方向 pill，于是界面上永远是「方向 + 正数」，
-// 不会出现「← 配 -20」这种双重反向。
-function readMoveField(input, pillsId) {
+const moveDir = () => activePill('moveDirPills', 'data-dir') || 'right';
+
+// 读一个距离输入框：空 → 0（该轴不动）；非数字 → 标红并返回 null（不执行）
+function readMoveField(input) {
   const box = input.parentNode;                    // 外层 .num-box；UXP 的 closest 不一定有，用 parentNode
-  const raw = parseDistance(input.value);
+  const raw = parseDistance(fieldValue(input));
   if (raw === null) { if (box) box.classList.add('field-err'); return null; }
   if (box) box.classList.remove('field-err');
-  const cur = activePill(pillsId, 'data-dir');
-  const r = applySign(raw, cur);
-  if (r.dir !== cur) setPillActive(pillsId, 'data-dir', r.dir);
-  prefSet(pillsId === 'moveXDirPills' ? 'move.xDir' : 'move.yDir', r.dir);
-  // 输入框留空就保持空（空 = 0，不要写成 "0" 平添噪音）；有值则回填归一后的正数
-  if (String(input.value).trim() !== '') input.value = formatDist(r.dist);
-  return r.dist;
+  return raw;
 }
 
-function readMoveCfg() {
-  const xDist = readMoveField(moveXInput, 'moveXDirPills');
-  const yDist = readMoveField(moveYInput, 'moveYDirPills');
-  if (xDist === null || yDist === null) return null;
-  return {
-    xDir: activePill('moveXDirPills', 'data-dir'),
-    xDist,
-    yDir: activePill('moveYDirPills', 'data-dir'),
-    yDist,
-  };
+/**
+ * 读界面 → 位移量。顺手把负数归一回界面上：
+ * 负值会把对应那一个轴翻向（→ 填 -20 变成 ← 20），九宫格跟着点亮对面那一格，
+ * 框里回填正数 —— 用户看到的永远是「方向 + 正数」。
+ * @returns {{dx:number, dy:number}|null} null = 有框填了非数字
+ */
+function readMoveDelta() {
+  const x = readMoveField(moveXInput);
+  const y = readMoveField(moveYInput);
+  if (x === null || y === null) return null;
+  const r = planMove(moveDir(), x, y);
+  if (r.dir !== moveDir()) { setPillActive('moveDirPills', 'data-dir', r.dir); prefSet('move.dir', r.dir); }
+  // 留空的框保持空（空 = 0，不要写成 "0" 平添噪音）；有值则回填归一后的正数
+  if (String(moveXInput.value).trim() !== '') moveXInput.value = formatDist(r.xDist);
+  if (String(moveYInput.value).trim() !== '') moveYInput.value = formatDist(r.yDist);
+  return { dx: r.dx, dy: r.dy };   // 翻向只翻符号不改「要填几个值」，两行的显隐不用跟着动
 }
 
-// 未选中对象时禁用「移动」
+// 方向决定要填几个值：← → 只要水平，↑ ↓ 只要垂直，四个斜向两个都要。
+// 用不到的那一行直接收起来 —— 它的值在 planMove 里也会被置 0，界面和结果对得上。
+function refreshMoveRows() {
+  const axes = dirAxes(moveDir());
+  show('moveXRow', axes.x);
+  show('moveYRow', axes.y);
+}
+
+// 未选中对象时禁用按钮；按钮文案跟着「复制移动」开关走
 function refreshMoveBtns() {
   if (moving) return;
   moveBtn.classList.toggle('btn-off', !app.activeDocument || selectedLayers().length === 0);
+  if (moveBtnLabel) moveBtnLabel.textContent = moveCopyEl && moveCopyEl.checked ? '复制并平移' : '快速平移';
 }
 
-// 平移执行器：「移动」按钮与距离框里的 Enter 共用
+// 平移执行器：按钮与距离框里的 Enter 共用
 async function runMove(dx, dy) {
   if (moving) return;
   if (!app.activeDocument) return setStatus('请先打开一个 PSD 文档');
   const sel = selectedLayers();                    // 已剔除被选中组的后代 → 父子不会各吃一次位移
   if (!sel.length) return setStatus('请先选择需要移动的图层或组');
-  if (!dx && !dy) return setStatus('X、Y 距离都是 0，没有可执行的移动');
+  if (!dx && !dy) return setStatus('还没填移动距离');
+  const copy = !!(moveCopyEl && moveCopyEl.checked);
 
   moving = true;
   setTilesDisabled(true);
   try {
-    const r = await moveLayers(sel.map((l) => l.id), dx, dy);
-    if (!r.moved) setStatus('当前选择的对象无法移动（已锁定或为背景图层）');
-    else if (r.skipped) setStatus(`已移动 ${r.moved} 个对象（${describeDelta(dx, dy)}），跳过 ${r.skipped} 个锁定对象`);
-    else setStatus(`已移动 ${r.moved} 个对象：${describeDelta(dx, dy)}`);
+    const r = await moveLayers(sel.map((l) => l.id), dx, dy, { copy });
+    const verb = copy ? '复制并移动' : '移动';
+    if (!r.moved) setStatus(`当前选择的对象无法${verb}（已锁定或为背景图层）`);
+    else if (r.skipped) setStatus(`已${verb} ${r.moved} 个对象（${describeDelta(dx, dy)}），跳过 ${r.skipped} 个锁定对象`);
+    else setStatus(`已${verb} ${r.moved} 个对象：${describeDelta(dx, dy)}`);
   } catch (e) {
-    setStatus('移动失败：' + errMsg(e));
+    setStatus(`${copy ? '复制移动' : '移动'}失败：` + errMsg(e));
   } finally {
     moving = false;
     setTilesDisabled(false);
+    refreshMoveBtns();
   }
 }
 
 function doMove() {
-  const cfg = readMoveCfg();
-  if (!cfg) return setStatus('移动距离只能填数字');
-  const { dx, dy } = toDelta(cfg);
-  runMove(dx, dy);
+  const d = readMoveDelta();
+  if (!d) return setStatus('移动距离只能填数字');
+  runMove(d.dx, d.dy);
 }
 
 moveBtn.addEventListener('click', () => doMove());
 
-// X/Y 距离框：placeholder 显示灰色的 0（= 该轴不动）。
-// 聚焦时把值为 0 的内容清掉，直接开始输入，不用先删掉那个 0；
-// 非 0 的值保留——聚焦常常只是为了用 ↑/↓ 微调，清掉反而碍事。
-// focus 不冒泡，为保险连会冒泡的 focusin 一起听，
-// 所以连会冒泡的 focusin 一起听；重复触发也幂等。
+// 距离框的键盘操作：Enter 直接执行一次平移；↑/↓ 加减 1，Shift 时加减 10。
+// ↑/↓ 读的是 fieldValue：点进框时值被清空挪进了灰字（见 bindTextField），
+// 直接读 .value 会从 0 开始跳，读原值才是接着刚才那个数微调
 [moveXInput, moveYInput].forEach((input) => {
-  const clearZero = () => { if (parseDistance(input.value) === 0) input.value = ''; };
-  input.addEventListener('focus', clearZero);
-  input.addEventListener('focusin', clearZero);
-});
-
-// X/Y 距离框的键盘操作：Enter 直接执行一次移动；↑/↓ 加减 1，Shift 时加减 10
-[moveXInput, moveYInput].forEach((input) => {
-  const pillsId = input === moveXInput ? 'moveXDirPills' : 'moveYDirPills';
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); doMove(); return; }
     if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
     e.preventDefault();
-    const cur = parseDistance(input.value);
+    const cur = parseDistance(fieldValue(input));
     if (cur === null) return;
-    // 减到负数不是错：交给 readMoveField 里的 applySign 翻方向，5 再往下减就成了「反方向 5」
+    // 减到负数不是错：交给 readMoveDelta 里的 planMove 翻那一轴，5 再往下减就成了「反方向 5」
     input.value = formatDist(nudgeValue(cur, e.key === 'ArrowUp', e.shiftKey));
-    readMoveField(input, pillsId);
+    readMoveDelta();
   });
 });
 
-// 方向记忆：只记方向，距离不记 —— 每次打开面板两个距离框都是空的（空 = 该轴不动）。
-// 面板打开期间输入的值会留在框里，所以连点「移动」可以按同一距离累加。
-setPillActive('moveXDirPills', 'data-dir', prefGet('move.xDir', 'right'));
-setPillActive('moveYDirPills', 'data-dir', prefGet('move.yDir', 'down'));
-bindPillGroup('moveXDirPills', 'data-dir', (d) => prefSet('move.xDir', d));
-bindPillGroup('moveYDirPills', 'data-dir', (d) => prefSet('move.yDir', d));
+// 方向记忆：只记方向，距离不记 —— 每次打开面板两个距离框都是空的（空 = 不动）。
+// 面板打开期间输入的值会留在框里，所以连点按钮可以按同一距离累加。
+// 「复制移动」故意不记忆：它会凭空多出图层，每次打开都从关着开始更稳妥。
+setPillActive('moveDirPills', 'data-dir', prefGet('move.dir', 'right'));
+bindPillGroup('moveDirPills', 'data-dir', (d) => { prefSet('move.dir', d); refreshMoveRows(); });
+setupSwitch('moveCopy', false, refreshMoveBtns);
+refreshMoveRows();
+// 平移从「批量处理」页拆出来独立成页后，旧版按轴分开记的方向没有对应控件了，清掉
+try { localStorage.removeItem('move.xDir'); localStorage.removeItem('move.yDir'); } catch { /* 不支持则算了 */ }
 
 // ---- 快速绘制表格：按行列与尺寸生成可继续编辑的矢量形状网格 ----
 // 全部几何在 lib/table-core.js（有单测），这里只做「读界面 → 调几何 → 交给 PS」。
@@ -1116,6 +1370,32 @@ let renameMode = 'replace';               // replace | new | prefix | suffix
 // 图层名进 innerHTML 前转义，防名字里的 <>& 被当标签
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
+// 预览行首的类型图标：组=文件夹，图层=图片框。一律内联净化 svg，不用位图
+// （位图多了会让 Photoshop 卡死闪退，真机踩过）；描边色写死在标记里，同面板里其它拼接 svg。
+const PV_ICO_GROUP = '<svg class="pv-ico" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">'
+  + '<g fill="none" stroke="#e8b45a" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">'
+  + '<path d="M18 102 V30 H52 L66 46 H110 V102 Z"/></g></svg>';
+const PV_ICO_LAYER = '<svg class="pv-ico" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">'
+  + '<g fill="none" stroke="#7fb2d8" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">'
+  + '<rect x="20" y="28" width="88" height="72" rx="8"/>'
+  + '<path d="M20 80 L46 56 L70 80"/><circle cx="86" cy="52" r="8"/></g></svg>';
+// 预览最多画这么多行：每行带图标后节点数翻几倍，UXP 下 DOM 一大就卡（同 SL_LIST_MAX 的道理）。
+// ⚠️ 只限制「画」，不限制「改」——runRename 自己重算一遍全量，超出的行照样会被改名。
+const PV_MAX = 300;
+/** 超出上限时补在末尾的说明；没超就是空串 */
+function pvMore(total) {
+  return total > PV_MAX
+    ? `<div class="pv-more">还有 ${total - PV_MAX} 项没画出来（只是预览省略，应用时同样生效）</div>`
+    : '';
+}
+
+/** 预览的一行：行首类型图标 + 文字。data-kind 给测试和样式用 */
+function pvRow(layer, inner) {
+  const isGroup = !!layer && layer.kind === 'group';
+  return `<div class="pv-row" data-kind="${isGroup ? 'group' : 'layer'}">`
+    + `${isGroup ? PV_ICO_GROUP : PV_ICO_LAYER}<span class="pv-txt">${inner}</span></div>`;
+}
+
 function readRenameCfg() {
   const active = (boxId, attr) => {
     const a = document.querySelector(`#${boxId} .pill.active`);
@@ -1124,11 +1404,11 @@ function readRenameCfg() {
   const toInt = (v, dflt) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : dflt; };
   return {
     mode: renameMode,
-    find: findInput.value,
-    template: templateInput.value,
+    find: fieldValue(findInput),
+    template: fieldValue(templateInput),
     counter: !!counterSwitchEl.checked,                      // 显式开关，不从模板猜
-    start: toInt(startInput.value, 1),
-    step: toInt(stepInput.value, 1),
+    start: toInt(fieldValue(startInput), 1),
+    step: toInt(fieldValue(stepInput), 1),
     digits: toInt(active('digitsPills', 'data-digits'), 1),   // 位数固定可选，默认 1 位（不补零）
   };
 }
@@ -1138,7 +1418,7 @@ function readRenameCfg() {
 // 兜底：itemIndex 读不到时按 doc.layers 遍历序（UXP 面板序，首个=最上）。
 // 组与它的子层同时在列时，组的 itemIndex 大于组内所有子层 → 降序排下来正好是
 // 「组名在前、组内的层紧随其后」，和面板上从上往下读的顺序一致。
-// @param {Array<object>} sel 作用对象（重命名传全部高亮项，建组传最外层项）
+// @param {Array<object>} sel 作用对象（重命名传真正点亮的那些，建组传最外层项）
 // @param {boolean} [forceUp] 显式指定方向（批量建组恒用 false=从上到下）；省略则读重命名页的方向 pill
 async function sortedByPanelOrder(sel, forceUp) {
   if (sel.length <= 1) return sel;
@@ -1168,27 +1448,37 @@ function updateRenameFields() {
   document.getElementById('counterBlock').style.display = counterSwitchEl.checked ? '' : 'none';
 }
 
-/** 入口那一行的当前选中数（弹窗里「只选这些 / 加入」之后也刷它） */
-function refreshTargetInfo() {
-  // 数的是全部高亮项：选了组又选了组里的层，两样都会被改名，就都得算进这个数
-  const n = allSelectedLayers().length;
-  document.getElementById('targetInfo').textContent = app.activeDocument
-    ? (n ? `已选中 ${n} 个图层/组` : '未选中图层或组')
-    : '未打开文档';
+// 选中数写在底部状态栏（顶部那一行已经撤掉）。数没变就不写：
+// 否则「完成：已重命名 N 个」这类结果提示会被紧随其后的一次预览刷新冲掉。
+// @param {number} count 这一次真会被改名的层数
+// @param {boolean} [force] 切到本页时强制写一次
+let lastRenameCount = -1;    // -1 = 还没记过；启动时的首次渲染只记数，把「插件已加载」留在状态栏
+function refreshRenameStatus(count, force) {
+  const first = lastRenameCount < 0;
+  const changed = count !== lastRenameCount;
+  lastRenameCount = count;
+  if (first && !force) return;
+  if (currentPage !== 'rename' || !(changed || force)) return;
+  if (!app.activeDocument) setStatus('请先打开一个 PSD 文档');
+  else if (!count) setStatus('未选中图层或组');
+  else setStatus(`已选中 ${count} 个图层/组`);
 }
 
 let renderSeq = 0;   // 连续输入时只保留最后一次异步渲染的结果
-async function renderRenamePreview() {
+// @param {boolean} [force] 进页时用：选中数没变也照样写一次状态栏
+async function renderRenamePreview(force) {
   const seq = ++renderSeq;
   updateRenameFields();
-  const layers = await sortedByPanelOrder(allSelectedLayers());
+  const layers = await sortedByPanelOrder(await trueSelectedLayers());
   if (seq !== renderSeq) return;                     // 已被更新的渲染取代
+  refreshRenameStatus(layers.length, force);
   if (!layers.length) { previewList.innerHTML = '<i>未选中图层或组</i>'; return; }
   const cfg = readRenameCfg();
   // 必填输入为空：预览退化为原名（替换模式要填查找，其它模式要填模板）
   const inputReady = cfg.mode === 'replace' ? !!cfg.find : !!cfg.template;
   if (!inputReady) {
-    previewList.innerHTML = layers.map((l) => `<div>${esc(l.name)}</div>`).join('');
+    previewList.innerHTML = layers.slice(0, PV_MAX).map((l) => pvRow(l, esc(l.name))).join('')
+      + pvMore(layers.length);
     return;
   }
   const rows = buildRenameRows(layers.map((l) => l.name), cfg);
@@ -1196,14 +1486,15 @@ async function renderRenamePreview() {
   const hint = cfg.counter && cfg.template && !hasCounter(cfg.template)
     ? '<i>已开启数字编号，但模板里没有独立的 n（Button/Icon 里的 n 不算），编号不会出现</i>'
     : '';
-  previewList.innerHTML = hint + rows.map((r) => r.unmatched
-    ? `<div>${esc(r.from)} <span class="dup">未找到「${esc(cfg.find)}」</span></div>`
-    : `<div>${esc(r.from)} &nbsp;→&nbsp; <b>${esc(r.to)}</b>${r.dup ? ' <span class="dup">⚠同名</span>' : ''}</div>`
-  ).join('');
+  // rows 由 layers.map(名字) 得来，下标与 layers 一一对应 → 图标取 layers[i] 的类型
+  previewList.innerHTML = hint + rows.slice(0, PV_MAX).map((r, i) => pvRow(layers[i], r.unmatched
+    ? `${esc(r.from)} <span class="dup">未找到「${esc(cfg.find)}」</span>`
+    : `${esc(r.from)} &nbsp;→&nbsp; <b>${esc(r.to)}</b>${r.dup ? ' <span class="dup">⚠同名</span>' : ''}`
+  )).join('') + pvMore(rows.length);
 }
 
 async function runRename() {
-  const layers = await sortedByPanelOrder(allSelectedLayers());
+  const layers = await sortedByPanelOrder(await trueSelectedLayers());
   if (!layers.length) return setStatus('请先选择需要重命名的图层');
   const cfg = readRenameCfg();
   if (cfg.mode === 'replace' && !cfg.find) return setStatus('请输入查找内容');
@@ -1243,6 +1534,8 @@ bindPillGroup('renameModePills', 'data-mode', (m) => { renameMode = m; renderRen
 bindPillGroup('digitsPills', 'data-digits', () => renderRenamePreview());
 bindPillGroup('dirPills', 'data-dir', () => renderRenamePreview());
 setupSwitch('counterSwitch', false, () => renderRenamePreview());   // 编号开关：默认关
+// 「连组内图层一起改」开关已删（改名只认真正点亮的项），清掉旧版留下的记忆
+try { localStorage.removeItem('rename.deep'); } catch { /* 不支持则忽略 */ }
 
 // 输入即时预览；聚焦时也刷新一次
 findInput.addEventListener('input', renderRenamePreview);
@@ -1299,7 +1592,7 @@ const SCOPE_LABEL = { doc: '整个文档', sel: '已选中的组内' };
 function readSearchCfg() {
   const scope = activePill('slScopePills', 'data-scope') === 'sel' ? 'sel' : 'doc';
   return {
-    text: slFindInput.value,
+    text: fieldValue(slFindInput),
     mode: activePill('slMatchPills', 'data-match') || 'contains',
     caseSensitive: pillOn('slFlagPills', 'data-flag', 'case'),
     includeHidden: pillOn('slFlagPills', 'data-flag', 'hidden'),
@@ -1375,7 +1668,7 @@ function renderSearchList(hint) {
   // 找到多少、勾了多少写在同一行（原来另起一行拆图层/组/隐藏，信息密度不值那一行高度）
   slCountEl.textContent = n
     ? `搜索结果（找到 ${n} 项，已勾选 ${picked.length} 项）`
-    : (slFindInput.value ? '没有名称匹配的图层' : '输入查找内容后显示结果');
+    : (fieldValue(slFindInput) ? '没有名称匹配的图层' : '输入查找内容后显示结果');
 
   const addBtn = document.getElementById('slAddBtn');
   addBtn.textContent = slEditing === null
@@ -1452,7 +1745,7 @@ function addSearchToList() {
   slEditing = null;
   slResults = [];
   slChecked = new Set();
-  slFindInput.value = '';
+  fieldClear(slFindInput);
   setSearchView('list');
 }
 
@@ -1515,7 +1808,9 @@ function renderPreview() {
   const rows = slPreviewRows();
   document.getElementById('slPrevHead').textContent = `全部匹配结果预览（共 ${rows.length} 项）`;
   const ok = document.getElementById('slOkBtn');
-  ok.textContent = rows.length ? `确认（选中 ${rows.length} 项）` : '确认';
+  // 按钮上只写「确认」：选中数已经写在上面那行「全部匹配结果预览（共 N 项）」里，
+  // 再塞进按钮会把它撑长、在窄面板里被截成「确认（选中 160…」
+  ok.textContent = '确认';
   ok.classList.toggle('btn-off', !rows.length);
   document.getElementById('slPrevAllBtn').classList.toggle('btn-off', !slGroups.length);
   if (!rows.length) {
@@ -1576,7 +1871,7 @@ slGroupEl.addEventListener('click', (e) => {
     if (g.checked.has(id)) g.checked.delete(id); else g.checked.add(id);
   } else if (kind === 'edit') {
     slEditing = g.id;
-    slFindInput.value = g.cfg.text;
+    fieldSet(slFindInput, g.cfg.text);
     setPillActive('slMatchPills', 'data-match', g.cfg.mode);
     setPillActive('slScopePills', 'data-scope', g.cfg.scope);
     setPillActive('slKindPills', 'data-kind', g.cfg.kind);
@@ -1609,7 +1904,7 @@ function openSearchDialog() {
   slResults = [];
   slChecked = new Set();
   slEditing = null;
-  slFindInput.value = '';
+  fieldClear(slFindInput);
   setPillOn('slFlagPills', 'data-flag', 'hidden', true);   // 含隐藏图层：每次打开都回到默认勾选
   // UXP 已知问题：文字编辑控件恒绘制在所有 DOM 之上，浮层出现时必须把页面上的
   // 输入框藏起来，否则「查找内容 / 替换为」那几个框会压在弹窗上面
@@ -1640,8 +1935,8 @@ async function applySearchSelection() {
   if (!ids.length) return setStatus('选中的图层都已不存在，请重新查找');
   const n = await selectLayersById(ids);
   closeSearchDialog();
-  refreshTargetInfo();
-  renderRenamePreview();
+  // 先等预览刷完（它会把新的选中数写进状态栏），再写这条更详细的，免得被它盖掉
+  await renderRenamePreview();
   const parts = [`已选中 ${n} 个图层/组（可继续用鼠标增减）`];
   if (gone) parts.push(`${gone} 个已不存在，已跳过`);
   setStatus(parts.join('，'));
@@ -1665,7 +1960,7 @@ slFindInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); runSearch(); }
 });
 document.getElementById('slFindClear').addEventListener('click', () => {
-  slFindInput.value = '';
+  fieldClear(slFindInput);
   runSearch();
   try { slFindInput.focus(); } catch { /* 忽略 */ }
 });
@@ -1686,7 +1981,7 @@ document.getElementById('slBackBtn').addEventListener('click', () => {
 // 查找项视图：继续添加 / 清空全部 / 预览全选
 document.getElementById('slMoreBtn').addEventListener('click', () => {
   slEditing = null;
-  slFindInput.value = '';
+  fieldClear(slFindInput);
   setSearchView('search');
 });
 document.getElementById('slClearBtn').addEventListener('click', () => {
@@ -1725,7 +2020,10 @@ for (const k of ['rename.f.bg', 'rename.f.hidden']) {
 (async () => {
   try {
     await action.addNotificationListener(['select'], () => {
-      renderRenamePreview(); refreshTargetInfo(); refreshLayoutBtn(); refreshMoveBtns();
+      renderRenamePreview(); refreshLayoutBtn(); refreshMoveBtns();
+      // 参考线没有自己的通知（用户随手拖一条不会通知插件），借这一下顺手重读；
+      // 真正为准的那次读取在点「按参考线分割」的当口
+      if (currentPage === 'split') refreshGuideSplitInfo();
       // 正停在查找视图、且范围是「已选中的组内」：范围变了才重查（否则白白把勾选打回全勾）
       if (slOpen && slView === 'search' && activePill('slScopePills', 'data-scope') === 'sel') {
         runSearch();
@@ -1790,6 +2088,7 @@ setupSwitch('includeHidden', true);
 setupSwitch('fullBleed', true);
 setupSwitch('selectedOnly', false);
 setupSwitch('splitMerge', false);
+setupSwitch('gsMerged', false);                  // 参考线分割：默认只切选中的那一个对象
 
 // ---- 功能页切换：四张磁贴各对应一个功能页 ----
 const tiles = Array.from(document.querySelectorAll('.tile'));
@@ -1802,24 +2101,31 @@ function switchPage(name) {
   tiles.forEach(t => t.classList.toggle('active', t.getAttribute('data-page') === name));
   show('sliceModeCard', name === 'slice');
   show('projectCard', name === 'slice');       // 项目名称只有切图页用得上（导出名前缀）
-  show('splitIntro', name === 'split');
+  show('splitPage', name === 'split');           // 智能分割 + 参考线分割同页并列
   show('batchPage', name === 'batch');           // 转智能对象 + 新建独立组同页并列
   show('exportConfig', name === 'slice');
   show('renamePage', name === 'rename');
+  show('movePage', name === 'move');             // 快速平移：八方向九宫格 + 复制移动
   show('layoutPage', name === 'layout');
   show('tablePage', name === 'table');
   show('guidePage', name === 'guide');
+  show('resizePage', name === 'resize');   // 批量改尺寸：四步向导
   show('sliceBtn', name === 'slice');
   show('renameBtn', name === 'rename');
-  show('splitBtn', name === 'split');
   show('layoutBtn', name === 'layout');
+  // 分割页的两个主按钮在 #splitPage 内部，随页一起显隐，不在这里单独控制
   hideAllTips();                                 // 切页时收起可能还开着的说明气泡
   refreshLayoutBtn(true);                        // 进排版页时按当前选中数决定按钮可用性与提示
   refreshMoveBtns();
+  // 进重命名页：把当前选中数写进状态栏（初始化时这一次会被文件末尾的初始渲染顶掉，
+  // renderSeq 会让它在写状态栏之前就退出，「插件已加载」因此留得住）
+  if (name === 'rename') renderRenamePreview(true);
   // 参考线页的状态（画布尺寸、显隐/锁定）进页时现读一次。
   // 只在 name==='guide' 时调用：初始化时的 switchPage('rename') 早于参考线那一块的
   // 定义，提前进去会撞上 const 的暂时性死区
   if (name === 'guide') { refreshGuideDocState(); refreshGuideMenuState(); }
+  if (name === 'split') refreshGuideSplitInfo();   // 参考线分割：进页现读一次「切出几块」
+  if (name === 'resize') rzShowStep();             // 改尺寸：回到上次停留的那一步
 }
 bindPillGroup('sliceModePills', 'data-slicemode', (m) => { sliceMode = m; });
 
@@ -1830,14 +2136,17 @@ function hideAllTips() {
   allTips.forEach((t) => { t.style.display = 'none'; });
   setTipMaskedFields(false);         // 浮层收起 / 切页：恢复被藏起来的输入框
 }
-/** 把一段说明挂到某个锚点元素的悬停上 */
+/**
+ * 把一段说明挂到某个锚点元素的悬停上。
+ * html 也可以传函数 —— 悬停那一刻才算内容（「输出位置」要报当前是哪种状态）。
+ */
 function bindTip(anchor, tipEl, html) {
   if (!anchor || !tipEl) return;
   allTips.push(tipEl);
   // UXP 对 mouseenter/mouseleave 支持不一致，用会冒泡的 mouseover/mouseout（重复触发也幂等）
   anchor.addEventListener('mouseover', () => {
     hideAllTips();
-    tipEl.innerHTML = html;
+    tipEl.innerHTML = typeof html === 'function' ? html() : html;
     tipEl.style.display = 'block';
     setTipMaskedFields(true);        // 必须在 hideAllTips 之后：那一步会把输入框放回来
   });
@@ -1847,7 +2156,7 @@ function bindTip(anchor, tipEl, html) {
 // 切图方式：两个 pill 各自的说明（原来的两张说明卡片已移除）
 const modeTip = document.getElementById('modeTip');
 const MODE_TIP = {
-  all: '<b class="tip-title">完整切图</b>图层 / 组标记为<b class="tag-red">红色</b>：不切图；<br>图层 / 组标记为<b class="tag-blue">蓝色</b>：合并切图；<br>导出名称格式：「项目名称_组名_[组名…]_图层名称」；<br>名称含中文时，自动取每个字的拼音首字母组合成名称。',
+  all: '<b class="tip-title">完整切图</b>图层 / 组标记为<b class="tag-red">红色</b>：不切图；<br>图层 / 组标记为<b class="tag-blue">蓝色</b>：合并切图；<br>导出名称格式：「项目名称_组名_[组名…]_图层名称」；<br>图层名里的<b>英文 / 数字 / 下划线原样保留</b>（大小写不动）；<br>中文自动取每个字的拼音首字母，空格与其它符号删除。',
   symbols: '<b class="tip-title">Symbols 切图</b>每个图标组需添加一个名为「定位格」的参考图层，并按定位格摆放图标。导出时以定位格为基准：未超出则按定位格尺寸导出；超出则自动补足空白像素，确保图标居中。「定位格」不参与切图，隐藏后仍可识别。',
 };
 Array.from(document.querySelectorAll('#sliceModePills .pill')).forEach((p) => {
@@ -1857,6 +2166,18 @@ Array.from(document.querySelectorAll('#sliceModePills .pill')).forEach((p) => {
 // 智能分割 / 批量处理：说明挂在各自标题后的问号图标上
 bindTip(document.getElementById('splitInfo'), document.getElementById('splitTip'),
   '在图层面板<b>选中一个像素图层</b>（如拼合的素材图 / 多元素图层），插件自动识别其中<b>互不相连的内容块</b>，把每一块复制成<b>独立图层</b>（按从上到下、每行从左到右的顺序，依次命名为 0、1、2…）。<br>开启<b>保持元素完整</b>：同一元素内部断开的笔画 / 描边会并回同一图层（合并距离按本图自适应推导），规则排列的字符表 / 雪碧图则自动识别为网格、按格拆分不做合并。<br>关闭时严格按像素是否相连拆分——字母 i 的点会单独成一层。<br>原图层保持不变，可放心撤销。');
+bindTip(document.getElementById('rzInfo'), document.getElementById('rzTip'),
+  '把一批图片统一改成同一套尺寸：<b>选图片 → 设尺寸 → 设输出 → 开始处理</b>四步走完即可。<br>'
+  + '来源可以是<b>当前文档、多选的图片文件、整个文件夹</b>（可含子文件夹）。<br>'
+  + '<b>默认不改原文件</b>：一律另存到新位置；来源是当前文档时先复制一份再动手，原文档一个像素都不碰。<br>'
+  + '<b>小图会放大到目标尺寸</b>，但默认不让图变形（要变形得自己选「拉伸」）。<br>'
+  + '单张失败不会中断整批 —— 跑完在「失败记录」里看原因。')
+bindTip(document.getElementById('gsInfo'), document.getElementById('gsTip'),
+  '用<b>当前文档里已有的参考线</b>把内容切成网格，每一格复制成一个<b>独立图层</b>（参考线是手拖的还是版面生成的都行）。<br>'
+  + '<b>画布边缘算作边界</b>：3 条竖线 = 4 列；只拖竖线就切成整条的列。<br>'
+  + '整格没有内容的<b>自动跳过</b>，切出来的图层按 0、1、2… 依次编号（从上到下、每行从左到右），并统一放进一个新组。<br>'
+  + '默认切<b>选中的那一个图层 / 组</b>（文字 / 形状 / 智能对象也可以，切片是像素）；开启<b>合并可见内容</b>则不看选中，把整张可见画面拍平后切。<br>'
+  + '原对象保持不变，可以撤销（块数多时可能要多按几次 Ctrl+Z）。');
 bindTip(document.getElementById('smartObjInfo'), document.getElementById('smartObjTip'),
   '选中一个或多个图层，点击后<b>逐个</b>转换为<b>独立智能对象</b>——绝不把多个图层合并进同一个智能对象。<br>已是智能对象的图层自动跳过；图层名称、顺序、位置、所在图层组与视觉效果保持不变；整个批量操作在历史记录中为一步，可一次撤销。');
 bindTip(document.getElementById('groupInfo'), document.getElementById('groupTip'),
@@ -1864,9 +2185,11 @@ bindTip(document.getElementById('groupInfo'), document.getElementById('groupTip'
 bindTip(document.getElementById('layoutInfo'), document.getElementById('layoutTip'),
   '在图层面板<b>选中 2 个以上</b>的图层 / 组 / 文字 / 形状 / 智能对象，点击后按<b>横向</b>或<b>竖向</b>自动排成一排：<br>顺序<b>不看图层面板</b>，而是按对象当前在画布中的实际位置——横排先从上到下识别「行」、行内从左到右；竖排先从左到右识别「列」、列内从上到下。<br><b>间距是相邻两个对象真实边缘之间的距离</b>（不是中心距），带投影/外发光的图层按主体边界算。<br>排序后的第一个对象作为<b>锚点保持原位</b>，其余依次贴过去，整批版面不会漂走。<br>只改位置：不栅格化、不合并、不改图层类型 / 尺寸 / 层级 / 组内结构，图层组整体移动。隐藏图层若被选中也参与排版并保持隐藏；<b>锁定图层会中止排版</b>并提示解锁（插件不擅自解锁）。<br>开启「自动扩展画布」后，只向真正超出的方向扩出透明画布并留出「画布边距」；整个操作在历史记录中为一步，可一次撤销。');
 bindTip(document.getElementById('moveInfo'), document.getElementById('moveTip'),
-  '选中一个或多个图层 / 组，填方向与距离 → 所有对象<b>按同一偏移整体平移</b>，相对位置不变（相对位移，不是坐标）。<br>'
-  + '距离<b>留空＝0</b>（该轴不动），填<b>负数</b>自动翻转方向；框内 <b>Enter</b> 执行，<b>↑/↓</b> ±1px、<b>Shift+↑/↓</b> ±10px。<br>'
+  '选中一个或多个图层 / 组，在九宫格里点一个方向、填上距离 → 所有对象<b>按同一偏移整体平移</b>，相对位置不变（相对位移，不是坐标）。<br>'
+  + '<b>上下左右</b>只要填一个距离；<b>四个斜角</b>要填水平、垂直两个（用不到的那一行会自己收起来）。<br>'
+  + '距离<b>留空＝0</b>，填<b>负数</b>自动翻到对面那个方向；框内 <b>Enter</b> 执行，<b>↑/↓</b> ±1px、<b>Shift+↑/↓</b> ±10px。<br>'
   + '数值不清零，连点即按同一距离<b>累加</b>。<br>'
+  + '开<b>复制移动</b>则原对象留在原位，移动的是新复制出来的那一份（副本留在选中状态，可以接着再挪）。<br>'
   + '选中父组和它的子层时只移动父组（不会走双倍）；锁定层与背景层跳过。可移到画布外，画布尺寸不变；每次一步可撤销。');
 
 bindTip(document.getElementById('tableInfo'), document.getElementById('tableTip'),
@@ -1906,6 +2229,7 @@ function bindDropdown(ddId, valueId, onPick) {
     item.classList.add('active');
     valueEl.textContent = item.textContent;
     dd.classList.remove('open');
+    setDdMaskedFields(false);
     ddItemClicked = true;
     if (onPick) onPick(item);
   }));
@@ -1914,11 +2238,12 @@ function bindDropdown(ddId, valueId, onPick) {
     if (ddItemClicked) { ddItemClicked = false; return; }   // 选项已处理，别再切换开合
     const wasOpen = dd.classList.contains('open');
     closeAllDropdowns();
-    if (!wasOpen) dd.classList.add('open');
+    if (!wasOpen) { dd.classList.add('open'); setDdMaskedFields(true); }
   });
 }
 function closeAllDropdowns() {
   Array.from(document.querySelectorAll('.dropdown')).forEach((d) => d.classList.remove('open'));
+  setDdMaskedFields(false);          // 菜单都收了，把躲开的输入框放回来
 }
 /** 按 data 属性把下拉恢复到某一项（跨会话记忆的初值靠它落地） */
 function setDropdownValue(ddId, valueId, attr, value) {
@@ -2060,7 +2385,7 @@ function bindDropdownBox(ddId) {
     if (ddItemClicked) { ddItemClicked = false; return; }   // 选项已处理，别再切换开合
     const wasOpen = dd.classList.contains('open');
     closeAllDropdowns();
-    if (!wasOpen) dd.classList.add('open');
+    if (!wasOpen) { dd.classList.add('open'); setDdMaskedFields(true); }
   });
 }
 
@@ -2496,7 +2821,7 @@ function bindGuideLayoutEvent() {
 function askGuideName(title, dflt) {
   document.getElementById('gdNameTitle').textContent = title;
   const inp = document.getElementById('gdNameInput');
-  inp.value = dflt || '';
+  fieldSet(inp, dflt);
   showOverlay('gdNameOverlay', true);
   return new Promise((res) => { gdNameDecider = res; });
 }
@@ -2601,16 +2926,17 @@ Array.from(document.querySelectorAll('#gdClearDd .dd-item')).forEach((item) => {
   item.addEventListener('click', () => {
     ddItemClicked = true;
     document.getElementById('gdClearDd').classList.remove('open');
+    setDdMaskedFields(false);
     runClearGuides(item.getAttribute('data-clear'));
   });
 });
 document.getElementById('gdNameOk').onclick = () =>
-  resolveGuideName(document.getElementById('gdNameInput').value);
+  resolveGuideName(fieldValue(document.getElementById('gdNameInput')));
 document.getElementById('gdNameCancel').onclick = () => resolveGuideName(null);
 document.getElementById('gdNameInput').addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') return;
   if (e.preventDefault) e.preventDefault();
-  resolveGuideName(document.getElementById('gdNameInput').value);
+  resolveGuideName(fieldValue(document.getElementById('gdNameInput')));
 });
 
 // 「清空历史」在最近使用弹窗底部；确认框叠在列表弹窗之上，确认完列表就地刷新成空态
@@ -2647,14 +2973,1082 @@ refreshGuideDocState();
 // 取消全由 Photoshop 管，关掉弹窗文档里什么都不留。插件只做它做得好的部分——
 // 把建过的版面记下来，下次一键重放。
 
+// ---- 批量改尺寸：四步向导（选择图片 → 尺寸设置 → 输出设置 → 开始处理）----
+//
+// 分工：**策略全在这里**（来源怎么收、名字怎么起、同名怎么办、往哪个文件夹写），
+//   机制在 src/ps/resizer.js（打开 → 改 → 存 → 关），算式在 src/lib/resize-core.js（已单测）。
+//
+// 「保存位置」为什么会随来源置灰：UXP 的文件权限是按【用户亲手选中的入口】授予的。
+//   选文件夹时插件手里有根目录入口，「原文件所在位置」直接就能写；
+//   多选图片时只有文件入口，父目录靠 getEntryWithUrl 反查（需要 manifest 的
+//   localFileSystem: fullAccess，已声明）—— 先探一次，真拿不到才要求改用「指定文件夹」；
+//   来源是当前文档时根本没有磁盘入口，只能写到指定文件夹。
+
+const RZ_STEPS = 4;
+const RZ_PRESET_KEY = 'rz.presets';
+// 内置预设：只覆盖最常用的几套，用户自己存的排在后面
+const RZ_BUILTIN = [
+  { name: '1920 × 1080', builtin: true, cfg: { mode: 'wh', width: 1920, height: 1080, fit: 'contain' } },
+  { name: '1080 × 1080', builtin: true, cfg: { mode: 'wh', width: 1080, height: 1080, fit: 'cover' } },
+  { name: '1024 × 1024', builtin: true, cfg: { mode: 'wh', width: 1024, height: 1024, fit: 'contain' } },
+  { name: '512 × 512', builtin: true, cfg: { mode: 'wh', width: 512, height: 512, fit: 'contain' } },
+  { name: '最长边 2048', builtin: true, cfg: { mode: 'long', edge: 2048 } },
+  { name: '缩放 50%', builtin: true, cfg: { mode: 'percent', percent: 50 } },
+];
+const RZ_MODE_NAME = {
+  wh: '固定宽高', w: '固定宽度', h: '固定高度', long: '最长边',
+  short: '最短边', percent: '百分比缩放', times: '尺寸倍数', max: '最大尺寸限制',
+};
+const RZ_FIT_NAME = { contain: '等比适应', cover: '等比填充', stretch: '拉伸', scale: '仅缩放' };
+const RZ_FIT_HINT = {
+  contain: '图完整装进目标框，剩下的空白按填充色补齐。',
+  cover: '图放大到铺满目标框，超出的部分按锚点裁掉。',
+  stretch: '⚠ 强行拉成目标尺寸，不保持比例 —— 图会变形。',
+  scale: '图缩进目标框内，画布跟着图走，不补边也不裁切。',
+};
+// 四种适应方式的说明都收进标题后的问号浮层：写成一行一句会把这一页顶得很长，
+// 而只显示「当前那一种」的旧写法等于要用户逐个点一遍才能比较。
+const RZ_FIT_TIP = FITS.map((k) => `<b>${RZ_FIT_NAME[k]}</b>：${RZ_FIT_HINT[k]}`).join('<br>');
+// 「位置」这一个控件的两种状态，说明和「现在输出到哪儿」都收进「输出设置」标题后面那个问号里
+// （页面上原来还有一行提示，跟这段话重了一半，撤了）
+const RZ_DEST_TIP = '<b>位置留空（默认）</b>：存回<b>原文件所在位置</b> —— 每张图写回它自己所在的'
+  + '那个文件夹，不新建目录。同名会把原图盖掉，建议配合「添加后缀」，'
+  + '或把「同名文件」设为自动重命名。<br>'
+  + '<b>点文件夹图标</b>：改成<b>指定文件夹</b>，所有图都存到你选的那一个目录'
+  + '（来源是「当前文档」时只能用这个）；来源是文件夹时可以再开「保持原文件夹结构」。';
+const RZ_SKIP_TEXT = { small: '小图跳过', same: '尺寸没变化', exists: '同名跳过', invalid: '读不到尺寸' };
+
+let rzStep = 1;
+let rzSrc = 'files';                // doc | files | folder（默认「选择图片」，见 index.html 里那一排 pill）
+let rzMode = 'wh';
+let rzAnchor = 'cm';
+let rzFill = 'none';                // none | fff | 000 | custom
+let rzFillHex = '#ffffff';
+let rzFmt = 'same';
+let rzNameMode = 'keep';            // keep | suffix | tpl
+let rzDup = 'rename';               // rename | overwrite | skip
+let rzFiles = [];                   // [{entry, relDir, name}]
+let rzRoot = null;                  // 选中的文件夹入口（只有「选择文件夹」才有）
+let rzSkippedDirs = [];
+// 输出位置只有这一个状态：null = 原文件所在位置，有值 = 指定文件夹。
+// （原来另有一个 rzDest 的两选一，两处状态能互相说反话，撤了）
+let rzOutFolder = null;
+// 多尺寸列表，两种档混着放：{width,height} 固定宽高 / {times} 按原图倍率
+let rzSizes = [];
+let rzRunning = false;
+let rzStopReq = false;
+let rzDone = false;                 // 这一批跑完了：主按钮变「返回」
+let rzDirty = false;                // 跑完之后又改了参数：主按钮变回「开始批量修改」
+let rzFails = [];
+let rzPresets = [];
+let rzCustomCfg = null;             // 套预设之前那套「自定义」参数（选回「自定义」时还原）
+let rzLastOut = null;               // 完成后「打开输出文件夹」用
+let rzNameDecider = null;
+const rzFolderCache = new Map();    // 目录路径 → 入口（避免反复 createFolder）
+const rzNamesCache = new Map();     // 目录 → 已有文件名集合（小写，含扩展名）
+
+const rzEl = (id) => document.getElementById(id);
+const rzChecked = (id) => !!(rzEl(id) && rzEl(id).checked);
+const rzVal = (id) => fieldValue(rzEl(id)).trim();
+const rzMultiOn = () => rzChecked('rzMulti') && rzMode === 'wh';
+const rzFolderKey = (f) => (f && (f.nativePath || f.name)) || '?';
+
+/**
+ * 面板上的参数 → resize-core 的 cfg。
+ *
+ * small 恒为 'up'：小图一律放大到目标尺寸。面板上原来有「不放大 / 放大 / 跳过」三选一，
+ * 实际用起来只会让人困惑（选了 1024 却输出 512），所以入口撤掉、只留「放大到目标」这一种
+ * 行为；resize-core 里另两档仍在（有单测），将来要放回来只是加个控件的事。
+ * padSmall / skipSame 同理：跟着「高级设置」一起撤了，恒取默认值 false。
+ */
+function rzCfg() {
+  return normalizeResizeCfg({
+    mode: rzMode,
+    fit: activePill('rzFitPills', 'data-fit') || 'contain',
+    small: 'up',
+    anchor: rzAnchor,
+    width: numOr(rzVal('rzW'), 1920),
+    height: numOr(rzVal('rzH'), 1080),
+    edge: numOr(rzVal('rzEdge'), 2048),
+    percent: numOr(rzVal('rzPercent'), 100),
+    times: numOr(rzVal('rzTimes'), 1),
+    maxW: numOr(rzVal('rzMaxW'), 2048),
+    maxH: numOr(rzVal('rzMaxH'), 2048),
+  });
+}
+
+const rzFillValue = () => (rzFill === 'none' ? null
+  : rzFill === 'fff' ? '#ffffff' : rzFill === '000' ? '#000000' : rzFillHex);
+
+// ---- 步骤导航 ----
+
+function rzShowStep() {
+  for (let i = 1; i <= RZ_STEPS; i++) show(`rzPane${i}`, i === rzStep);
+  Array.from(document.querySelectorAll('#rzSteps .rz-step')).forEach((s) => {
+    const n = parseInt(s.getAttribute('data-step'), 10);
+    s.classList.toggle('active', n === rzStep);
+    s.classList.toggle('done', n < rzStep);
+  });
+  show('rzPrevBtn', rzStep > 1 && !rzRunning);      // 处理中只留「停止处理」
+  show('rzNextBtn', rzStep < RZ_STEPS);
+  show('rzRunBtn', rzStep === RZ_STEPS);
+  if (rzStep === 1) rzSyncSrc();
+  if (rzStep === 2) rzSyncMode();
+  if (rzStep === 3) rzSyncOut();
+  if (rzStep === 4) {
+    // 跑完之后又回去改了参数 → 这一批的结果不作数了，主按钮变回「开始批量修改」
+    if (rzDone && rzDirty) rzClearDone();
+    rzSyncSummary();
+  }
+  rzSyncRunBtn();
+}
+
+/**
+ * 第 4 步主按钮的文字：跑着是「停止处理」，跑完是「返回」，其余是「开始批量修改」。
+ * 卡片标题跟着走：还没开跑是「准备就绪」（不是「开始处理」—— 那是步骤指示器上那一步的
+ * 名字，写在标题上会让人以为已经在跑了），跑着是「正在处理」，跑完是「处理完成 / 已停止」。
+ */
+function rzSyncRunBtn() {
+  const lbl = rzEl('rzRunBtn').querySelector('.btn-label');
+  if (lbl) lbl.textContent = rzRunning ? '停止处理' : rzDone ? '返回' : '开始批量修改';
+  rzEl('rzRunBtn').classList.toggle('slicing', rzRunning);
+  const title = rzEl('rzRunTitle');
+  if (title) {
+    title.textContent = rzRunning ? '正在处理'
+      : rzDone ? (rzStopReq ? '已停止' : '处理完成') : '准备就绪';
+  }
+}
+
+/** 收掉「已完成」这个状态：结果区清空，回到可以再跑一次的样子 */
+function rzClearDone() {
+  rzDone = false;
+  rzDirty = false;
+  rzStopReq = false;
+  rzStats(0, 0, 0);
+  rzEl('rzLog').innerHTML = '';
+  rzProgress(0, 0, '');              // total=0 → 进度条归零、文字回到「尚未开始」
+  show('rzDoneRow', false);
+  rzSyncRunBtn();
+}
+
+/** 往前走之前校验当前步；返回错误文案，null 表示通过 */
+async function rzValidate(step) {
+  if (step === 1) {
+    if (rzSrc === 'doc' && !app.activeDocument) return '当前没有打开的文档，请改选「选择图片 / 选择文件夹」。';
+    if ((rzSrc === 'files' || rzSrc === 'folder') && !rzFiles.length) return '还没有选到图片，点上面的按钮选一下。';
+    return null;
+  }
+  if (step === 2) {
+    const cfg = rzCfg();
+    for (const f of fieldsOfMode(cfg.mode)) {
+      if (!(cfg[f] > 0)) return '尺寸参数要填大于 0 的数值。';
+    }
+    if (rzMultiOn() && !rzSizes.length) return '开了多尺寸输出，但列表是空的 —— 先添加尺寸。';
+    return null;
+  }
+  if (step === 3) {
+    if (rzOutFolder) return null;                  // 指定了文件夹，没什么可拦的
+    if (rzSrc === 'doc') return '来源是当前文档，点「位置」的文件夹图标指定一个输出文件夹。';
+    if (rzSrc === 'files') {
+      // 多选图片 + 存回原位置：先探一次父目录拿不拿得到，拿不到就别让用户白跑一趟。
+      // 原因照原样带出来 —— 反查父目录靠 manifest 的 localFileSystem: "fullAccess"，
+      // 而权限是**装载插件时**读的：刚更新过插件、没重新加载，报的就是没权限那一类。
+      const { folder, reason } = await parentFolderOf(rzFiles[0] && rzFiles[0].entry);
+      if (!folder) return `定位不到原文件所在目录（${reason}），点「位置」的文件夹图标指定一个输出文件夹。`;
+    }
+    return null;
+  }
+  return null;
+}
+
+/**
+ * 换页。四步之间**随便切**，不设卡（哪一步都可能是回头补设置的）——
+ * 校验只在点「开始批量修改」时做一次，缺什么就跳到那一步说清楚（见 rzRun）。
+ * 处理中不许换页：那会儿的界面得盯着进度和「停止处理」。
+ */
+function rzGoStep(next) {
+  if (rzRunning) return;
+  rzStep = Math.min(RZ_STEPS, Math.max(1, next));
+  // 先清状态栏再换页：第 3 步的命名示例就写在状态栏里（rzRenderNameSample），
+  // 顺序反了会把刚写上去的示例又擦掉
+  setStatus('');
+  rzShowStep();
+}
+
+// ---- ① 图片来源 ----
+
+function rzSyncSrc() {
+  const isFolder = rzSrc === 'folder';
+  const isFiles = rzSrc === 'files';
+  show('rzPickRow', isFolder || isFiles);
+  show('rzRecursiveRow', isFolder);
+  const btn = rzEl('rzPickBtn');
+  if (btn) btn.textContent = isFolder ? '选择文件夹…' : '选择图片文件…';
+  rzRenderFileList();
+  const info = rzEl('rzSrcInfo');
+  if (!info) return;
+  if (rzSrc === 'doc') {
+    const d = app.activeDocument;
+    info.textContent = d ? `当前文档：${d.name}（${Math.round(d.width)} × ${Math.round(d.height)} px）` : '当前没有打开的文档。';
+  } else if (!rzFiles.length) {
+    info.textContent = isFolder ? '选一个文件夹，插件会扫描其中的图片。' : '可以一次选中多个图片文件。';
+  } else {
+    // 名字都在下面的清单里逐行列着，这一行只报数（和跳过的输出目录）
+    const dirs = rzSkippedDirs.length ? `\n已跳过输出目录：${rzSkippedDirs.join('、')}` : '';
+    info.textContent = `已选 ${rzFiles.length} 张：${dirs}`;
+  }
+}
+
+/**
+ * 已选清单：一行一个文件名，全都列出来 —— 一次只露 5 行，多的滚动看
+ * （限高在 CSS 的 .rz-file-list，盒子本身用的是 .preview 那套带滚动的样式）。
+ */
+function rzRenderFileList() {
+  const box = rzEl('rzFileList');
+  if (!box) return;
+  const listed = rzSrc !== 'doc' && rzFiles.length > 0;
+  box.innerHTML = listed
+    ? rzFiles.map((f) => `<div class="rz-file-row">${esc(ellipsizeName(f.name, 30))}</div>`).join('')
+    : '';
+  show('rzFileList', listed);
+}
+
+async function rzPick() {
+  if (rzRunning) return;
+  try {
+    if (rzSrc === 'folder') {
+      const f = await uxpFs.getFolder();
+      if (!f) return;
+      await rzScanFolder(f);
+    } else {
+      // ⚠️ 不传 types。真机反馈：带扩展名过滤时对话框里【一个图片都看不见】（文件夹里明明有）。
+      //    UXP 在 Windows 上对这个过滤器的处理不可靠，与其让人看着空文件夹发愣，不如全都列出来、
+      //    选完之后自己按扩展名筛（下面这一行 isSupportedImage 就是干这个的）。
+      const list = await uxpFs.getFileForOpening({ allowMultiple: true });
+      const arr = Array.isArray(list) ? list : (list ? [list] : []);
+      if (!arr.length) return;
+      rzRoot = null;
+      rzFiles = arr.filter((e) => isSupportedImage(e.name)).map((e) => ({ entry: e, relDir: '', name: e.name }));
+      rzSkippedDirs = [];
+      rzTouch();
+      const dropped = arr.length - rzFiles.length;
+      setStatus(`已选 ${rzFiles.length} 张图片`
+        + (dropped ? `（${dropped} 个不是支持的图片格式，已忽略）` : ''));
+    }
+  } catch { /* 用户取消：保持原状 */ }
+  rzSyncSrc();
+  rzSyncOut();
+}
+
+/**
+ * 扫描一个【已经选好】的文件夹。
+ * ⚠️ 单独抽出来是有原因的：「包含子文件夹」开关要重扫，但绝不能再弹一次文件夹选择框
+ *    （真机反馈的毛病 —— 原来它直接调 rzPick，开关按一下就冒出一个选择框）。
+ */
+async function rzScanFolder(folder) {
+  rzRoot = folder;
+  setStatus('正在扫描文件夹…');
+  // 输出目录要排除，否则第二遍会把上一遍的产物再处理一遍。已经选好「指定文件夹」
+  // 且它就在这个文件夹里面时，按名字排掉；没选就没什么可排的。
+  const { files, skippedDirs } = await collectImageFiles(folder, {
+    recursive: rzChecked('rzRecursive'),
+    excludeDirs: rzOutFolder && rzOutFolder.name ? [rzOutFolder.name] : [],
+  });
+  rzFiles = files;
+  rzSkippedDirs = skippedDirs;
+  rzTouch();
+  setStatus(files.length ? `扫描完成：${files.length} 张图片` : '这个文件夹里没有找到支持的图片格式。');
+}
+
+/** 清空第 1 步选好的图片（第 4 步点「返回」时归零，免得以为还是上一批） */
+function rzResetSource() {
+  rzFiles = [];
+  rzRoot = null;
+  rzSkippedDirs = [];
+  rzSyncSrc();
+  rzSyncOut();
+}
+
+// ---- ② 尺寸设置 ----
+
+function rzSyncMode() {
+  const fields = fieldsOfMode(rzMode);
+  // 宽和高在同一行：整行的显隐看「这个模式要不要宽或高」，两个格子再各自显隐
+  const wantW = fields.indexOf('width') >= 0;
+  const wantH = fields.indexOf('height') >= 0;
+  show('rzFieldWH', wantW || wantH);
+  show('rzCellW', wantW);
+  show('rzCellH', wantH);
+  show('rzFieldEdge', fields.indexOf('edge') >= 0);
+  show('rzFieldPercent', rzMode === 'percent');
+  show('rzPercentQuick', rzMode === 'percent');
+  show('rzFieldTimes', rzMode === 'times');
+  show('rzTimesQuick', rzMode === 'times');
+  show('rzFieldMaxW', rzMode === 'max');
+  show('rzFieldMaxH', rzMode === 'max');
+  const edgeLabel = rzEl('rzEdgeLabel');
+  if (edgeLabel) edgeLabel.textContent = rzMode === 'short' ? '最短边' : '最长边';
+
+  // 适应方式 / 锚点 / 填充只有「固定宽高」才谈得上
+  const fit = activePill('rzFitPills', 'data-fit') || 'contain';
+  show('rzFitBlock', rzMode === 'wh');
+  show('rzAnchorBlock', rzMode === 'wh' && fit !== 'scale' && fit !== 'stretch');
+  show('rzFillBlock', rzMode === 'wh' && fit === 'contain');
+  show('rzFillSwatch', rzFill === 'custom');
+
+  // 多尺寸只在固定宽高下可用（列表存的是宽×高对）
+  const multiRow = rzEl('rzMultiRow');
+  if (multiRow) multiRow.classList.toggle('row-off', rzMode !== 'wh');
+  show('rzMultiBox', rzMultiOn());
+  if (rzMultiOn()) rzPrefillAdd();
+  rzRenderSizes();
+  rzRenderPreview();
+}
+
+/** 多尺寸那两行的默认值：宽高带出上面填的那一档，倍率给个 1,2,3 —— 空着让人不知道该填什么。
+ *  注意两行各管各的：宽高那行是绝对尺寸，倍率那行按原图算，不拿这里的宽高当基准。 */
+function rzPrefillAdd() {
+  const cfg = rzCfg();
+  if (!rzVal('rzAddW') && rzEl('rzAddW')) rzEl('rzAddW').value = String(cfg.width);
+  if (!rzVal('rzAddH') && rzEl('rzAddH')) rzEl('rzAddH').value = String(cfg.height);
+  if (!rzVal('rzScales') && rzEl('rzScales')) rzEl('rzScales').value = '1,2,3';
+}
+
+function rzRenderSizes() {
+  const box = rzEl('rzSizeList');
+  if (!box) return;
+  box.innerHTML = rzSizes.length
+    ? rzSizes.map((s, i) => `<div class="rz-size"><span class="rz-size-t">${esc(sizeLabel(s))}</span>`
+      + `<span class="rz-size-del gd-mini" data-act="rz-del:${i}">✕</span></div>`).join('')
+    : '<div class="rz-empty">还没有添加尺寸。在下面填好宽高点「添加」，或者填倍率按原图的倍数加几档。</div>';
+  Array.from(document.querySelectorAll('#rzSizeList .gd-mini')).forEach((el) => {
+    const [, idx] = String(el.getAttribute('data-act') || '').split(':');
+    el.addEventListener('click', () => {
+      rzSizes.splice(parseInt(idx, 10), 1);
+      rzSaveMemory();
+      rzRenderSizes();
+      rzRenderPreview();
+    });
+  });
+}
+
+/** 标题行右侧的 before → after（有原始尺寸才显示） */
+function rzRenderPreview() {
+  const el = rzEl('rzPreviewInfo');
+  if (!el) return;
+  // 外部文件的像素尺寸不打开文档就是不知道，而为了显一行字去开文档不划算：
+  // 只有「当前文档」这个来源才显 before → after（它的尺寸现成就有）。
+  let src = null;
+  if (rzSrc === 'doc' && app.activeDocument) {
+    const d = app.activeDocument;
+    src = { width: Math.round(d.width), height: Math.round(d.height) };
+  }
+  if (!src) { el.textContent = ''; return; }
+  const cfg = rzCfg();
+  const size = rzMultiOn() && rzSizes.length ? rzSizes[0] : null;
+  const p = planResize(src, sizeCfg(cfg, size));
+  if (p.skip) { el.textContent = `${src.width}×${src.height} → ${RZ_SKIP_TEXT[p.skip] || '跳过'}`; return; }
+  const canvas = (p.canvas.width !== p.image.width || p.canvas.height !== p.image.height)
+    ? ` / 画布 ${p.canvas.width}×${p.canvas.height}` : '';
+  el.textContent = `${src.width}×${src.height} → ${p.image.width}×${p.image.height}${canvas}`;
+}
+
+// ---- ③ 输出设置 ----
+
+/** 悬停「输出设置」后面那个问号时才算：先报现在输出到哪儿，再讲两种状态各是什么意思 */
+function rzDestTipHtml() {
+  const now = rzOutFolder
+    ? `<b>现在：指定文件夹</b> —— ${esc(rzOutFolder.nativePath || rzOutFolder.name || '已选择')}`
+    : (rzSrc === 'doc'
+      ? '<b>现在：还没指定</b> —— 来源是当前文档，必须点文件夹图标选一个。'
+      : '<b>现在：原文件所在位置</b> —— 每张图存回它自己所在的那个文件夹。');
+  return `${now}<br>${RZ_DEST_TIP}`;
+}
+
+function rzSyncOut() {
+  // 「位置」按切图的导出设置那样做：没选就是每张图各自的原文件夹，选了就都存到那一个目录。
+  // 框内只够放缩略的文件夹名，所以选中后用名字顶掉图标；完整路径进问号浮层，页面上不再占一行。
+  const hasPick = !!rzOutFolder;
+  show('rzOutIco', !hasPick);
+  const text = rzEl('rzOutText');
+  if (text) text.textContent = hasPick ? (rzOutFolder.name || '已选择') : '';
+  show('rzOutText', hasPick);
+  show('rzOutReset', hasPick);
+  show('rzKeepTreeRow', rzSrc === 'folder' && hasPick);
+  show('rzQualityRow', rzFmt === 'jpg' || (rzFmt === 'webp' && !rzChecked('rzWebpLossless')));
+  show('rzWebpRow', rzFmt === 'webp');
+  show('rzSuffixRow', rzNameMode === 'suffix');
+  show('rzTplRow', rzNameMode === 'tpl');
+  rzRenderNameSample();
+}
+
+/**
+ * 命名示例。第 3 步里不再单占一行（那一行挤得放不下长名字），
+ * 改参数时直接报到底部状态栏 —— 只在停在第 3 步时写，免得盖掉别的页的提示。
+ */
+function rzRenderNameSample() {
+  const name = (rzFiles[0] && rzFiles[0].name)
+    || (app.activeDocument ? app.activeDocument.name : 'image.jpg');
+  const { base, ext } = splitName(name);
+  const outExt = extOf(rzFmt === 'same' ? (ext || 'png') : rzFmt);
+  const size = rzMultiOn() && rzSizes.length ? rzSizes[0] : null;
+  const cfg = rzCfg();
+  const p = planResize({ width: cfg.width, height: cfg.height }, sizeCfg(cfg, size));
+  const out = rzOutName(base, p, 0);
+  // 状态栏也只有一行，两边各自压成「头…尾」（真机上那些 40 多字的文件名整着拼就溢出了）
+  const text = `命名示例：${ellipsizeName(`${base}.${ext || 'jpg'}`, 16)} → ${ellipsizeName(`${out}.${outExt}`, 16)}`;
+  if (rzStep === 3) setStatus(text);
+  return text;
+}
+
+/** 一个输出文件的名字（不含扩展名）。多尺寸时保证名字里带尺寸，否则各档会互相覆盖 */
+function rzOutName(base, plan, index) {
+  const vars = {
+    name: base,
+    width: plan.canvas.width,
+    height: plan.canvas.height,
+    scale: formatScale(plan.scale),
+    index: index + 1,
+  };
+  let out;
+  if (rzNameMode === 'tpl') out = buildOutName(rzVal('rzTpl') || '{name}_{width}x{height}', vars);
+  else if (rzNameMode === 'suffix') out = base + (rzVal('rzSuffix') || '_resized');
+  else out = base;
+  if (rzMultiOn() && out.indexOf(String(vars.width)) < 0) out = `${out}_${vars.width}x${vars.height}`;
+  return sanitizeFileName(out);
+}
+
+async function rzPickOut() {
+  if (rzRunning) return;
+  try {
+    const f = await uxpFs.getFolder();
+    if (f) { rzOutFolder = f; rzTouch(); }
+  } catch { /* 取消 */ }
+  rzSyncOut();
+}
+
+/** 撤掉指定的输出文件夹 → 回到「存回原文件所在位置」这个默认 */
+function rzResetOut() {
+  if (rzRunning) return;
+  rzOutFolder = null;
+  rzTouch();
+  rzSyncOut();
+}
+
+// ---- ④ 汇总与执行 ----
+
+function rzSyncSummary() {
+  const el = rzEl('rzSummary');
+  if (!el) return;
+  const n = rzSrc === 'doc' ? (app.activeDocument ? 1 : 0) : rzFiles.length;
+  const sizes = rzMultiOn() && rzSizes.length ? rzSizes.length : 1;
+  const cfg = rzCfg();
+  const mode = RZ_MODE_NAME[cfg.mode] || cfg.mode;
+  const param = cfg.mode === 'wh' ? `${cfg.width}×${cfg.height}`
+    : cfg.mode === 'w' ? `宽 ${cfg.width}`
+      : cfg.mode === 'h' ? `高 ${cfg.height}`
+        : cfg.mode === 'percent' ? `${cfg.percent}%`
+          : cfg.mode === 'times' ? `${cfg.times}x`
+            : cfg.mode === 'max' ? `≤ ${cfg.maxW}×${cfg.maxH}` : `${cfg.edge}px`;
+  el.textContent = `共 ${n} 张图片 · ${mode} ${param}`
+    + (sizes > 1 ? ` · ${sizes} 档尺寸 → 预计输出 ${n * sizes} 个文件` : '')
+    + (rzSkippedDirs.length ? `\n已跳过输出目录：${rzSkippedDirs.join('、')}` : '');
+  const run = rzEl('rzRunInfo');
+  const d = rzSrc === 'doc' ? app.activeDocument : null;
+  if (run) run.textContent = d ? `${Math.round(d.width)}×${Math.round(d.height)}` : '';
+}
+
+function rzStats(ok, skip, fail) {
+  rzEl('rzOkN').textContent = String(ok);
+  rzEl('rzSkipN').textContent = String(skip);
+  rzEl('rzFailN').textContent = String(fail);
+}
+
+function rzProgress(done, total, name) {
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  const fill = rzEl('rzBarFill');
+  if (fill) fill.style.width = `${pct}%`;
+  const t = rzEl('rzProgText');
+  if (t) t.textContent = total ? `${done} / ${total}　${name || ''}` : '尚未开始';
+}
+
+function rzLogRow(name, results) {
+  const box = rzEl('rzLog');
+  if (!box) return;
+  const bad = results.filter((r) => r.status === 'fail');
+  const ok = results.filter((r) => r.status === 'ok').length;
+  const skipped = results.filter((r) => r.status === 'skip');
+  const state = bad.length ? `失败：${esc(bad[0].reason || '')}`
+    : ok ? `${ok} 个文件`
+      : (skipped[0] ? (RZ_SKIP_TEXT[skipped[0].reason] || '跳过') : '跳过');
+  const cls = bad.length ? 'rz-fail' : ok ? 'rz-ok' : 'rz-skip';
+  box.innerHTML += `<div class="rz-log-row"><span class="rz-log-n">${esc(name)}</span>`
+    + `<span class="rz-log-s ${cls}">${state}</span></div>`;
+}
+
+/** 目标目录：按「保存位置 + 保持结构」算，创建过的目录缓存起来 */
+async function rzTargetFolder(item) {
+  const keep = rzChecked('rzKeepTree');
+  const rel = keep ? (item.relDir || '') : '';
+  if (rzOutFolder) return rzSubFolder(rzOutFolder, rel);
+  // 「原文件所在位置」：文件夹来源手里有根目录入口，按相对路径下去就是原目录；
+  //   多选图片时只有文件入口，得反查它的父目录
+  if (rzSrc === 'folder' && rzRoot) return rzSubFolder(rzRoot, item.relDir || '');
+  const { folder, reason } = await parentFolderOf(item.entry);
+  if (!folder) throw new Error(`定位不到原文件所在目录（${reason}），点「位置」的文件夹图标指定一个输出文件夹`);
+  return folder;
+}
+
+/** 逐级取/建子目录（'a/b' → root/a/b） */
+async function rzSubFolder(root, rel) {
+  if (!root) throw new Error('没有可用的输出文件夹');
+  let cur = root;
+  let key = rzFolderKey(root);
+  for (const part of String(rel || '').split('/').filter(Boolean)) {
+    key += `/${part}`;
+    if (rzFolderCache.has(key)) { cur = rzFolderCache.get(key); continue; }
+    let next = null;
+    try { next = await cur.getEntry(part); } catch { next = null; }
+    if (!next || !next.isFolder) next = await cur.createFolder(part);
+    rzFolderCache.set(key, next);
+    cur = next;
+  }
+  return cur;
+}
+
+/** 某目录里已有的文件名（小写、含扩展名）；同名策略与本次运行内去重共用这一个集合 */
+async function rzNamesIn(folder) {
+  const key = rzFolderKey(folder);
+  if (rzNamesCache.has(key)) return rzNamesCache.get(key);
+  const set = new Set();
+  try {
+    for (const e of await folder.getEntries()) {
+      if (e.isFile) set.add(String(e.name).toLowerCase());
+    }
+  } catch { /* 读不到就当空目录：最坏结果是走覆盖 */ }
+  rzNamesCache.set(key, set);
+  return set;
+}
+
+/** resizer 的回调：这一档往哪儿写、叫什么名字；返回 null = 不输出 */
+async function rzResolve({ src, plan, index }) {
+  const folder = await rzTargetFolder(src);
+  // 「打开输出文件夹」要的就是这个入口。别指望 rzFolderCache —— 「原文件所在位置」+ 多选图片
+  // 那条路是反查父目录、根本不进缓存，所以真机上点了只会说「还没有产生输出文件夹」。
+  if (!rzLastOut) rzLastOut = folder;
+  const { base, ext } = splitName(src.name || 'image');
+  const fmt = rzFmt === 'same' ? (ext || 'png') : rzFmt;
+  const outExt = extOf(fmt);
+  const taken = await rzNamesIn(folder);
+  let name = rzOutName(base, plan, index);
+  if (taken.has(`${name}.${outExt}`.toLowerCase())) {
+    if (rzDup === 'skip') return null;
+    if (rzDup === 'rename') {
+      let i = 2;
+      while (taken.has(`${name}_${i}.${outExt}`.toLowerCase())) i++;
+      name = `${name}_${i}`;
+    }
+    // overwrite：用原名直接盖
+  }
+  taken.add(`${name}.${outExt}`.toLowerCase());     // 本次运行内也不许再撞
+  const q = Math.min(100, Math.max(1, numOr(rzVal('rzQuality'), 90)));
+  return {
+    folder,
+    fileName: name,
+    save: {
+      format: fmt,
+      jpgQuality: q,
+      webpLossless: rzChecked('rzWebpLossless'),
+      webpQuality: q,
+      overwrite: true,
+    },
+  };
+}
+
+/** 来源 → 待处理清单 */
+function rzBuildItems() {
+  if (rzSrc === 'doc') {
+    const d = app.activeDocument;
+    return d ? [{ kind: 'doc', docId: d.id, name: d.name, relDir: '' }] : [];
+  }
+  return rzFiles.map((f) => ({ kind: 'file', entry: f.entry, relDir: f.relDir, name: f.name }));
+}
+
+function rzSetRunning(on) {
+  rzRunning = on;
+  setTilesDisabled(on);
+  // 「停止处理」就是主按钮本身，而它和「上一步」同在 #rzNav 里 —— 整行不能藏，
+  // 只藏「上一步」（藏整行等于把停止键一起藏掉，处理中就停不下来了）
+  show('rzPrevBtn', !on);
+  rzSyncRunBtn();
+}
+
+async function rzRun() {
+  if (rzRunning) { rzStopReq = true; setStatus('已请求停止：当前这张处理完就停下，已经存好的文件都保留。'); return; }
+  // 唯一的关卡就在这儿：逐步查，缺东西就跳到那一步并报出「第几步 + 缺什么」
+  for (let s = 1; s <= 3; s++) {
+    const err = await rzValidate(s);
+    if (err) { rzStep = s; rzShowStep(); return setStatus(`第 ${s} 步：${err}`); }
+  }
+  const items = rzBuildItems();
+  if (!items.length) return setStatus('没有可处理的图片。');
+
+  await closeStrayResizeDocs();
+  rzStopReq = false;
+  rzFails = [];
+  rzLastOut = null;                  // 这一批实际写到哪儿，由 rzResolve 现场记下来
+  rzFolderCache.clear();
+  rzNamesCache.clear();
+  rzEl('rzLog').innerHTML = '';
+  rzStats(0, 0, 0);
+  rzDone = false;
+  rzDirty = false;
+  rzSetRunning(true);
+
+  const sizes = rzMultiOn() && rzSizes.length ? rzSizes.slice() : [null];
+  const cfg = rzCfg();
+  const t0 = Date.now();
+  let ok = 0; let skip = 0; let fail = 0; let done = 0;
+  let lastStep = '尚未开始';
+  try {
+    rzProgress(0, items.length, items[0].name);
+    for (const item of items) {
+      await tick();                                  // 让排队的「停止」点击先执行
+      if (rzStopReq) break;
+      rzProgress(done, items.length, item.name);
+      try {
+        const r = await processOne(item, {
+          sizes,
+          cfg,
+          interpolation: 'automaticInterpolation',   // 重采样算法的入口已去掉，交给 PS 自己挑
+          fillHex: rzFillValue(),
+          resolve: rzResolve,
+          onStep: (m) => { lastStep = m; },
+        });
+        for (const one of r.results) {
+          if (one.status === 'ok') ok++;
+          else if (one.status === 'skip') skip++;
+          else { fail++; rzFails.push({ name: item.name, reason: one.reason || '未知原因' }); }
+        }
+        rzLogRow(item.name, r.results);
+      } catch (e) {
+        fail++;
+        rzFails.push({ name: item.name, reason: errMsg(e) });
+        rzLogRow(item.name, [{ status: 'fail', reason: errMsg(e) }]);
+      }
+      done++;
+      rzStats(ok, skip, fail);
+      rzProgress(done, items.length, item.name);
+    }
+    const secs = Math.max(1, Math.round((Date.now() - t0) / 1000));
+    const stopped = rzStopReq ? `已停止（剩 ${items.length - done} 张未处理）：` : '处理完成：';
+    setStatus(`${stopped}成功 ${ok}，跳过 ${skip}，失败 ${fail}，耗时 ${secs} 秒`
+      + (fail ? '\n点「失败记录」看具体原因。' : ''));
+    if (!rzLastOut) rzLastOut = rzFolderCache.size ? Array.from(rzFolderCache.values())[0] : rzOutFolder;
+    show('rzDoneRow', true);
+    // 「失败记录」不置灰：.btn-off 是 pointer-events:none，点了什么都不会发生（真机反馈）。
+    // 没有失败也该给个交代，弹窗里会写「这一批没有失败的文件」。
+    // 跑完了：标题变「处理完成」、主按钮变「返回」（rzSyncRunBtn 在下面的 finally 里统一刷）
+    rzDone = true;
+    rzDirty = false;
+  } finally {
+    rzSetRunning(false);
+    rzProgress(done, items.length, '');
+  }
+  return undefined;
+}
+
+/**
+ * 打开输出文件夹。
+ * 机制全在 resizer.js 的 revealFolder 里（PS 的 ExtendScript 桥 → shell.openPath），
+ * 这儿只管兜底：两条路都不通时把路径**复制到剪贴板**，粘到资源管理器地址栏就到了 ——
+ * 比让人对着一行长路径手敲实在，也把每条拒绝理由如实报出来。
+ */
+async function rzOpenOut() {
+  const path = rzLastOut && (rzLastOut.nativePath || '');
+  if (!path) return setStatus('这一批还没有产生输出文件夹。');
+  let why = [];
+  try {
+    const r = await revealFolder(path);
+    if (r && r.ok) return undefined;
+    why = (r && r.why) || [];
+  } catch (e) {
+    why = [errMsg(e)];
+  }
+  let copied = false;
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(path);
+      copied = true;
+    }
+  } catch { copied = false; }
+  setStatus(`打不开文件夹（${why.join('；') || '没有可用的接口'}）`
+    + (copied ? '，路径已复制到剪贴板，粘到资源管理器地址栏即可：\n' : '，请手动前往：\n')
+    + path);
+  return undefined;
+}
+
+// ---- 预设 ----
+
+function rzLoadPresets() {
+  try { rzPresets = JSON.parse(prefGet(RZ_PRESET_KEY, '[]')) || []; } catch { rzPresets = []; }
+  if (!Array.isArray(rzPresets)) rzPresets = [];
+  rzRenderPresetMenu();
+}
+function rzSavePresets() {
+  try { prefSet(RZ_PRESET_KEY, JSON.stringify(rzPresets)); } catch { /* 存不下就只在本次会话有效 */ }
+  rzRenderPresetMenu();
+}
+const rzAllPresets = () => RZ_BUILTIN.concat(rzPresets);
+
+function rzRenderPresetMenu() {
+  const box = rzEl('rzPresetMenu');
+  if (!box) return;
+  box.innerHTML = `<span class="dd-item active" data-preset="-1">自定义</span>`
+    + rzAllPresets().map((p, i) => `<span class="dd-item" data-preset="${i}">${esc(p.name)}</span>`).join('');
+  // innerHTML 换掉了节点，重新挂一遍点击
+  Array.from(document.querySelectorAll('#rzPresetMenu .dd-item')).forEach((it) => {
+    it.addEventListener('click', () => {
+      const i = parseInt(it.getAttribute('data-preset'), 10);
+      rzEl('rzPresetValue').textContent = it.textContent;
+      rzEl('rzPresetDd').classList.remove('open');
+      setDdMaskedFields(false);
+      ddItemClicked = true;
+      if (i >= 0) rzApplyPreset(rzAllPresets()[i]);
+      else rzApplyCustom();                        // 「自定义」不是个空选项：要把参数还原回去
+    });
+  });
+}
+
+/** 一套 cfg 铺回面板上的控件（预设与「自定义」都走这里，参数区跟着换） */
+function rzApplyCfg(cfg) {
+  const c = normalizeResizeCfg(cfg);
+  rzMode = c.mode;
+  setDropdownValue('rzModeDd', 'rzModeValue', 'data-mode', c.mode);
+  rzEl('rzW').value = String(c.width);
+  rzEl('rzH').value = String(c.height);
+  rzEl('rzEdge').value = String(c.edge);
+  rzEl('rzPercent').value = String(c.percent);
+  rzEl('rzTimes').value = String(c.times);
+  rzEl('rzMaxW').value = String(c.maxW);
+  rzEl('rzMaxH').value = String(c.maxH);
+  setPillActive('rzFitPills', 'data-fit', c.fit);
+  // 预设里可能存着老版本的 small，现在没有这个入口了（一律放大到目标），读进来直接丢掉
+  rzAnchor = c.anchor;
+  rzSetAnchor(c.anchor);
+  rzSyncMode();              // 参数区随模式重排（少了这一步就会「选回自定义还停在缩放那一页」）
+  rzSaveMemory();
+}
+
+function rzApplyPreset(preset) {
+  if (!preset || !preset.cfg) return;
+  if (!rzCustomCfg) rzCustomCfg = rzCfg();     // 第一次套预设：先把用户自己那套收起来
+  rzApplyCfg(preset.cfg);
+  setStatus(`已应用预设：${preset.name}`);
+}
+
+/**
+ * 下拉里选回「自定义」：把套预设之前那套参数原样还原（模式、参数区一起回来）。
+ * 没有存过快照（本来就在自定义上）就什么都不动 —— 拿默认值去覆盖等于把用户填的清了。
+ */
+function rzApplyCustom() {
+  if (!rzCustomCfg) return setStatus('当前就是自定义参数。');
+  rzApplyCfg(rzCustomCfg);
+  rzCustomCfg = null;
+  return setStatus('已回到自定义参数。');
+}
+
+/** 手动改了模式 → 下拉的名字回到「自定义」（否则标签写着预设名、参数早已不是那一套） */
+function rzMarkCustom() {
+  const v = rzEl('rzPresetValue');
+  if (v) v.textContent = '自定义';
+  rzCustomCfg = null;
+}
+
+function rzAskName(title, initial) {
+  rzEl('rzNameTitle').textContent = title;
+  fieldSet(rzEl('rzNameInput'), initial);
+  showOverlay('rzNameOverlay', true);
+  setTipMaskedFields(false);
+  return new Promise((res) => { rzNameDecider = res; });
+}
+function rzResolveName(v) {
+  showOverlay('rzNameOverlay', false);
+  if (rzNameDecider) { const d = rzNameDecider; rzNameDecider = null; d(v); }
+}
+
+async function rzSaveAsPreset() {
+  const cfg = rzCfg();
+  const dflt = cfg.mode === 'wh' ? `${cfg.width} × ${cfg.height}` : RZ_MODE_NAME[cfg.mode];
+  const name = await rzAskName('保存为预设', dflt);
+  if (!name) return;
+  const at = rzPresets.findIndex((p) => p.name === name);
+  const rec = { name, cfg };
+  if (at >= 0) rzPresets[at] = rec; else rzPresets.push(rec);
+  rzSavePresets();
+  setStatus(`已保存预设：${name}`);
+}
+
+function rzRenderPresetList() {
+  const box = rzEl('rzPresetList');
+  if (!box) return;
+  box.innerHTML = rzPresets.length
+    ? rzPresets.map((p, i) => guideItemHtml(
+      esc(p.name),
+      esc(rzDescribePreset(p.cfg)),
+      `<span class="gd-mini gd-apply" data-act="rz-apply:${i}">应用</span>`
+      + `<span class="gd-mini" data-act="rz-rename:${i}">改名</span>`
+      + `<span class="gd-mini" data-act="rz-pdel:${i}">删除</span>`,
+    )).join('')
+    : '<div class="gd-empty">还没有自己的预设。<br>把参数调好后点「存为预设」就会出现在这里。</div>';
+  const ACTIONS = {
+    'rz-apply': (i) => { showOverlay('rzPresetOverlay', false); rzApplyPreset(rzPresets[i]); },
+    'rz-rename': async (i) => {
+      const name = await rzAskName('给这个预设改名', rzPresets[i].name);
+      if (name) { rzPresets[i].name = name; rzSavePresets(); }
+      rzRenderPresetList();
+      showOverlay('rzPresetOverlay', true);
+    },
+    'rz-pdel': (i) => { rzPresets.splice(i, 1); rzSavePresets(); rzRenderPresetList(); },
+  };
+  Array.from(document.querySelectorAll('#rzPresetList .gd-mini')).forEach((el) => {
+    const [kind, idx] = String(el.getAttribute('data-act') || '').split(':');
+    const fn = ACTIONS[kind];
+    if (fn) el.addEventListener('click', () => fn(parseInt(idx, 10)));
+  });
+}
+
+function rzDescribePreset(cfg) {
+  const c = normalizeResizeCfg(cfg);
+  const mode = RZ_MODE_NAME[c.mode] || c.mode;
+  if (c.mode === 'wh') return `${mode} ${c.width}×${c.height} · ${RZ_FIT_NAME[c.fit] || c.fit}`;
+  if (c.mode === 'w') return `${mode} ${c.width}px`;
+  if (c.mode === 'h') return `${mode} ${c.height}px`;
+  if (c.mode === 'percent') return `${mode} ${c.percent}%`;
+  if (c.mode === 'times') return `${mode} ${c.times}x`;
+  if (c.mode === 'max') return `${mode} ${c.maxW}×${c.maxH}`;
+  return `${mode} ${c.edge}px`;
+}
+
+function rzRenderFailList() {
+  const box = rzEl('rzFailList');
+  if (!box) return;
+  box.innerHTML = rzFails.length
+    ? rzFails.map((f) => guideItemHtml(esc(f.name), esc(f.reason), '')).join('')
+    : '<div class="gd-empty">这一批没有失败的文件。</div>';
+}
+
+// ---- 参数记忆 ----
+
+const RZ_MEM_KEYS = ['rzW', 'rzH', 'rzEdge', 'rzPercent', 'rzTimes', 'rzMaxW', 'rzMaxH', 'rzSuffix', 'rzTpl', 'rzQuality',
+  'rzAddW', 'rzAddH', 'rzScales'];
+
+/** 改过参数 —— 上一批的结果就不作数了（第 4 步的「返回」要变回「开始批量修改」） */
+function rzTouch() { rzDirty = true; }
+
+function rzSaveMemory() {
+  rzTouch();
+  prefSet('rz.mode', rzMode);
+  prefSet('rz.fit', activePill('rzFitPills', 'data-fit') || 'contain');
+  prefSet('rz.anchor', rzAnchor);
+  prefSet('rz.fill', rzFill);
+  prefSet('rz.fillHex', rzFillHex);
+  prefSet('rz.fmt', rzFmt);
+  prefSet('rz.name', rzNameMode);
+  prefSet('rz.dup', rzDup);
+  // 输出位置不记：文件夹入口跨会话拿不回来（跟切图的导出位置一个道理），
+  // 重开面板就回到「原文件所在位置」这个默认
+  prefSet('rz.keepTree', rzChecked('rzKeepTree') ? '1' : '0');
+  prefSet('rz.webpLossless', rzChecked('rzWebpLossless') ? '1' : '0');
+  prefSet('rz.sizes', JSON.stringify(rzSizes));
+  for (const k of RZ_MEM_KEYS) prefSet(`rz.v.${k}`, rzVal(k));
+}
+
+function rzRestoreMemory() {
+  const dflt = { rzW: '1920', rzH: '1080', rzEdge: '2048', rzPercent: '50', rzTimes: '2', rzMaxW: '2048', rzMaxH: '2048', rzSuffix: '_resized', rzTpl: '{name}_{width}x{height}', rzQuality: '90', rzScales: '1,2,3' };
+  for (const k of RZ_MEM_KEYS) {
+    const el = rzEl(k);
+    if (el) el.value = prefGet(`rz.v.${k}`, dflt[k] || '');
+  }
+  rzMode = prefGet('rz.mode', 'wh');
+  setDropdownValue('rzModeDd', 'rzModeValue', 'data-mode', rzMode);
+  setPillActive('rzFitPills', 'data-fit', prefGet('rz.fit', 'contain'));
+  rzAnchor = prefGet('rz.anchor', 'cm');
+  rzSetAnchor(rzAnchor);
+  rzFill = prefGet('rz.fill', 'none');
+  setPillActive('rzFillPills', 'data-fill', rzFill);
+  rzFillHex = prefGet('rz.fillHex', '#ffffff');
+  const sw = rzEl('rzFillSwatch');
+  if (sw) sw.style.background = rzFillHex;
+  rzFmt = prefGet('rz.fmt', 'same');
+  setDropdownValue('rzFmtDd', 'rzFmtValue', 'data-fmt', rzFmt);
+  rzNameMode = prefGet('rz.name', 'keep');
+  setDropdownValue('rzNameDd', 'rzNameValue', 'data-name', rzNameMode);
+  rzDup = prefGet('rz.dup', 'rename');
+  setDropdownValue('rzDupDd', 'rzDupValue', 'data-dup', rzDup);
+  // 归一一下再收：存下来的可能是上个版本的列表，也可能被手改坏了
+  let saved = [];
+  try { saved = JSON.parse(prefGet('rz.sizes', '[]')); } catch { saved = []; }
+  rzSizes = normalizeSizeList(saved);
+}
+
+function rzSetAnchor(a) {
+  Array.from(document.querySelectorAll('#rzAnchorGrid .rz-anchor')).forEach((el) => {
+    el.classList.toggle('active', el.getAttribute('data-anchor') === a);
+  });
+}
+
+// ---- 接线 ----
+
+bindPillGroup('rzSrcPills', 'data-src', (v) => { rzSrc = v; rzTouch(); rzSyncSrc(); rzSyncOut(); });
+bindPillGroup('rzFitPills', 'data-fit', () => { rzSyncMode(); rzSaveMemory(); });
+bindPillGroup('rzFillPills', 'data-fill', async (v) => {
+  rzFill = v;
+  show('rzFillSwatch', v === 'custom');
+  if (v === 'custom') {
+    try {
+      const hex = await pickColor(rzFillHex);
+      if (hex) { rzFillHex = hex; rzEl('rzFillSwatch').style.background = hex; }
+    } catch { /* 取消拾色器 */ }
+  }
+  rzSaveMemory();
+});
+bindPillGroup('rzPercentQuick', 'data-percent', (v) => { rzEl('rzPercent').value = v; rzRenderPreview(); rzSaveMemory(); });
+bindPillGroup('rzTimesQuick', 'data-times', (v) => { rzEl('rzTimes').value = v; rzRenderPreview(); rzSaveMemory(); });
+
+bindDropdown('rzModeDd', 'rzModeValue', (item) => {
+  rzMode = item.getAttribute('data-mode');
+  rzMarkCustom();                    // 自己动过模式，就不再是那个预设了
+  rzSyncMode();
+  rzSaveMemory();
+});
+bindDropdown('rzFmtDd', 'rzFmtValue', (item) => { rzFmt = item.getAttribute('data-fmt'); rzSyncOut(); rzSaveMemory(); });
+bindDropdown('rzNameDd', 'rzNameValue', (item) => { rzNameMode = item.getAttribute('data-name'); rzSyncOut(); rzSaveMemory(); });
+bindDropdown('rzDupDd', 'rzDupValue', (item) => { rzDup = item.getAttribute('data-dup'); rzSaveMemory(); });
+bindDropdown('rzPresetDd', 'rzPresetValue');       // 选项由 rzRenderPresetMenu 动态挂
+
+// ⚠️ 只重扫【已经选好】的那个文件夹。走 rzPick 会再弹一次文件夹选择框 —— 真机反馈里
+//    「无论开还是关都会出现文件夹选择弹窗」就是这么来的。还没选文件夹时什么都不做。
+setupSwitch('rzRecursive', false, () => {
+  if (!rzRoot) return;
+  (async () => {
+    try { await rzScanFolder(rzRoot); } catch (e) { setStatus(errMsg(e)); }
+    rzSyncSrc();
+    rzSyncOut();
+  })();
+});
+setupSwitch('rzMulti', false, () => { rzSyncMode(); rzSaveMemory(); });
+setupSwitch('rzKeepTree', true, rzSaveMemory);
+setupSwitch('rzWebpLossless', true, () => { rzSyncOut(); rzSaveMemory(); });
+
+rzEl('rzPickBtn').addEventListener('click', () => { rzPick(); });
+rzEl('rzPickOutBtn').addEventListener('click', () => { rzPickOut(); });
+rzEl('rzOutReset').addEventListener('click', () => { rzResetOut(); });
+rzEl('rzPrevBtn').addEventListener('click', () => { rzGoStep(rzStep - 1); });
+rzEl('rzNextBtn').addEventListener('click', () => { rzGoStep(rzStep + 1); });
+rzEl('rzRunBtn').addEventListener('click', () => {
+  // 跑完了：这个键是「返回」，回到第一步重新选图（结果面板与已选清单一并归零）
+  if (rzDone && !rzRunning) { rzClearDone(); rzResetSource(); rzGoStep(1); return; }
+  rzRun();
+});
+rzEl('rzSavePreset').addEventListener('click', () => { rzSaveAsPreset(); });
+rzEl('rzManagePreset').addEventListener('click', () => { rzRenderPresetList(); showOverlay('rzPresetOverlay', true); });
+rzEl('rzOpenOutBtn').addEventListener('click', () => { rzOpenOut(); });
+rzEl('rzFailBtn').addEventListener('click', () => {
+  // 没有失败也要有交代（弹窗里写着「这一批没有失败的文件」），状态栏再说一遍
+  if (!rzFails.length) setStatus('这一批没有失败的文件。');
+  rzRenderFailList();
+  showOverlay('rzFailOverlay', true);
+});
+rzEl('rzPresetClose').addEventListener('click', () => showOverlay('rzPresetOverlay', false));
+rzEl('rzFailClose').addEventListener('click', () => showOverlay('rzFailOverlay', false));
+rzEl('rzNameOk').addEventListener('click', () => rzResolveName(rzVal('rzNameInput')));
+rzEl('rzNameCancel').addEventListener('click', () => rzResolveName(''));
+/** 往多尺寸列表里塞一档固定宽高；返回是否真的加进去了（重复的不加） */
+function rzPushSize(w, h) {
+  if (!(w > 0 && h > 0)) return false;
+  if (rzSizes.some((s) => s.width === w && s.height === h)) return false;
+  rzSizes.push({ width: w, height: h });
+  return true;
+}
+/** 往多尺寸列表里塞一档倍率（相对每张原图，不折成绝对像素 —— 每张图的原尺寸不一样） */
+function rzPushScale(k) {
+  if (!(k > 0)) return false;
+  if (rzSizes.some((s) => s.times === k)) return false;
+  rzSizes.push({ times: k });
+  return true;
+}
+function rzSizesChanged() {
+  rzSaveMemory();
+  rzRenderSizes();
+  rzRenderPreview();
+}
+// 「添加」用的是它自己那两个输入框（默认带出上面填的那一档），所以想加几档就加几档 ——
+// 原来只能加「当前尺寸」，一档加完得回上面改宽高才能加第二档。
+rzEl('rzAddSize').addEventListener('click', () => {
+  const w = Math.round(numOr(rzVal('rzAddW'), 0));
+  const h = Math.round(numOr(rzVal('rzAddH'), 0));
+  if (!(w > 0 && h > 0)) return setStatus('要添加的宽和高都得填大于 0 的数值。');
+  if (!rzPushSize(w, h)) return setStatus(`${w} × ${h} 已经在列表里了。`);
+  rzSizesChanged();
+  return setStatus(`已添加 ${w} × ${h}`);
+});
+// 倍率的基准是**每张原图自己的尺寸**，不是上面那行填的宽高 —— @2x 就该是「原图的两倍」。
+// （折成绝对像素是不对的：一批图横竖大小都不同，折一次就把所有图钉死在同一个尺寸上了。）
+rzEl('rzAddScales').addEventListener('click', () => {
+  const ks = parseScaleList(rzVal('rzScales'));
+  if (!ks.length) return setStatus('倍率填成用逗号隔开的数字，如 1,2,3（最多 8 档、单档不超过 20 倍）。');
+  let added = 0;
+  for (const k of ks) if (rzPushScale(k)) added++;
+  if (!added) return setStatus('这些倍率都已经在列表里了。');
+  rzSizesChanged();
+  return setStatus(`已按原图的 ${ks.join('、')} 倍添加 ${added} 档`);
+});
+Array.from(document.querySelectorAll('#rzAnchorGrid .rz-anchor')).forEach((el) => {
+  el.addEventListener('click', () => {
+    rzAnchor = el.getAttribute('data-anchor');
+    rzSetAnchor(rzAnchor);
+    rzSaveMemory();
+  });
+});
+// 步骤指示器上的 1234 直接点着换页，前后都能点、不设卡（校验只在「开始批量修改」时做，
+// 缺什么就跳到那一步说清楚）。处理中 rzGoStep 自己会拦住不动。
+Array.from(document.querySelectorAll('#rzSteps .rz-step')).forEach((el) => {
+  el.addEventListener('click', () => {
+    const n = parseInt(el.getAttribute('data-step'), 10);
+    if (n && n !== rzStep) rzGoStep(n);
+  });
+});
+// 尺寸/命名相关的输入改动实时反映到预览与命名示例上
+for (const id of ['rzW', 'rzH', 'rzEdge', 'rzPercent', 'rzTimes', 'rzMaxW', 'rzMaxH']) {
+  const el = rzEl(id);
+  if (el) el.addEventListener('input', () => { rzRenderPreview(); rzSaveMemory(); });
+}
+for (const id of ['rzSuffix', 'rzTpl', 'rzQuality']) {
+  const el = rzEl(id);
+  if (el) el.addEventListener('input', () => { rzSyncOut(); rzSaveMemory(); });
+}
+// 多尺寸那两行只需要记住，不用重画什么（列表要点「添加」才变）
+for (const id of ['rzAddW', 'rzAddH', 'rzScales']) {
+  const el = rzEl(id);
+  if (el) el.addEventListener('input', rzSaveMemory);
+}
+// 四种适应方式的说明：挂在「适应方式」后面那个问号上
+bindTip(rzEl('rzFitInfo'), rzEl('rzFitTip'), RZ_FIT_TIP);
+// 保存位置两个选项的说明：挂在「保存位置」后面那个问号上
+bindTip(rzEl('rzDestInfo'), rzEl('rzDestTip'), rzDestTipHtml);   // 传函数：悬停时才知道当前输出到哪儿
+
+rzRestoreMemory();
+rzLoadPresets();
+
 // 文档打开 / 关闭 / 切换时刷新画布尺寸与按钮可用性（需求 §29 / §30）。
 // 只在停留在参考线页时才刷，避免在别的功能页做无谓的开销。
 (async () => {
   try {
     await action.addNotificationListener(['open', 'close', 'newDocument'], () => {
       if (currentPage === 'guide') refreshGuideDocState();
-      refreshTargetInfo();                 // 换文档后重命名页那一行的选中数也得跟着变
-      renderRenamePreview();
+      if (currentPage === 'split') refreshGuideSplitInfo();   // 换文档 → 参考线也换了
+      renderRenamePreview();               // 换文档后重命名页的预览也得跟着变
     });
   } catch { /* 某些版本不触发这些通知：切到本页时也会刷新一次 */ }
 })();
@@ -2663,8 +4057,11 @@ refreshGuideDocState();
 const versionEl = document.getElementById('version');
 if (versionEl) versionEl.textContent = 'v' + manifest.version;
 
+// 所有文字输入框统一挂上「聚焦高亮 + 点进去清空」。放在最后：各功能页自己那些
+// input/keydown 监听都注册完了，通用行为排在它们后面触发，不会抢在前面把值清掉
+for (const id of TEXT_FIELDS) bindTextField(document.getElementById(id));
+
 renderRenamePreview();                                // 初始渲染一次
-refreshTargetInfo();                                   // 入口那一行的选中数
 updateSliceLabel();                                    // 初始化主按钮文字
 refreshLayoutBtn();                                    // 初始化排版按钮可用性
 refreshMoveBtns();                                     // 初始化平移按钮可用性

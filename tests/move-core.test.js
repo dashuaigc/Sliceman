@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  flipDir, parseDistance, applySign, toDelta, nudgeValue, formatDist, describeDelta,
+  DIRS, dirVector, dirFromVector, dirAxes, flipDir, flipAxis,
+  parseDistance, planMove, nudgeValue, formatDist, describeDelta,
 } from '../src/lib/move-core.js';
 
 describe('parseDistance 输入解析', () => {
@@ -31,46 +32,106 @@ describe('parseDistance 输入解析', () => {
   });
 });
 
-describe('applySign 负数归一', () => {
-  it('正数原样保留方向', () => {
-    expect(applySign(20, 'right')).toEqual({ dist: 20, dir: 'right' });
-    expect(applySign(0, 'up')).toEqual({ dist: 0, dir: 'up' });
+describe('八个方向', () => {
+  it('正好八个，四正向 + 四斜向', () => {
+    expect(DIRS).toHaveLength(8);
+    expect(new Set(DIRS).size).toBe(8);
   });
 
-  it('负数取绝对值并翻转方向：→ 输入 -20 变成 ← 20', () => {
-    expect(applySign(-20, 'right')).toEqual({ dist: 20, dir: 'left' });
-    expect(applySign(-20, 'left')).toEqual({ dist: 20, dir: 'right' });
-    expect(applySign(-30, 'down')).toEqual({ dist: 30, dir: 'up' });
-    expect(applySign(-30, 'up')).toEqual({ dist: 30, dir: 'down' });
+  it('方向 → 单位向量：右/下为正', () => {
+    expect(dirVector('right')).toEqual({ sx: 1, sy: 0 });
+    expect(dirVector('up')).toEqual({ sx: 0, sy: -1 });
+    expect(dirVector('downLeft')).toEqual({ sx: -1, sy: 1 });
+    expect(dirVector('upRight')).toEqual({ sx: 1, sy: -1 });
   });
 
-  it('flipDir 四个方向互为反向', () => {
+  it('认不出的方向给零向量（调用方据此不下发）', () => {
+    expect(dirVector('nope')).toEqual({ sx: 0, sy: 0 });
+    expect(dirVector(undefined)).toEqual({ sx: 0, sy: 0 });
+  });
+
+  it('单位向量 → 方向名，八个方向来回换算都对得上', () => {
+    for (const d of DIRS) {
+      const { sx, sy } = dirVector(d);
+      expect(dirFromVector(sx, sy)).toBe(d);
+    }
+  });
+
+  it('(0,0) 不在八个方向里，返回 null', () => {
+    expect(dirFromVector(0, 0)).toBeNull();
+  });
+
+  it('正向只要一个值，斜向两个都要', () => {
+    expect(dirAxes('left')).toEqual({ x: true, y: false });
+    expect(dirAxes('right')).toEqual({ x: true, y: false });
+    expect(dirAxes('up')).toEqual({ x: false, y: true });
+    expect(dirAxes('down')).toEqual({ x: false, y: true });
+    for (const d of ['upLeft', 'upRight', 'downLeft', 'downRight']) {
+      expect(dirAxes(d)).toEqual({ x: true, y: true });
+    }
+  });
+
+  it('flipDir 是整个反向，八个方向两两成对', () => {
     expect(flipDir('left')).toBe('right');
-    expect(flipDir('right')).toBe('left');
     expect(flipDir('up')).toBe('down');
-    expect(flipDir('down')).toBe('up');
+    expect(flipDir('upLeft')).toBe('downRight');
+    expect(flipDir('downLeft')).toBe('upRight');
+    for (const d of DIRS) expect(flipDir(flipDir(d))).toBe(d);
+  });
+
+  it('flipAxis 只翻一个轴；用不到那个轴的方向原样返回', () => {
+    expect(flipAxis('upLeft', 'x')).toBe('upRight');
+    expect(flipAxis('upLeft', 'y')).toBe('downLeft');
+    expect(flipAxis('right', 'x')).toBe('left');
+    expect(flipAxis('up', 'x')).toBe('up');        // ↑ 没有水平分量，翻不动
+    expect(flipAxis('left', 'y')).toBe('left');
   });
 });
 
-describe('toDelta 方向换算', () => {
-  const cfg = { xDir: 'right', xDist: 50, yDir: 'up', yDist: 20 };
-
-  it('右/下为正，左/上为负', () => {
-    expect(toDelta(cfg)).toEqual({ dx: 50, dy: -20 });
-    expect(toDelta({ xDir: 'left', xDist: 50, yDir: 'down', yDist: 20 })).toEqual({ dx: -50, dy: 20 });
+describe('planMove 方向 + 距离 → 位移', () => {
+  it('正向只走自己那个轴', () => {
+    expect(planMove('right', 50, 0)).toMatchObject({ dx: 50, dy: 0, dir: 'right' });
+    expect(planMove('up', 0, 20)).toMatchObject({ dx: 0, dy: -20, dir: 'up' });
+    expect(planMove('left', 30, 0)).toMatchObject({ dx: -30, dy: 0 });
+    expect(planMove('down', 0, 15)).toMatchObject({ dx: 0, dy: 15 });
   });
 
-  it('某轴为 0 时该轴不动', () => {
-    expect(toDelta({ xDir: 'right', xDist: 30, yDir: 'down', yDist: 0 })).toEqual({ dx: 30, dy: 0 });
-    expect(toDelta({ xDir: 'left', xDist: 0, yDir: 'up', yDist: 50 })).toEqual({ dx: 0, dy: -50 });
+  it('正向方向下，另一个轴框里的残值一律不生效', () => {
+    // 界面上那一行是收起来的，值却还留着——不置 0 的话对象会莫名其妙斜着跑
+    expect(planMove('right', 50, 999)).toMatchObject({ dx: 50, dy: 0, yDist: 0 });
+    expect(planMove('down', 999, 15)).toMatchObject({ dx: 0, dy: 15, xDist: 0 });
   });
 
-  it('小数位移原样保留', () => {
-    expect(toDelta({ xDir: 'right', xDist: 10.5, yDir: 'down', yDist: 0.25 })).toEqual({ dx: 10.5, dy: 0.25 });
+  it('斜向两个轴各走各的', () => {
+    expect(planMove('upRight', 40, 25)).toMatchObject({ dx: 40, dy: -25, dir: 'upRight' });
+    expect(planMove('downLeft', 40, 25)).toMatchObject({ dx: -40, dy: 25, dir: 'downLeft' });
+    expect(planMove('upLeft', 10, 10)).toMatchObject({ dx: -10, dy: -10 });
+    expect(planMove('downRight', 10, 10)).toMatchObject({ dx: 10, dy: 10 });
   });
 
-  it('缺字段按 0 处理，不产生 NaN', () => {
-    expect(toDelta({ xDir: 'right', yDir: 'down' })).toEqual({ dx: 0, dy: 0 });
+  it('负数翻转对应的那一个轴，并回报翻过之后的方向', () => {
+    expect(planMove('right', -20, 0)).toMatchObject({ dx: -20, dir: 'left', xDist: 20 });
+    expect(planMove('up', 0, -30)).toMatchObject({ dy: 30, dir: 'down', yDist: 30 });
+    // 斜向只翻填了负数的那一个轴：↖ 的水平填 -20 → ↗，垂直分量不动
+    expect(planMove('upLeft', -20, 10)).toMatchObject({ dx: 20, dy: -10, dir: 'upRight' });
+    expect(planMove('upLeft', 20, -10)).toMatchObject({ dx: -20, dy: 10, dir: 'downLeft' });
+    expect(planMove('upLeft', -20, -10)).toMatchObject({ dx: 20, dy: 10, dir: 'downRight' });
+  });
+
+  it('距离为 0 不翻方向，也不产生 -0', () => {
+    const r = planMove('left', 0, 0);
+    expect(r.dir).toBe('left');
+    expect(Object.is(r.dx, -0)).toBe(false);
+    expect(r.dx).toBe(0);
+  });
+
+  it('小数位移原样保留（PS 支持亚像素定位）', () => {
+    expect(planMove('downRight', 10.5, 0.25)).toMatchObject({ dx: 10.5, dy: 0.25 });
+  });
+
+  it('缺参数、坏方向都按 0 处理，不产生 NaN', () => {
+    expect(planMove('right')).toMatchObject({ dx: 0, dy: 0 });
+    expect(planMove('nope', 50, 50)).toMatchObject({ dx: 0, dy: 0, dir: 'nope' });
   });
 });
 
@@ -85,10 +146,10 @@ describe('nudgeValue 键盘微调', () => {
     expect(nudgeValue(50, false, true)).toBe(40);
   });
 
-  it('减到负数由 applySign 接手翻方向：5 按 Shift+↓ → 反方向 5', () => {
+  it('减到负数由 planMove 接手翻方向：5 按 Shift+↓ → 反方向 5', () => {
     const next = nudgeValue(5, false, true);
     expect(next).toBe(-5);
-    expect(applySign(next, 'right')).toEqual({ dist: 5, dir: 'left' });
+    expect(planMove('right', next, 0)).toMatchObject({ dx: -5, dir: 'left', xDist: 5 });
   });
 });
 

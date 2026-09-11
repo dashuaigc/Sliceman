@@ -15,18 +15,21 @@ export function buildBaseName(segments) {
 
 /**
  * 在 usedSet 下生成唯一名：冲突则追加 _2、_3…，并把结果登记进 usedSet。
+ *
+ * 比对按【小写】进行，返回的名字保留原大小写 —— Windows 的文件名不分大小写，
+ * `WG_1` 与 `wg_1` 落到磁盘上是同一个文件，只按原样比对会让后一张静默覆盖前一张。
  * @param {string} base
- * @param {Set<string>} usedSet
+ * @param {Set<string>} usedSet 登记的是小写键
  * @returns {string}
  */
 export function makeUniqueName(base, usedSet) {
-  if (!usedSet.has(base)) {
-    usedSet.add(base);
+  const key = String(base).toLowerCase();
+  if (!usedSet.has(key)) {
+    usedSet.add(key);
     return base;
   }
   let i = 2;
-  while (usedSet.has(`${base}_${i}`)) i++;
-  const unique = `${base}_${i}`;
-  usedSet.add(unique);
-  return unique;
+  while (usedSet.has(`${key}_${i}`)) i++;
+  usedSet.add(`${key}_${i}`);
+  return `${base}_${i}`;
 }

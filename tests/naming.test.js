@@ -11,6 +11,10 @@ describe('buildBaseName', () => {
   it('过滤掉整体为空的输入返回占位', () => {
     expect(buildBaseName(['！'])).toBe('seg1');
   });
+  it('英文/数字/下划线的图层名原样进文件名（真机 bug：曾被压成 wbt1_wgeffect8）', () => {
+    // 文档 WBT_1.psb 里的图层 WG_effect_8 → 导出名必须还认得出是哪一层
+    expect(buildBaseName(['WBT_1', 'WG_effect_8'])).toBe('WBT_1_WG_effect_8');
+  });
 });
 
 describe('makeUniqueName', () => {
@@ -23,5 +27,11 @@ describe('makeUniqueName', () => {
     const used = new Set(['tb']);
     expect(makeUniqueName('tb', used)).toBe('tb_2');
     expect(makeUniqueName('tb', used)).toBe('tb_3');
+  });
+  it('比对不分大小写，但返回名保留原大小写（Windows 下同名会互相覆盖）', () => {
+    const used = new Set();
+    expect(makeUniqueName('WG_1', used)).toBe('WG_1');
+    expect(makeUniqueName('wg_1', used)).toBe('wg_1_2');     // 大小写不同也算撞名
+    expect(makeUniqueName('Wg_1', used)).toBe('Wg_1_3');
   });
 });
