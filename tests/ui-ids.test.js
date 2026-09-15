@@ -56,6 +56,8 @@ describe('panel.js 引用的 DOM id 都存在于 index.html', () => {
       ...collect(/\bbindPillGroup\(\s*'([^']+)'/g, (m) => m[1]),
       ...collect(/\bbindTogglePills\(\s*'([^']+)'/g, (m) => m[1]),
       ...collect(/\bbindDropdownBox\(\s*'([^']+)'/g, (m) => m[1]),
+      // 设置弹窗里所有取元素都走 stEl(id) 这个小包装，直接查 getElementById 收不到
+      ...collect(/\bstEl\(\s*'([^']+)'/g, (m) => m[1]),
     ];
     expect(used.length).toBeGreaterThan(10);
     const missing = [...new Set(used)].filter((id) => !htmlIds.has(id));
@@ -297,7 +299,11 @@ describe('左侧功能栏与 panel.js 的契约', () => {
     const resizer = readFileSync(join(root, 'src/ps/resizer.js'), 'utf8');
     expect(resizer).toContain('AdobeScriptAutomation Scripts');
     expect(resizer).toContain('buildRevealJsx');
-    expect(js).not.toContain('openExternal');
+    // panel.js 里唯一允许出现 openExternal 的地方，是设置弹窗「下载新版本」那条
+    // https 直链 —— 那本来就是它的正经用途，它不收的是 file:。除此之外一个都不许有，
+    // 谁再拿它去开文件夹，这条就会挂。
+    const calls = [...js.matchAll(/openExternal\(\s*([^)]*?)\s*\)/g)].map((m) => m[1]);
+    expect(calls).toEqual(['url']);
     const core = readFileSync(join(root, 'src/lib/resize-core.js'), 'utf8');
     expect(core).toContain('new Folder(p).execute()');
   });
@@ -373,7 +379,10 @@ describe('改尺寸页：撤掉的入口与弹窗遮罩', () => {
     expect(mf.requiredPermissions.localFileSystem).toBe('fullAccess');
     expect(mf.requiredPermissions.launchProcess.extensions).toContain('');
     expect(mf.requiredPermissions.launchProcess.schemes).not.toContain('file');
-    expect(mf.version).toBe('1.2.0');
+    // 两个版本号必须同步：顶栏与「检查更新」读 manifest，打包文件名读 package.json，
+    // 对不上就会出现「装的是 1.3.0、包名写 1.2.0」这种对不上账的发布。
+    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+    expect(mf.version).toBe(pkg.version);
   });
 });
 
@@ -486,5 +495,42 @@ describe('index.html 遵守 UXP 渲染约束', () => {
     // 允许 box-shadow:none（用来关掉 UXP 给输入框自绘的那圈装饰），其余一律不许
     expect(css).not.toMatch(/box-shadow:(?!\s*none)/);
     expect(css).not.toMatch(/position:\s*fixed/);
+  });
+});
+
+describe('设置 / 检查更新 的契约', () => {
+  const manifest = JSON.parse(readFileSync(join(root, 'src/manifest.json'), 'utf8'));
+
+  it('manifest 放行了 api.github.com，否则 fetch 在真机上直接被拒', () => {
+    // ⚠️ UXP 的权限是【装载插件时】读的：这一条漏了，面板不会报错，只会「检查更新
+    // 永远失败」。域名必须带协议前缀。
+    const domains = manifest.requiredPermissions?.network?.domains || [];
+    expect(domains).toContain('https://api.github.com');
+    // 「下载新版本」走 shell.openExternal，靠的是 launchProcess 里的 https
+    expect(manifest.requiredPermissions?.launchProcess?.schemes || []).toContain('https');
+  });
+
+  it('检查更新读的是 manifest.version，不是写死的版本号', () => {
+    // 写死一个版本号，发版时忘了同步就会「永远提示有更新」或「永远不提示」
+    expect(js).toContain("parseRelease(json, manifest.version)");
+    expect(js).toContain("isNewer(seen, manifest.version)");
+  });
+
+  it('设置弹窗登记进了 OVERLAY_IDS，开着时页面侧滚动条才会收起来', () => {
+    // 漏登记不会报错，只会「弹窗被 UXP 的原生滚动条横穿」（真机截图确认过的老毛病）
+    const ids = /const OVERLAY_IDS = \[([\s\S]*?)\]/.exec(js);
+    expect(ids).toBeTruthy();
+    expect(ids[1]).toContain("'settingsOverlay'");
+    // 反过来：弹窗自己那个说明滚动盒【不能】进锁定名单，否则更新说明滚不动
+    const lock = /const SCROLL_LOCK_IDS = \[([\s\S]*?)\]/.exec(js);
+    expect(lock[1]).not.toContain("'stNotes'");
+  });
+
+  it('齿轮整块可点：监听挂在外层 div 上，子元素不吃事件', () => {
+    // UXP 下点在 svg 上时 event.target 是 svg/path，挂在 svg 外面的监听收不到
+    expect(html).toMatch(/<div class="rail-foot" id="settingsBtn"/);
+    const css = readFileSync(join(root, 'src/ui/styles.css'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(css).toContain('.rail-foot > * { pointer-events: none; }');
   });
 });

@@ -40,6 +40,10 @@ import {
   openGuideLayoutDialog, applyGuideLayout, onGuideLayoutCreated,
   readGuidesVisible, readGuidesLocked, toggleGuidesVisible, toggleGuidesLock,
 } from '../ps/guides.js';
+import {
+  fetchLatestRelease, parseRelease, downloadUrlOf, isNewer, LATEST_PAGE,
+  shouldAutoCheck, formatTime, formatDate, formatSize, describeError,
+} from '../lib/update-core.js';
 import manifest from '../manifest.json';
 
 const { app, action, core } = require('photoshop');
@@ -821,7 +825,7 @@ function applyMaskedFields() {
 const OVERLAY_IDS = [
   'stopConfirm', 'tableConfirm', 'overwriteConfirm', 'gsConfirm',
   'gdListOverlay', 'gdNameOverlay', 'gdHistConfirm', 'slOverlay',
-  'rzPresetOverlay', 'rzNameOverlay', 'rzFailOverlay',
+  'rzPresetOverlay', 'rzNameOverlay', 'rzFailOverlay', 'settingsOverlay',
 ];
 const SCROLL_LOCK_IDS = ['pages', 'rail', 'previewList', 'rzLog'];
 /** @param {string|object} idOrEl 浮层的 id 或元素 */
@@ -4056,6 +4060,198 @@ rzLoadPresets();
 // 顶栏版本号：始终显示 manifest 中的真实版本
 const versionEl = document.getElementById('version');
 if (versionEl) versionEl.textContent = 'v' + manifest.version;
+
+// ==================== 设置 / 检查更新 ====================
+// 功能栏底部那个齿轮 → #settingsOverlay。里面只有「关于 + 检查更新」。
+//
+// 数据源是 GitHub 的 releases/latest 接口（见 lib/update-core.js），
+// 只读版本号与更新说明，不上报任何东西。
+// ⚠️ 联网要 manifest 的 requiredPermissions.network.domains 放行 api.github.com，
+//    而权限是【装载插件时】读的：从旧版升上来的用户不重装插件，fetch 会被直接拒掉
+//    （describeError 里专门给这种情况留了一句提示）。
+// ⚠️ 插件装不了插件：点「下载新版本」是把 .ccx 直链交给系统浏览器
+//    （uxp.shell.openExternal，manifest 里 launchProcess 已放行 https），
+//    下完仍然要用户双击让 Creative Cloud 装上。
+
+const ST_AUTO_KEY = 'update.autoCheck';       // '1'/'0'：开不开「打开面板时自动检查」
+const ST_LAST_KEY = 'update.lastChecked';     // 上次检查的时间戳，节流用
+const ST_SEEN_KEY = 'update.seenVersion';     // 已经知道的那个新版本号，用来决定红点亮不亮
+
+const stEl = (id) => document.getElementById(id);
+let stInfo = null;            // 最近一次查到的 parseRelease 结果
+let stBusy = false;           // 正在查：按钮置灰，避免连点打接口
+let stFallback = false;       // 上一次检查失败了：下载按钮退化成「前往下载页」
+
+/** 状态行：kind 决定颜色（''=普通 / 'good'=绿 / 'err'=红） */
+function stSetMsg(text, kind = '') {
+  const el = stEl('stMsg');
+  if (!el) return;
+  el.textContent = text || '';
+  el.className = 'st-msg' + (kind === 'good' ? ' st-good' : kind === 'err' ? ' st-err' : '');
+}
+
+/** 齿轮上的小红点：只有「查到的新版本 ≠ 本地版本」时才亮 */
+function stRefreshDot() {
+  const seen = prefGet(ST_SEEN_KEY, '');
+  const on = !!seen && isNewer(seen, manifest.version);
+  show('settingsDot', on);
+}
+
+/** 把更新说明画进弹窗（标题一行、正文一行，标记已经在 summarizeNotes 里去掉了） */
+function stRenderNotes(info) {
+  const box = stEl('stNotes');
+  const block = stEl('stNotesBlock');
+  if (!box || !block) return;
+  const notes = (info && info.notes) || [];
+  if (!notes.length) { block.style.display = 'none'; return; }
+  box.innerHTML = '';
+  for (const n of notes) {
+    const row = document.createElement('div');
+    row.className = n.kind === 'head' ? 'st-note-head' : 'st-note-text';
+    row.textContent = n.text;
+    box.appendChild(row);
+  }
+  const head = stEl('stNotesHead');
+  if (head) head.textContent = info.hasUpdate ? `${info.tag} 更新内容` : '当前版本的更新内容';
+  block.style.display = '';
+  box.scrollTop = 0;
+}
+
+/** 上次检查时间那一行 */
+function stRenderCheckedAt() {
+  const el = stEl('stCheckedAt');
+  if (!el) return;
+  const t = formatTime(Number(prefGet(ST_LAST_KEY, '0')));
+  el.textContent = t || '从未检查';
+}
+
+/** 把一次检查的结果摊到弹窗上（弹窗没开也照做：开的时候就是现成的） */
+function stRenderResult(info) {
+  stInfo = info;
+  stFallback = false;
+  const verEl = stEl('stLatestVer');
+  if (verEl) {
+    verEl.textContent = 'v' + info.version + (info.hasUpdate ? '（有新版本）' : '（已是最新）');
+    verEl.className = 'st-v' + (info.hasUpdate ? ' st-new' : '');
+  }
+  show('stDlRow', info.hasUpdate);
+  const btn = stEl('stDownloadBtn');
+  // 版本号与体积都写进下面那条状态行，按钮上只留「下载新版本」——
+  // 按钮文字一长，300px 宽的面板上就没法不折行
+  if (btn) btn.textContent = info.asset ? '下载新版本' : '前往下载页';
+  stRenderNotes(info);
+  stRenderCheckedAt();
+  if (info.hasUpdate) {
+    const parts = [formatDate(info.publishedAt), info.asset ? formatSize(info.asset.size) : '']
+      .filter(Boolean);
+    stSetMsg(`发现新版本 ${info.tag}${parts.length ? `（${parts.join('，')}）` : ''}，当前 v${manifest.version}。`, 'good');
+  } else {
+    stSetMsg(`已经是最新版本 v${manifest.version}。`, 'good');
+  }
+}
+
+/**
+ * 查一次。
+ * @param {boolean} silent 静默模式（打开面板时自动查的那次）：不动按钮、不写状态行，
+ *   查到新版本只亮齿轮上的小红点 + 在底部状态栏提一句，失败则一点痕迹都不留。
+ *   没人愿意一开面板就被「有新版本」的弹窗拦住。
+ */
+async function stCheck(silent) {
+  if (stBusy) return;
+  stBusy = true;
+  const btn = stEl('stCheckBtn');
+  if (btn && !silent) { btn.disabled = true; btn.textContent = '检查中…'; }
+  if (!silent) stSetMsg('正在向 GitHub 查询最新版本…');
+  try {
+    // 包一层再传，别把裸的 fetch 交出去：宿主的 fetch 多半要求 this 是全局对象，
+    // 换个名字调用会被当成「非法调用」直接抛（浏览器里就是 Illegal invocation）
+    const call = typeof fetch === 'function' ? (u, o) => fetch(u, o) : null;
+    const json = await fetchLatestRelease(call);
+    const info = parseRelease(json, manifest.version);
+    if (!info.ok) throw new Error(info.reason);
+    prefSet(ST_LAST_KEY, String(Date.now()));
+    // 记下「查到的版本」而不是「有没有更新」：下次本地升级到这个版本后，
+    // isNewer 自然变 false，红点不用额外清
+    prefSet(ST_SEEN_KEY, info.version);
+    stRefreshDot();
+    if (silent) {
+      stInfo = info;                                   // 存着，用户点开设置就是现成的
+      stRenderCheckedAt();
+      if (info.hasUpdate) setStatus(`Sliceman ${info.tag} 已发布，点左下角齿轮查看`);
+    } else {
+      stRenderResult(info);
+    }
+  } catch (e) {
+    // 静默那次失败就真的静默：没网、GitHub 抽风都不该在面板上留痕
+    if (!silent) {
+      stSetMsg(describeError(e), 'err');
+      // 查不到 ≠ 没法更新。GitHub 的匿名接口是【按出口 IP】每小时 60 次，公司/学校
+      // 同一个出口很容易被别人先用完（本地实测就撞上了）。所以失败时把按钮露出来，
+      // 退化成「前往下载页」，用户照样能去看一眼有没有新版
+      const dl = stEl('stDownloadBtn');
+      if (dl) dl.textContent = '前往下载页';
+      stFallback = true;
+      show('stDlRow', true);
+    }
+  } finally {
+    stBusy = false;
+    if (btn && !silent) { btn.disabled = false; btn.textContent = '检查更新'; }
+  }
+}
+
+// 打开弹窗：把本次会话里已经查到的结果摊上去；还没查过就停在「未检查」，
+// 等用户自己点「检查更新」—— 点开设置不等于想联网，真要自动查的那次在最底下（静默）
+function stOpen() {
+  const cur = stEl('stCurVer');
+  if (cur) cur.textContent = 'v' + manifest.version;
+  stRenderCheckedAt();
+  if (stInfo) stRenderResult(stInfo);
+  else {
+    stSetMsg('');
+    stFallback = false;
+    show('stDlRow', false);
+    show('stNotesBlock', false);
+  }
+  showOverlay('settingsOverlay', true);
+}
+
+function stClose() {
+  showOverlay('settingsOverlay', false);
+}
+
+stEl('settingsBtn').addEventListener('click', stOpen);
+stEl('stCloseX').addEventListener('click', stClose);
+stEl('stCloseBtn').addEventListener('click', stClose);
+stEl('stCheckBtn').addEventListener('click', () => stCheck(false));
+
+// 「下载新版本」：把地址交给系统浏览器。openExternal 只收 http/https
+//（file: 会被它直接拒掉，见 resize-core.js 那段注释），这里给的正是 https 直链
+stEl('stDownloadBtn').addEventListener('click', async () => {
+  // 上一次检查没成功时别拿旧结果里的直链去下，直接开发布页让用户自己看
+  const url = stFallback ? LATEST_PAGE : downloadUrlOf(stInfo);
+  try {
+    const { shell } = require('uxp');
+    await shell.openExternal(url);
+    stSetMsg(/\.ccx$/i.test(url)
+      ? '已在浏览器中开始下载，下载完双击 .ccx 安装，然后重启 Photoshop。'
+      : '已在浏览器中打开发布页，下载 .ccx 后双击安装，然后重启 Photoshop。', 'good');
+  } catch (e) {
+    // 打不开就把地址显示出来，用户还能自己复制
+    stSetMsg(`打不开浏览器（${String(e && e.message || e)}），请手动访问：${url}`, 'err');
+  }
+});
+
+setupSwitch('stAutoCheck', prefGet(ST_AUTO_KEY, '1') === '1', () => {
+  prefSet(ST_AUTO_KEY, stEl('stAutoCheck').checked ? '1' : '0');
+});
+
+stRefreshDot();
+
+// 开面板时自动查一次（可关，且一天最多一次）。延后几秒：让面板先把该画的画完，
+// 网络那点开销不跟启动抢时间
+if (prefGet(ST_AUTO_KEY, '1') === '1' && shouldAutoCheck(Number(prefGet(ST_LAST_KEY, '0')))) {
+  setTimeout(() => { stCheck(true); }, 3000);
+}
 
 // 所有文字输入框统一挂上「聚焦高亮 + 点进去清空」。放在最后：各功能页自己那些
 // input/keydown 监听都注册完了，通用行为排在它们后面触发，不会抢在前面把值清掉

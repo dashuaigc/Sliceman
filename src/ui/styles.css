@@ -84,12 +84,27 @@ body {
   background: #020c16;
   border-radius: 0 8px 8px 0;
 }
-/* 设置钮沉到功能栏底部 */
+/* 设置钮沉到功能栏底部。整块可点（见 index.html 的说明），子元素一律不吃事件：
+   UXP 下点在 svg 上时 event.target 会是 svg 甚至里面的 path，挂在外层的监听就收不到
+   —— 和 .switch > * 同一个处理。position:relative 是给右上角那个「有新版本」小红点当锚。 */
 .rail-foot {
+  position: relative;
   display: flex;
   justify-content: center;
   margin-top: auto;
   padding-top: 8px;
+  cursor: pointer;
+}
+.rail-foot > * { pointer-events: none; }
+.rail-foot:hover .ic-btn { opacity: 1; }
+.rail-dot {
+  position: absolute;
+  top: 6px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 4px;
+  background: #e34850;
 }
 .rail .ic-btn { margin: 0 0 2px; }
 /* 内容列：唯一的滚动区。
@@ -1158,3 +1173,54 @@ input[type="text"]::placeholder { color: #6d8ba3; }
 .ok     { background: #2d9d78; }
 .muted  { background: #59708a; }
 .blue   { background: #2f74d0; }
+
+/* ---------- 设置弹窗（功能栏底部的齿轮） ---------- */
+/* 壳沿用 sl-dialog 那套（94% 宽、左对齐、高度由内容决定，限高只加在内部列表上）。
+   ⚠️ 别给弹窗本体设 max-height + overflow —— 那会多出一条 UXP 原生滚动条，
+   它恒画在所有 DOM 之上，直接横穿弹窗（sl-dialog 的注释里记过这一笔）。 */
+.overlay .st-dialog { width: 94%; max-width: 94%; padding: 12px; text-align: left; }
+.overlay .st-dialog .confirm-msg { margin: 0; text-align: center; }
+.st-sec {
+  margin: 2px 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: #3ce0ef;
+}
+.st-row { display: flex; align-items: center; padding: 5px 2px; font-size: 12px; }
+.st-row + .st-row { border-top: 1px solid #12293f; }
+.st-k { flex: 0 0 auto; color: #8ba0b3; }
+.st-v { flex: 1 1 auto; min-width: 0; text-align: right; color: #e6f0f8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 查到新版本时把「最新版本」那行点亮，一眼能看出差别 */
+.st-v.st-new { color: #ffd54a; font-weight: 600; }
+/* 开关行：说明是第二行小字，所以这行不居中而是顶对齐；图标位没用上，标签自己顶格 */
+.st-switch { align-items: flex-start; margin-top: 6px; border-top: 1px solid #12293f; }
+.st-switch .row-label { margin-left: 0; font-size: 12px; line-height: 1.5; }
+.st-sub { font-size: 11px; color: #7f94a8; }
+/* 更新说明：固定像素限高 + 内部滚动（限高一律用 px，不用百分比）。
+   它是弹窗自己的滚动盒（同 .gd-list / .sl-list），不进 SCROLL_LOCK_IDS —— 那份名单
+   锁的是页面侧的滚动盒，把弹窗内部一起锁了列表就滚不动了 */
+.st-notes {
+  max-height: 150px;
+  overflow-y: auto;
+  padding: 8px;
+  background: #071a2b;
+  border: 1px solid #163149;
+  border-radius: 8px;
+}
+.st-note-head { margin: 6px 0 3px; font-size: 12px; font-weight: 600; color: #d9e7f3; }
+.st-note-head:first-child { margin-top: 0; }
+.st-note-text { font-size: 11px; line-height: 1.65; color: #a8bccd; }
+/* 状态行：检查中 / 已是最新 / 失败原因都写这儿，空着时不占高度 */
+.st-msg { margin: 10px 0 8px; font-size: 12px; line-height: 1.5; color: #c9d6e2; }
+.st-msg:empty { display: none; }
+.st-msg.st-err { color: #e0555c; }
+.st-msg.st-good { color: #3ddc97; }
+/* 按钮文字一律不许折行：面板窄（最小 300px），折行会把「检查更新」断成「检查更/新」。
+   压小一号内边距与字号，两个按钮并排才有富余 */
+.st-acts { margin-top: 2px; }
+.st-acts button, .st-dl-row button { white-space: nowrap; padding: 8px 12px; font-size: 12px; }
+/* 「下载新版本」整宽一行，是这个弹窗里最该被看见的那个按钮 */
+.st-dl-row { margin-top: 2px; }
+.st-dl-row button { flex: 1 1 auto; margin: 0; font-size: 13px; font-weight: 600; }
+.st-hint { margin: 0; font-size: 11px; line-height: 1.5; text-align: center; color: #7f94a8; }

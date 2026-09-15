@@ -142,14 +142,20 @@
               <span class="tile-label">切图</span>
             </div>
           </div>
-          <!-- 设置：原来在右上角顶栏，现移到功能栏底部（和参考图一致；目前仍是装饰入口） -->
-          <div class="rail-foot">
+          <!-- 设置：原来在右上角顶栏，现移到功能栏底部（和参考图一致）。
+               点它开 #settingsOverlay（关于 / 检查更新）。
+               ⚠️ 点击监听挂在外层这个 div 上，里面的 svg 一律 pointer-events:none
+               （样式表里 .rail-foot > * 已统一处理）—— UXP 下子元素会把事件目标抢走，
+               和 .switch > * 是同一个老问题 -->
+          <div class="rail-foot" id="settingsBtn" title="设置">
             <svg class="ic-btn" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="settings">
     <g fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
       <path d="M58 14 H70 L73 27 C77 28 81 30 84 32 L96 25 L104 34 L97 46 C99 50 101 54 102 58 L115 62 V74 L102 77 C101 81 99 85 97 88 L104 100 L96 108 L84 101 C80 103 77 105 73 106 L70 119 H58 L55 106 C51 105 47 103 44 101 L32 108 L24 100 L31 88 C29 84 27 81 26 77 L13 74 V62 L26 58 C27 54 29 50 31 46 L24 34 L32 25 L44 32 C47 30 51 28 55 27 Z"/>
       <circle cx="64" cy="68" r="17"/>
     </g>
   </svg>
+            <!-- 查到新版本时亮一个小红点：不弹窗打断，用户什么时候点开设置都还在 -->
+            <span class="rail-dot" id="settingsDot" style="display:none;"></span>
           </div>
         </nav>
         <div class="pages" id="pages">
@@ -1415,6 +1421,58 @@
             <button id="slCancelBtn" class="muted">取消</button>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- 设置（功能栏底部的齿轮）：目前只有「关于 / 检查更新」一块。
+         更新走 GitHub 的 releases/latest 接口，下载则交给系统浏览器打开 .ccx 直链
+         —— 插件自己没法装插件，下完还是得双击让 Creative Cloud 装。 -->
+    <div id="settingsOverlay" class="overlay" style="display:none;">
+      <div class="overlay-box st-dialog">
+        <div class="sl-head">
+          <p class="confirm-msg sl-title">设置</p>
+          <span class="sl-x" id="stCloseX">✕</span>
+        </div>
+
+        <div class="st-sec">关于</div>
+        <div class="st-row">
+          <span class="st-k">当前版本</span>
+          <span class="st-v" id="stCurVer">—</span>
+        </div>
+        <div class="st-row">
+          <span class="st-k">最新版本</span>
+          <span class="st-v" id="stLatestVer">未检查</span>
+        </div>
+        <div class="st-row">
+          <span class="st-k">上次检查</span>
+          <span class="st-v" id="stCheckedAt">从未检查</span>
+        </div>
+
+        <div class="switch-row st-switch">
+          <span class="row-label">打开面板时自动检查更新<br><small class="st-sub">每天最多查一次，只读取版本号</small></span>
+          <div class="switch" id="stAutoCheck"><svg class="sw" viewBox="0 0 44 24" xmlns="http://www.w3.org/2000/svg"><rect class="sw-track" x="12" y="0" width="20" height="24"/><circle class="sw-track" cx="12" cy="12" r="12"/><circle class="sw-track" cx="32" cy="12" r="12"/><circle class="sw-knob sw-off" cx="12" cy="12" r="9"/><circle class="sw-knob sw-on" cx="32" cy="12" r="9"/></svg></div>
+        </div>
+
+        <!-- 更新说明：查到新版本才显示。它是【弹窗自己的】滚动盒（同 .gd-list / .sl-list），
+             所以不进 panel.js 的 SCROLL_LOCK_IDS —— 那份名单锁的是页面侧的滚动盒 -->
+        <div id="stNotesBlock" style="display:none;">
+          <div class="st-sec" id="stNotesHead">更新内容</div>
+          <div class="st-notes" id="stNotes"></div>
+        </div>
+
+        <p class="st-msg" id="stMsg"></p>
+
+        <!-- 「下载」单独占一行（整宽）：340px 宽的面板里三个按钮并排一定会把文字折成
+             两行（真机宽度还能更窄，minimumSize 是 300）。行的显隐切在外层 #stDlRow 上，
+             不切按钮本身 —— 否则藏起来时这一行的 margin 还在，底下会多出一道空白 -->
+        <div class="confirm-row st-dl-row" id="stDlRow" style="display:none;">
+          <button id="stDownloadBtn" class="ok">下载新版本</button>
+        </div>
+        <div class="confirm-row st-acts">
+          <button id="stCheckBtn" class="blue">检查更新</button>
+          <button id="stCloseBtn" class="muted">关闭</button>
+        </div>
+        <p class="st-hint">下载的是 .ccx 安装包，双击安装后重启 Photoshop 生效。</p>
       </div>
     </div>
 
