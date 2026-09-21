@@ -104,6 +104,20 @@
               <span class="tile-label">表格</span>
             </div>
           </div>
+          <div class="tile" data-page="grid">
+            <div class="tile-inner">
+              <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <g fill="none" stroke="#EDE9FE" stroke-width="6">
+    <rect x="16" y="16" width="44" height="44" rx="4"/>
+    <rect x="68" y="16" width="44" height="44" rx="4"/>
+    <rect x="16" y="68" width="44" height="44" rx="4"/>
+  </g>
+  <rect x="68" y="68" width="44" height="44" rx="4" fill="none" stroke="#22d3e0" stroke-width="6"/>
+  <path d="M90 68 V112 M68 90 H112" fill="none" stroke="#22d3e0" stroke-width="4" stroke-linecap="round"/>
+</svg>
+              <span class="tile-label">定位格</span>
+            </div>
+          </div>
           <div class="tile" data-page="guide">
             <div class="tile-inner">
               <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
@@ -588,6 +602,73 @@
   <path d="M45 31 L98 64 L45 97 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>
 </svg>
           <span class="btn-label">绘制表格</span>
+        </button>
+      </section>
+
+      <!-- 创建定位格页：填宽高数量颜色 → 一批矩形形状图层 + 配套参考线。
+           间距与行列不给用户填，由宽高数量推导（(宽+高)÷16、9 个以内固定排列），
+           所以这一页只有四个输入框，下面两行灰字是推导结果的实时预览 -->
+      <section class="card" id="gridPage" style="display:none;">
+        <div class="feature-head">
+          <span class="feature-title">创建定位格</span>
+          <svg class="info-ico" id="gridInfo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
+  <circle cx="64" cy="64" r="45" fill="none" stroke="#9fb3c6" stroke-width="9"/>
+  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#9fb3c6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="66" cy="95" r="6" fill="#9fb3c6"/>
+</svg>
+          <!-- 当前画布尺寸：够不够装、要不要扩全看它，摆在标题行随时可见 -->
+          <span class="gd-canvas" id="dgCanvas">画布：—</span>
+          <div class="btn-tip" id="gridTip" style="display:none;"></div>
+        </div>
+
+        <div class="setting-row">
+          <div class="cell"><span class="row-label">宽度</span><div class="num-box"><input type="text" id="dgW"></div><span class="unit">px</span></div>
+          <div class="cell"><span class="row-label">高度</span><div class="num-box"><input type="text" id="dgH"></div><span class="unit">px</span></div>
+        </div>
+
+        <!-- 数量与颜色同一行。两格的伸缩基准不一样（颜色那格要装下色块 + 六位色值），
+             所以各给一个 class；面板窄到放不下时整格换行，不会把色值框挤掉一截 -->
+        <div class="setting-row">
+          <div class="cell cell-num"><span class="row-label">数量</span><div class="num-box"><input type="text" id="dgCount"></div></div>
+          <div class="cell cell-color">
+            <span class="row-label">颜色</span>
+            <span class="color-swatch" id="dgSwatch" title="点击打开拾色器"></span>
+            <div class="num-box hex-box"><input type="text" id="dgColor"></div>
+          </div>
+        </div>
+
+        <!-- 实时预览（需求 §26 §27）：间距与行列是算出来的，创建前先摆在眼前 -->
+        <div class="dg-calc">
+          <span id="dgGapInfo">间距：—</span>
+          <span id="dgGridInfo">排列：—</span>
+        </div>
+        <!-- 要不要扩画布、扩到多大：单独一行。
+             这句比「画布：1920×1080」长得多，跟着挤进标题行会把功能名压成两行 -->
+        <div class="dg-note" id="dgNote" style="display:none;"></div>
+        <div class="dg-preview" id="dgPreview"></div>
+
+        <!-- 在新文档里创建：开着时画布尺寸完全由这套定位格反推（外框 + 四周一个间距），
+             所以「自动扩展画布」没有意义，由 panel.js 把那一行置灰 -->
+        <div class="switch-row">
+          <span class="row-label">在新 PSD 中创建</span>
+          <div class="switch" id="dgNewDoc"><svg class="sw" viewBox="0 0 44 24" xmlns="http://www.w3.org/2000/svg"><rect class="sw-track" x="12" y="0" width="20" height="24"/><circle class="sw-track" cx="12" cy="12" r="12"/><circle class="sw-track" cx="32" cy="12" r="12"/><circle class="sw-knob sw-off" cx="12" cy="12" r="9"/><circle class="sw-knob sw-on" cx="32" cy="12" r="9"/></svg></div>
+        </div>
+
+        <div class="switch-row" id="dgExpandRow">
+          <span class="row-label">自动扩展画布</span>
+          <div class="switch" id="dgExpand"><svg class="sw" viewBox="0 0 44 24" xmlns="http://www.w3.org/2000/svg"><rect class="sw-track" x="12" y="0" width="20" height="24"/><circle class="sw-track" cx="12" cy="12" r="12"/><circle class="sw-track" cx="32" cy="12" r="12"/><circle class="sw-knob sw-off" cx="12" cy="12" r="9"/><circle class="sw-knob sw-on" cx="32" cy="12" r="9"/></svg></div>
+        </div>
+
+        <div class="switch-row">
+          <span class="row-label">自动创建参考线</span>
+          <div class="switch" id="dgGuides"><svg class="sw" viewBox="0 0 44 24" xmlns="http://www.w3.org/2000/svg"><rect class="sw-track" x="12" y="0" width="20" height="24"/><circle class="sw-track" cx="12" cy="12" r="12"/><circle class="sw-track" cx="32" cy="12" r="12"/><circle class="sw-knob sw-off" cx="12" cy="12" r="9"/><circle class="sw-knob sw-on" cx="32" cy="12" r="9"/></svg></div>
+        </div>
+
+        <button id="dgBtn" class="primary-btn">
+          <svg class="play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="create">
+  <path d="M45 31 L98 64 L45 97 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>
+</svg>
+          <span class="btn-label">创建定位格</span>
         </button>
       </section>
 

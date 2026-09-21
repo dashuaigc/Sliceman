@@ -72,9 +72,9 @@ describe('左侧功能栏与 panel.js 的契约', () => {
   const tiles = [...html.matchAll(/<div class="tile(?: active)?" data-page="([^"]+)"/g)]
     .map((m) => m[1]);
 
-  it('功能栏里有 9 个 .tile，且都带 data-page', () => {
-    // 顺序就是面板上从上到下的顺序：平移排在排版前面
-    expect(tiles).toEqual(['rename', 'split', 'batch', 'move', 'layout', 'table', 'guide', 'resize', 'slice']);
+  it('功能栏里有 10 个 .tile，且都带 data-page', () => {
+    // 顺序就是面板上从上到下的顺序：平移排在排版前面，定位格挨着表格与参考线
+    expect(tiles).toEqual(['rename', 'split', 'batch', 'move', 'layout', 'table', 'grid', 'guide', 'resize', 'slice']);
   });
 
   it('每个 data-page 在 switchPage 里都有对应的显隐分支', () => {

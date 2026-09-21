@@ -26,6 +26,9 @@ import { createGroups } from '../ps/group-maker.js';
 import { layoutLayers } from '../ps/layouter.js';
 import { moveLayers } from '../ps/mover.js';
 import { validateParams, buildTable, computeLayout } from '../lib/table-core.js';
+import { buildGrid, validateGridCfg, previewRows } from '../lib/gridcell-core.js';
+import { evalExpr, formatNum, stepValue } from '../lib/num-field.js';
+import { createGridCells, createDocument } from '../ps/grid-maker.js';
 import { originAtCenter, isPlausibleCenter } from '../lib/view-core.js';
 import { drawTable, readForegroundHex, pickColor, readViewCenter } from '../ps/table-maker.js';
 import { parseDistance, dirAxes, planMove, nudgeValue, formatDist, describeDelta } from '../lib/move-core.js';
@@ -129,11 +132,138 @@ const TEXT_FIELDS = [
   'projectName', 'moveX', 'moveY', 'layoutGap', 'layoutMargin',
   'tblW', 'tblH', 'tblRows', 'tblCols', 'tblRowGap', 'tblColGap',
   'tblLineW', 'tblRadius', 'tblLineColor', 'tblFillColor',
+  'dgW', 'dgH', 'dgCount', 'dgColor',
   'rzW', 'rzH', 'rzEdge', 'rzPercent', 'rzTimes', 'rzMaxW', 'rzMaxH',
   'rzAddW', 'rzAddH', 'rzScales', 'rzQuality', 'rzSuffix', 'rzTpl',
   'findText', 'templateText', 'startNum', 'stepNum',
   'gdNameInput', 'rzNameInput', 'slFindText',
 ];
+
+// ---- 数值输入框的通用增强：↑/↓ 加减一格，框里直接写算式 ----
+//
+// 两件事：
+//   1) ↑/↓ 把当前值加减 1，按住 Shift 走 10（快速平移页原本就是这个手感，这里推广到各页）；
+//   2) 框里可以直接写 `1000+200`、`1920/2`、`(100+20)*3`，离开输入框或按回车时换成结果。
+//      算式解析在 lib/num-field.js（有单测），只认数字和 + - * / ( )，
+//      算不出来就【原样留着】，让各功能页自己的校验去报错。
+//
+// ⚠️ 注册时机：本段必须跑在各功能页自己的 keydown / blur 监听【之前】。
+//    页面上的「回车即执行」读的是输入框里的文本，算式得先换成数字它才拿得到 1200
+//    而不是 "1000+200" 这一串。所以这段代码故意放在所有功能页代码的前面。
+//    ——它引用的 tblVal / dgState / rzSaveMemory 等都在后面才定义，但全部只在
+//    事件回调里用到（那时早已初始化完毕），不存在暂时性死区问题。
+
+/**
+ * 给一个输入框装上「↑/↓ 加减」和「算式求值」。
+ * @param {{id:string, decimals?:number, step?:number, bigStep?:number, min?:number,
+ *          arrows?:boolean, read?:()=>string, write?:(s:string, el:object)=>void,
+ *          after?:()=>void}} spec
+ *        read/write 默认按普通输入框处理（值就在 el.value 里）；表格页与定位格页
+ *        的真值存在各自的 state 对象里、框常态是空的，所以要另给这两个钩子。
+ *        arrows:false = 只补算式，不接管 ↑/↓（快速平移页有自己的一套）。
+ */
+function bindNumField(spec) {
+  const el = document.getElementById(spec.id);
+  if (!el) return;
+  const dec = spec.decimals ?? 0;
+  const step = spec.step ?? 1;
+  const big = spec.bigStep ?? 10;
+  const read = spec.read || (() => fieldValue(el));
+  const write = spec.write || ((s) => { el.value = s; });
+
+  // 下限一处定义、两条路（↑/↓ 与算式）共用 —— 分开写会出现「-5 敲进去不动、
+  // 但 0-5 会被夹回 0」这种自相矛盾的表现
+  const clamp = (n) => (spec.min !== undefined && n < spec.min ? spec.min : n);
+  const put = (n) => {
+    write(formatNum(clamp(n), dec), el);
+    if (spec.after) spec.after();
+  };
+
+  // 把算式换成结果。算不出来 / 本来就是规范写法 → 什么都不做
+  const resolve = () => {
+    const raw = String(read() ?? '').trim();
+    if (raw === '') return;                        // 空框保持空（不少地方「空 = 0」）
+    const n = evalExpr(raw);
+    if (n === null) return;
+    if (formatNum(clamp(n), dec) === raw) return;
+    put(n);
+  };
+
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      if (spec.arrows === false) return;
+      const cur = evalExpr(read());
+      if (cur === null) return;                    // 框里是看不懂的东西，别拿 0 顶上
+      if (e.preventDefault) e.preventDefault();
+      put(stepValue(cur, e.key === 'ArrowUp', e.shiftKey, step, big));
+      return;
+    }
+    if (e.key === 'Enter') resolve();              // 先算出结果，再让本页的回车行为接手
+  });
+  // focus/blur 不冒泡，连会冒泡的 focusout 一起听；重复触发也幂等
+  el.addEventListener('blur', resolve);
+  el.addEventListener('focusout', resolve);
+}
+
+// 表格页 / 定位格页：真值在 state 对象里，框常态是空的（当前值走灰字 placeholder）。
+// 读要读 state，写则要【同时】写进框（让用户当场看见白字）和 state（离开后的灰字）。
+const tblNumField = (id, extra) => bindNumField({
+  id,
+  read: () => tblVal(id),
+  write: (s, el) => { el.value = s; tblState[id] = s; },
+  after: () => saveTableCfg(),
+  ...extra,
+});
+const dgNumField = (id, extra) => bindNumField({
+  id,
+  read: () => dgVal(id),
+  write: (s, el) => { el.value = s; dgState[id] = s; },
+  after: () => { saveGridCfg(); refreshGridPreview(); },
+  ...extra,
+});
+// 改尺寸页是普通输入框，只是改完要重画预览、记进记忆
+const rzNumField = (id, extra) => bindNumField({
+  id,
+  after: () => { rzRenderPreview(); rzSaveMemory(); },
+  ...extra,
+});
+
+// 快速平移：两个距离框自己已经有 ↑/↓（会顺带翻方向、把负数回填成正数），这里只补算式。
+// 距离允许小数、也允许负数（负数 = 朝反方向），所以不设下限、保留两位小数。
+bindNumField({ id: 'moveX', arrows: false, decimals: 2 });
+bindNumField({ id: 'moveY', arrows: false, decimals: 2 });
+
+// 一键排版：对象间距 / 画布边距（clampPx 本来就会取整，这里直接给整数）
+bindNumField({ id: 'layoutGap', min: 0, after: () => prefSet('layout.gap', layoutGapInput.value) });
+bindNumField({ id: 'layoutMargin', min: 0, after: () => prefSet('layout.margin', layoutMarginInput.value) });
+
+// 快速绘制表格：本页全部数值框（两个颜色框是 hex，不在此列）
+tblNumField('tblRows', { min: 1 });
+tblNumField('tblCols', { min: 1 });
+tblNumField('tblW', { min: 1, decimals: 1 });
+tblNumField('tblH', { min: 1, decimals: 1 });
+tblNumField('tblRowGap', { min: 0, decimals: 1 });
+tblNumField('tblColGap', { min: 0, decimals: 1 });
+tblNumField('tblLineW', { min: 0, decimals: 1 });
+tblNumField('tblRadius', { min: 0, decimals: 1 });
+
+// 创建定位格：宽 / 高 / 数量都必须是正整数，所以不留小数位
+dgNumField('dgW', { min: 1 });
+dgNumField('dgH', { min: 1 });
+dgNumField('dgCount', { min: 1 });
+
+// 批量改尺寸
+rzNumField('rzW', { min: 1 });
+rzNumField('rzH', { min: 1 });
+rzNumField('rzEdge', { min: 1 });
+rzNumField('rzMaxW', { min: 1 });
+rzNumField('rzMaxH', { min: 1 });
+rzNumField('rzPercent', { min: 1, decimals: 1 });
+rzNumField('rzTimes', { min: 0, decimals: 2 });
+// 下面三个不参与预览，改完只要记住（与本页原有的 input 监听分组一致）
+bindNumField({ id: 'rzAddW', min: 1, after: () => rzSaveMemory() });
+bindNumField({ id: 'rzAddH', min: 1, after: () => rzSaveMemory() });
+bindNumField({ id: 'rzQuality', min: 1, after: () => { rzSyncOut(); rzSaveMemory(); } });
 
 // 让出事件循环一拍：使切图循环中排队的点击/按键（停止、ESC）得以处理
 function tick() { return new Promise((r) => setTimeout(r, 0)); }
@@ -788,6 +918,7 @@ const TIP_MASKED_FIELD_IDS = [
   'findText', 'templateText', 'startNum', 'stepNum',  // 批量重命名
   'tblRows', 'tblCols', 'tblW', 'tblH', 'tblRowGap', 'tblColGap',   // 快速绘制表格
   'tblLineW', 'tblLineColor', 'tblFillColor', 'tblRadius',
+  'dgW', 'dgH', 'dgCount', 'dgColor',                                // 创建定位格
   'rzW', 'rzH', 'rzEdge', 'rzPercent', 'rzTimes', 'rzMaxW', 'rzMaxH',   // 批量改尺寸
   'rzQuality', 'rzSuffix', 'rzTpl', 'rzAddW', 'rzAddH', 'rzScales',
 ];
@@ -1335,6 +1466,302 @@ bindSwatchPicker('tblLineSwatch', 'tblLineColor');
 bindSwatchPicker('tblFillSwatch', 'tblFillColor');
 loadTableCfg();
 refreshTableUi();
+
+// ---- 创建定位格：按宽高与数量生成一批矩形形状图层 + 配套参考线 ----
+// 间距和行列【不让用户填】：间距 = (宽 + 高) ÷ 16，9 个以内按固定表排列、10 个以上
+// 自动挑最方正的行列。全部几何在 lib/gridcell-core.js（有单测），这里只做
+// 「读界面 → 调几何 → 交给 PS」，外加把推导结果实时摆出来给用户过目。
+const dgBtn = document.getElementById('dgBtn');
+const dgNewDocEl = document.getElementById('dgNewDoc');
+const dgExpandEl = document.getElementById('dgExpand');
+const dgGuidesEl = document.getElementById('dgGuides');
+const DG_FIELDS = ['dgW', 'dgH', 'dgCount', 'dgColor'];
+const dgEl = {};
+for (const id of DG_FIELDS) dgEl[id] = document.getElementById(id);
+// 校验结果里的 field → 该标红哪个框
+const DG_FIELD_BOX = { width: 'dgW', height: 'dgH', count: 'dgCount', color: 'dgColor' };
+let gridBusy = false;
+
+// 本页输入框的取值模型与表格页同款：【真值存在 dgState 里，输入框本身常态是空的，
+// 当前值以 placeholder（灰字）显示】。
+//   · 点进去直接敲数字，不用先删旧值；
+//   · 敲了 → 按新敲的值，它同时成为新的灰字；
+//   · 没敲就把鼠标移走 → 框一律清空，不把旧值再写回白字，仍按灰字里那个值算。
+// 这么设计的关键理由：不依赖 blur 事件。把「提交」放在 input 上（每敲一下就写进
+// dgState），blur 就只剩「把框清空、恢复灰字」这点纯装饰工作，漏了也不丢数据。
+//
+// ⚠️ 一律走 dgVal 取值，别直接读 .value —— 正在输入时值在框里，其余时候值在 dgState 里。
+const dgState = {};
+
+const dgVal = (id) => {
+  const v = String(dgEl[id].value ?? '').trim();
+  return v !== '' ? v : (dgState[id] ?? '');
+};
+
+/** 写入一个值：存进 dgState，用灰字显示，输入框清空等着接收输入 */
+function setDgValue(id, v) {
+  const s = String(v);
+  dgState[id] = s;
+  const el = dgEl[id];
+  el.value = '';
+  el.placeholder = s;
+  el.setAttribute('placeholder', s);              // 属性/特性两头都设，稳一点
+}
+
+function readGridCfg() {
+  return {
+    width: dgVal('dgW'),
+    height: dgVal('dgH'),
+    count: dgVal('dgCount'),
+    color: dgVal('dgColor'),
+  };
+}
+
+function saveGridCfg() {
+  const c = readGridCfg();
+  prefSet('grid.w', c.width);
+  prefSet('grid.h', c.height);
+  prefSet('grid.count', c.count);
+  prefSet('grid.color', c.color);
+  prefSet('grid.newDoc', dgNewDocEl.checked ? '1' : '0');
+  prefSet('grid.expand', dgExpandEl.checked ? '1' : '0');
+  prefSet('grid.guides', dgGuidesEl.checked ? '1' : '0');
+}
+
+/** 只标出错的那一个框，其余复原（需求 §28：提示要落在对应输入框附近） */
+function markGridError(field) {
+  for (const [key, id] of Object.entries(DG_FIELD_BOX)) {
+    const box = dgEl[id].parentNode;
+    if (box && box.classList) box.classList.toggle('field-err', key === field);
+  }
+}
+
+/**
+ * 实时预览（需求 §26 §27）：画布读数、间距、行列，以及一个方块示意图。
+ * 参数还没填全时一律显示「—」，不猜测也不报错——用户正在输入的中间态不该弹提示。
+ */
+function refreshGridPreview() {
+  const c = readGridCfg();
+  const doc = app.activeDocument;
+  const canvasEl = document.getElementById('dgCanvas');
+  const gapEl = document.getElementById('dgGapInfo');
+  const gridEl = document.getElementById('dgGridInfo');
+  const noteEl = document.getElementById('dgNote');
+  const prevEl = document.getElementById('dgPreview');
+
+  // 色块跟着 hex 实时变色；填错就显示成透明（标红由 markGridError 统一管）
+  const okColor = /^#?[0-9a-f]{6}$/i.test(c.color);
+  document.getElementById('dgSwatch').style.background = okColor
+    ? (c.color.startsWith('#') ? c.color : '#' + c.color) : 'transparent';
+
+  // 校验只用来决定「能不能算预览」和标红，不写状态栏——那是点创建时才做的事。
+  // ⚠️ 框【空着】不标红：用户删干净准备重敲的那一瞬间也算空，一标就是红一下又好，
+  //    很晃眼。空框只让预览显示「—」，真正的拦截留到点创建时（那时才该报错）。
+  const err = validateGridCfg(c, { hasDoc: true });   // 开没开文档由点创建时判
+  markGridError(err && String(c[err.field] || '') !== '' ? err.field : null);
+
+  // 建新文档时画布由定位格反推，「自动扩展画布」无从谈起，整行置灰
+  document.getElementById('dgExpandRow').classList.toggle('row-off', !!dgNewDocEl.checked);
+
+  const newDoc = !!dgNewDocEl.checked;
+  const cw = doc ? Math.round(dnumSafe(doc.width)) : 0;
+  const ch = doc ? Math.round(dnumSafe(doc.height)) : 0;
+  // 建新文档时跟当前文档无关，画布尺寸稍后由定位格反推；这里先写个占位。
+  // ⚠️ 新建那版【不】带「画布：」前缀 —— 标题行就这么点宽度，多三个字就会把功能名挤成两行
+  canvasEl.textContent = newDoc ? '新建画布' : (doc ? `画布：${cw}×${ch}` : '未打开文档');
+
+  // 颜色填错不妨碍几何预览，其余三项填错就没得算
+  if (err && err.field !== 'color') {
+    gapEl.textContent = '间距：—';
+    gridEl.textContent = '排列：—';
+    noteEl.textContent = '';
+    noteEl.style.display = 'none';
+    prevEl.textContent = '';
+    prevEl.style.display = 'none';
+    return;
+  }
+
+  const count = Number(c.count);
+  // 建新文档：从「零画布」起算，planCanvas 给出的就是这套定位格需要的画布
+  //（外框 + 四周各一个间距），与当前开着什么文档无关
+  const plan = buildGrid(
+    { width: Number(c.width), height: Number(c.height), count },
+    newDoc ? { width: 0, height: 0 } : { width: cw, height: ch },
+    { expandCanvas: newDoc || !!dgExpandEl.checked },
+  );
+  gapEl.textContent = `间距：${plan.gap} px`;
+  gridEl.textContent = `排列：${plan.cols} 列 × ${plan.rows} 行`;
+  // 扩画布 / 会超出：都是创建前该知道的事，单独一行说，别挤标题
+  let note = '';
+  if (newDoc) {
+    canvasEl.textContent = `新建 ${plan.canvas.width}×${plan.canvas.height}`;
+  } else if (doc && plan.canvas.expanded) {
+    note = `画布将扩到 ${plan.canvas.width}×${plan.canvas.height}（从中心向四周扩）`;
+  } else if (doc && !plan.fits) {
+    note = '当前画布装不下，定位格会超出画布（未开自动扩展画布）';
+  }
+  noteEl.textContent = note;
+  noteEl.style.display = note ? '' : 'none';
+
+  const rows = previewRows(count, plan.cols);
+  prevEl.textContent = rows.join('\n');
+  prevEl.style.display = rows.length ? '' : 'none';
+}
+
+/** doc.width 在部分版本里是 {_value}，取数统一走这里 */
+function dnumSafe(v) {
+  if (typeof v === 'number') return v;
+  if (v && typeof v._value === 'number') return v._value;
+  const f = parseFloat(v);
+  return Number.isFinite(f) ? f : 0;
+}
+
+async function runCreateGrid() {
+  if (gridBusy) return;
+  const newDoc = !!dgNewDocEl.checked;
+  const c = readGridCfg();
+
+  // 建新文档这条路不需要事先开着文档
+  const err = validateGridCfg(c, { hasDoc: newDoc || !!app.activeDocument });
+  if (err) { markGridError(err.field); return setStatus(err.message); }
+  markGridError(null);
+
+  const params = { width: Number(c.width), height: Number(c.height), count: Number(c.count) };
+
+  gridBusy = true;
+  setTilesDisabled(true);
+  const lbl = dgBtn.querySelector('.btn-label');
+  const orig = lbl.textContent;
+  lbl.textContent = '创建中…';
+  dgBtn.style.pointerEvents = 'none';
+  dgBtn.style.opacity = '0.6';
+  setStatus('正在创建定位格…');
+  let plan = null;
+  try {
+    if (newDoc) {
+      // 先按「零画布」反推需要多大：外框 + 四周各一个间距，正是新文档该有的尺寸。
+      // 建完再按【文档的实际尺寸】重算一遍 —— 这样 plan.canvas.expanded 为 false，
+      // 不会在崭新的文档上白跑一次 canvasSize，坐标也以 PS 真给出的画布为准。
+      const need = buildGrid(params, { width: 0, height: 0 });
+      setStatus(`正在新建 ${need.canvas.width}×${need.canvas.height} 的文档…`);
+      const nd = await createDocument(need.canvas.width, need.canvas.height, '定位格');
+      plan = buildGrid(params, { width: dnumSafe(nd.width), height: dnumSafe(nd.height) });
+      setStatus('正在创建定位格…');
+    } else {
+      const doc = app.activeDocument;
+      plan = buildGrid(params, { width: dnumSafe(doc.width), height: dnumSafe(doc.height) },
+        { expandCanvas: !!dgExpandEl.checked });
+    }
+    const r = await createGridCells(plan, c.color, {
+      guides: !!dgGuidesEl.checked,
+      // 只有新建文档才补背景层：画进用户现成的稿子时凭空多一层是添乱
+      bgLayerName: newDoc ? '背景' : null,
+      onProgress: (done, total) => { if (total > 4) setStatus(`创建中… ${done}/${total} 个定位格`); },
+    });
+    if (!r.created) {
+      // 一个都没建成：把真实错误摆到面板上，别让用户对着画布猜
+      setStatus('创建失败：' + (r.error ? errMsg(r.error) : '未知原因') + '（详情见 UDT 控制台）');
+    } else {
+      const parts = [
+        `已创建 ${r.created} 个定位格（${plan.cols} 列 × ${plan.rows} 行，`
+        + `${Math.round(Number(c.width))}×${Math.round(Number(c.height))} px，间距 ${plan.gap} px）`,
+      ];
+      if (r.failed) parts.push(`${r.failed} 个失败：${errMsg(r.error)}`);
+      if (newDoc) {
+        parts.push(`已新建 ${plan.canvas.width}×${plan.canvas.height} 的文档`);
+        if (!r.background) parts.push('但「背景」层没建成（详情见 UDT 控制台）');
+      }
+      else if (r.resized) parts.push(`画布已扩到 ${plan.canvas.width}×${plan.canvas.height}`);
+      if (dgGuidesEl.checked) {
+        parts.push(r.guides ? `${r.guides} 条参考线` : '参考线与已有的完全重合，未新增');
+      }
+      if (!plan.fits) parts.push('部分定位格在画布外（已关闭自动扩展画布）');
+      setStatus(parts.join('，'));
+    }
+    refreshGridPreview();                          // 画布可能刚变大，标题行的读数要跟上
+  } catch (e) {
+    setStatus('创建失败：' + errMsg(e));
+  } finally {
+    gridBusy = false;
+    setTilesDisabled(false);
+    lbl.textContent = orig;
+    dgBtn.style.pointerEvents = '';
+    dgBtn.style.opacity = '';
+  }
+}
+
+dgBtn.addEventListener('click', () => { runCreateGrid(); });
+
+// 点色块弹 PS 原生拾色器（与表格页共用 picking 标志，模态期间不许再点）
+document.getElementById('dgSwatch').addEventListener('click', async () => {
+  if (picking || gridBusy) return;
+  picking = true;
+  try {
+    const hex = await pickColor(dgVal('dgColor'));
+    if (!hex) return;                              // 用户取消，保持原值
+    setDgValue('dgColor', hex);
+    refreshGridPreview();
+    saveGridCfg();
+  } catch (e) {
+    setStatus('打不开拾色器：' + errMsg(e) + '（可直接在输入框填 #rrggbb）');
+  } finally {
+    picking = false;
+  }
+});
+
+// 四个事件各司其职，谁漏了都不丢数据（同表格页）：
+//   input   —— 每敲一下就把真值提交进 dgState（唯一的「提交」时机）
+//   focus   —— 把框清空，直接开始输入，不用先删旧值
+//   Enter   —— 确认当前输入并退出输入框（= 手动触发一次 blur）。
+//              回车【不】直接创建：建定位格会改文档、还可能新建 PSD，
+//              这种动作只能由「创建定位格」那个按钮发起，别让手一滑就跑起来
+//   blur    —— 纯装饰：清空框、把当前真值恢复成灰字提示
+// focus/blur 不冒泡，为保险连会冒泡的 focusin/focusout 一起听；重复触发也幂等。
+for (const id of DG_FIELDS) {
+  const el = dgEl[id];
+
+  el.addEventListener('input', () => {
+    const v = String(el.value ?? '').trim();
+    if (v !== '') dgState[id] = v;                 // 空串不提交：那是「清空了还没输」的中间态
+    refreshGridPreview();
+    saveGridCfg();
+  });
+
+  const clear = () => { el.value = ''; };
+  el.addEventListener('focus', clear);
+  el.addEventListener('focusin', clear);
+
+  // 鼠标移走 = 把框清空、当前真值退回灰字。没敲过东西就还是原来那个值，
+  // 敲过就是新值 —— 两种情况下框里都不再留白字，看到的永远是灰字提示
+  const restore = () => {
+    el.value = '';
+    el.placeholder = dgState[id] ?? '';
+    el.setAttribute('placeholder', dgState[id] ?? '');
+    refreshGridPreview();
+  };
+  el.addEventListener('blur', restore);
+  el.addEventListener('focusout', restore);
+
+  el.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    if (e.preventDefault) e.preventDefault();      // 别让回车顺带触发别的默认行为
+    const v = String(el.value ?? '').trim();
+    if (v !== '') dgState[id] = v;                 // input 一般已经提交过，这里兜底
+    restore();                                     // 值落进灰字，框清空
+    saveGridCfg();
+    try { el.blur(); } catch { /* 不支持就算了：restore 已经把状态摆正 */ }
+  });
+}
+
+// 回填上次的设置（首次使用即为默认：1000×1000、6 个、#999999、三个开关都开）
+setDgValue('dgW', prefGet('grid.w', '1000'));
+setDgValue('dgH', prefGet('grid.h', '1000'));
+setDgValue('dgCount', prefGet('grid.count', '6'));
+setDgValue('dgColor', prefGet('grid.color', '#999999'));
+setupSwitch('dgNewDoc', prefGet('grid.newDoc', '1') === '1', () => { refreshGridPreview(); saveGridCfg(); });
+setupSwitch('dgExpand', prefGet('grid.expand', '1') === '1', () => { refreshGridPreview(); saveGridCfg(); });
+setupSwitch('dgGuides', prefGet('grid.guides', '1') === '1', saveGridCfg);
+refreshGridPreview();
 
 // 回填上次的设置（首次使用即为默认：横排 / 底部对齐 / 竖排左侧对齐 / 间距 10 / 不扩画布 / 边距 10）
 layoutDir = prefGet('layout.dir', 'h') === 'v' ? 'v' : 'h';
@@ -2112,6 +2539,7 @@ function switchPage(name) {
   show('movePage', name === 'move');             // 快速平移：八方向九宫格 + 复制移动
   show('layoutPage', name === 'layout');
   show('tablePage', name === 'table');
+  show('gridPage', name === 'grid');             // 创建定位格
   show('guidePage', name === 'guide');
   show('resizePage', name === 'resize');   // 批量改尺寸：四步向导
   show('sliceBtn', name === 'slice');
@@ -2128,6 +2556,8 @@ function switchPage(name) {
   // 只在 name==='guide' 时调用：初始化时的 switchPage('rename') 早于参考线那一块的
   // 定义，提前进去会撞上 const 的暂时性死区
   if (name === 'guide') { refreshGuideDocState(); refreshGuideMenuState(); }
+  // 定位格页：画布尺寸决定要不要扩画布，进页现读一次
+  if (name === 'grid') refreshGridPreview();
   if (name === 'split') refreshGuideSplitInfo();   // 参考线分割：进页现读一次「切出几块」
   if (name === 'resize') rzShowStep();             // 改尺寸：回到上次停留的那一步
 }
@@ -2202,6 +2632,20 @@ bindTip(document.getElementById('tableInfo'), document.getElementById('tableTip'
   + '<b>独立单元格</b>模式每格一层（R1C1…）放进组，描边与填充各自独立，可同时有。<br>'
   + '点色块可开拾色器。表格画在<b>当前视图正中</b>，整次绘制可一次撤销。');
 
+bindTip(document.getElementById('gridInfo'), document.getElementById('gridTip'),
+  '填好宽高与数量，一次生成一批<b>同尺寸的矩形形状图层</b>（矢量，不是像素、不是选区），'
+  + '按「定位格 01、02、03…」编号，<b>不建组</b>、同一层级。<br>'
+  + '<b>间距不用填</b>：按 (宽 + 高) ÷ 16 自动算，横竖相同并取整。<br>'
+  + '<b>排列不用填</b>：9 个以内用固定版式（5 个 = 3 + 2），10 个以上自动挑最接近正方形的行列；'
+  + '各行<b>统一列坐标</b>严格对齐，末行不足时<b>靠左起排、不居中</b>。<br>'
+  + '开<b>「在新 PSD 中创建」</b>（默认开）则新建一个文档来放：画布尺寸由定位格反推'
+  + '（整体外框 + 四周各一个间距），不用先开文档，也不动手上的稿子。'
+  + '新文档的层结构是<b>「背景」（透明空层）+ 各个定位格</b>。<br>'
+  + '关掉则画在当前文档里，画布装不下时<b>从中心向四周扩</b>，四周留一个间距的安全边距，原有内容不会被裁掉。<br>'
+  + '每个定位格配<b>6 条参考线</b>（四边 + 中心十字），位置完全重合的只留一条。<br>'
+  + '每次点击都是一次<b>独立创建</b>，不会去动之前建过的定位格；整批可一次撤销。<br>'
+  + '名称里带「定位格」的图层正是<b>「Symbols 切图」</b>认的基准框，两个功能可以配合用。');
+
 bindTip(document.getElementById('renameInfo'), document.getElementById('renameTip'),
   '改名对象＝<b>图层面板里选中的那些</b>；组和组里的层都点亮了，就各改一次。<br>'
   + '手点太慢用<b>「按名称查找」</b>：弹窗里查一批勾一批，攒成卡片，确认后一次性成为选中。<br>'
@@ -2210,7 +2654,7 @@ bindTip(document.getElementById('renameInfo'), document.getElementById('renameTi
   + '预览显示「原名称 → 新名称」，重名标<b class="tag-red">⚠同名</b>，没变化的行不写回 PS。给<b>背景图层</b>改名会被 PS 转成普通图层。');
 
 tiles.forEach((t) => t.addEventListener('click', () => {
-  if (slicing || splitting || converting || grouping || laying || moving || drawing || gdBusy) return;  // 任务进行中不切页
+  if (slicing || splitting || converting || grouping || laying || moving || drawing || gridBusy || gdBusy) return;  // 任务进行中不切页
   const page = t.getAttribute('data-page');
   if (page) switchPage(page);
 }));

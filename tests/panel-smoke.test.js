@@ -175,7 +175,7 @@ async function loadPanel(opts = {}) {
   };
 
   // 功能磁贴：让 switchPage 在测试里也走得通（点磁贴 = 切页）
-  const tiles = ['rename', 'split', 'batch', 'move', 'layout', 'table', 'guide', 'resize', 'slice'].map((p) => {
+  const tiles = ['rename', 'split', 'batch', 'move', 'layout', 'table', 'grid', 'guide', 'resize', 'slice'].map((p) => {
     const el = makeEl('tile-' + p);
     el.setAttribute('data-page', p);
     return el;
@@ -440,6 +440,413 @@ describe('panel.js 初始化冒烟', () => {
     const { document } = await loadPanel();
     // 面板末尾会把状态栏写成「插件已加载」——跑到这一句说明整段初始化都过了
     expect(document.getElementById('status').textContent).toBe('插件已加载');
+  });
+});
+
+// 算式求值与 ↑/↓ 的算法在 lib/num-field.js 有单测；这里验的是【接线】：
+// 监听器有没有真挂上、注册顺序对不对（算式必须先于各页自己的回车行为算出来）、
+// 以及表格页 / 定位格页那套「真值在 state、框里常态是空的」模型下结果落到哪儿。
+// 定位格：建文档、建形状层、改名都靠描述符，桩里把 PS 的反应演出来 ——
+// 建文档后把 activeDocument 换掉、建形状层后把新层塞进 activeLayers（面板靠它认「刚建出来那个」）
+function onGridPlay(state) {
+  // doc.layers 是【上 → 下】的顺序，和 PS 一致
+  const stack = () => (state.app.activeDocument ? state.app.activeDocument.layers : []);
+  const newId = () => { state.seq += 1; return state.seq; };
+  return (d) => {
+    const ref = d._target && d._target[0];
+
+    if (d._obj === 'make' && d.new && d.new._obj === 'document') {
+      state.made = {
+        w: d.new.width._value, h: d.new.height._value, name: d.new.name, fill: d.new.fill._value,
+      };
+      state.doc = fakeDoc(state.made.w, state.made.h);
+      // 透明填充的新文档自带一个空图层（PS 叫「图层 1」）
+      const auto = { id: newId(), name: '图层 1', empty: true };
+      state.doc.layers = [auto];
+      state.doc.activeLayers = [auto];
+      state.app.activeDocument = state.doc;
+      return null;
+    }
+
+    if (d._obj === 'make' && ref && ref._ref === 'contentLayer') {
+      const r = d.using.shape;
+      const layer = {
+        id: newId(),
+        name: '矩形 ' + state.seq,
+        bounds: {
+          left: r.left._value, top: r.top._value, right: r.right._value, bottom: r.bottom._value,
+        },
+      };
+      // ⚠️ 照搬真机行为：当前选中的是【空图层】时，PS 用形状层把它整个顶替掉
+      //    （层数不增、id 换新），而不是在它上面新建一层
+      const ls = stack();
+      const cur = state.app.activeDocument.activeLayers[0];
+      const at = ls.indexOf(cur);
+      if (cur && cur.empty && at >= 0) ls.splice(at, 1, layer);
+      else ls.unshift(layer);
+      state.cells.push(layer);
+      state.app.activeDocument.activeLayers = [layer];
+      return null;
+    }
+
+    if (d._obj === 'make' && ref && ref._ref === 'layer') {       // 新建空白图层
+      const layer = { id: newId(), name: '图层 ' + state.seq, empty: true };
+      stack().unshift(layer);
+      state.app.activeDocument.activeLayers = [layer];
+      return null;
+    }
+
+    if (d._obj === 'delete' && ref && ref._ref === 'layer') {
+      const ls = stack();
+      const at = ls.findIndex((x) => x && x.id === ref._id);
+      if (at >= 0) ls.splice(at, 1);
+      return null;
+    }
+
+    if (d._obj === 'move' && d.to && d.to._value === 'back') {    // 挪到最底
+      const ls = stack();
+      const cur = state.app.activeDocument.activeLayers[0];
+      const at = ls.indexOf(cur);
+      if (at >= 0) { ls.splice(at, 1); ls.push(cur); }
+      return null;
+    }
+
+    if (d._obj === 'set' && d.to && d.to._obj === 'layer') {
+      const l = stack().find((x) => x && x.id === ref._id);
+      if (l) l.name = d.to.name;
+    }
+    return null;
+  };
+}
+const gridState = () => ({ seq: 0, cells: [], made: null, doc: null, app: null });
+/** 用户手动新建的透明画布：一张图、一个空图层 */
+function fakeTransparentDoc(w, h) {
+  const doc = fakeDoc(w, h);
+  const only = { id: 900, name: '图层 1', empty: true };
+  doc.layers = [only];
+  doc.activeLayers = [only];
+  return doc;
+}
+/** 图层面板长什么样（上 → 下）。不传 doc 时看新建出来的那个文档 */
+const layerNames = (state, doc) => {
+  const d = doc || state.doc;
+  return d ? d.layers.map((l) => l.name) : [];
+};
+const flush = async (n = 60) => { for (let i = 0; i < n; i++) await settle(); };
+/** 从描述符里挑出新建的形状层，按【编号顺序】还原成 [名字, 左, 上] */
+const cellsOf = (state) => state.cells
+  .slice()
+  .sort((a, b) => a.name.localeCompare(b.name))
+  .map((c) => [c.name, c.bounds.left, c.bounds.top]);
+
+describe('创建定位格：在新 PSD 中创建', () => {
+  // 1000×600 的格子 6 个 → 间距 (1000+600)/16 = 100，3 列 2 行，
+  // 外框 3200×1300，画布 = 外框 + 四周各一个间距 = 3400×1500
+  const prefs = {
+    'grid.newDoc': '1', 'grid.w': '1000', 'grid.h': '600', 'grid.count': '6', 'grid.color': '#999999',
+  };
+
+  it('没有打开任何文档也能用：新建一个按定位格反推尺寸的 PSD', async () => {
+    const state = gridState();
+    const h = await loadPanel({ doc: null, prefs, onPlay: onGridPlay(state) });
+    state.app = h.photoshop.app;
+    h.goPage('grid');
+    fire(h.document.getElementById('dgBtn'), 'click');
+    await flush();
+    expect(state.made).toMatchObject({ w: 3400, h: 1500, name: '定位格' });
+  });
+
+  it('新文档用透明填充（定位格常配合 Symbols 切图，导出要透明底）', async () => {
+    const state = gridState();
+    const h = await loadPanel({ doc: null, prefs, onPlay: onGridPlay(state) });
+    state.app = h.photoshop.app;
+    h.goPage('grid');
+    fire(h.document.getElementById('dgBtn'), 'click');
+    await flush();
+    expect(state.made.fill).toBe('transparent');
+  });
+
+  it('层结构 = 6 个定位格 + 最底下一个透明的「背景」', async () => {
+    const state = gridState();
+    const h = await loadPanel({ doc: null, prefs, onPlay: onGridPlay(state) });
+    state.app = h.photoshop.app;
+    h.goPage('grid');
+    fire(h.document.getElementById('dgBtn'), 'click');
+    await flush();
+    expect(layerNames(state)).toEqual([
+      '定位格 01', '定位格 02', '定位格 03', '定位格 04', '定位格 05', '定位格 06', '背景',
+    ]);
+  });
+
+  it('自带的空图层被第一个形状层顶替掉了，不会多留一个空层', async () => {
+    const state = gridState();
+    const h = await loadPanel({ doc: null, prefs, onPlay: onGridPlay(state) });
+    state.app = h.photoshop.app;
+    h.goPage('grid');
+    fire(h.document.getElementById('dgBtn'), 'click');
+    await flush();
+    expect(layerNames(state).filter((n) => /^图层/.test(n))).toEqual([]);
+    expect(layerNames(state).length).toBe(7);          // 6 个定位格 + 1 个背景
+  });
+
+  // 回归：用户自己新建一张透明画布（只有一个空图层），关掉「在新 PSD 中创建」直接建定位格。
+  // PS 会拿第一个形状层去顶替【当前选中的空图层】—— 用户看到的就是「背景图层不见了」。
+  // 面板靠「先垫一层空图层去挨这一下」来挡住，用户那层必须原封不动。
+  it('画进用户自己新建的透明画布：他那个空图层不能被顶掉', async () => {
+    const state = gridState();
+    const userDoc = fakeTransparentDoc(4000, 4000);
+    const h = await loadPanel({
+      doc: userDoc, prefs: { ...prefs, 'grid.newDoc': '0' }, onPlay: onGridPlay(state),
+    });
+    state.app = h.photoshop.app;
+    h.goPage('grid');
+    fire(h.document.getElementById('dgBtn'), 'click');
+    await flush();
+    expect(layerNames(state, userDoc)).toEqual([
+      '定位格 01', '定位格 02', '定位格 03', '定位格 04', '定位格 05', '定位格 06', '图层 1',
+    ]);
+    expect(userDoc.layers.find((l) => l.id === 900)).toBeTruthy();   // 还是原来那一层
+  });
+
+  it('垫层用完即弃：没被顶替掉就删掉，不在图层面板留空层', async () => {
+    const state = gridState();
+    // 桩里让「当前选中的层」不是空层 → 垫层不会被顶替，面板应该自己把它删掉
+    const userDoc = fakeDoc(4000, 4000);
+    const solid = { id: 900, name: '一张图' };            // 没有 empty 标记 = 有内容
+    userDoc.layers = [solid];
+    userDoc.activeLayers = [solid];
+    const h = await loadPanel({
+      doc: userDoc, prefs: { ...prefs, 'grid.newDoc': '0' }, onPlay: onGridPlay(state),
+    });
+    state.app = h.photoshop.app;
+    h.goPage('grid');
+    fire(h.document.getElementById('dgBtn'), 'click');
+    await flush();
+    expect(layerNames(state, userDoc)).toEqual([
+      '定位格 01', '定位格 02', '定位格 03', '定位格 04', '定位格 05', '定位格 06', '一张图',
+    ]);
+  });
+
+  it('画进现成的文档时不补背景层（凭空多一层是添乱）', async () => {
+    const state = gridState();
+    const h = await loadPanel({
+      doc: fakeDoc(4000, 4000), prefs: { ...prefs, 'grid.newDoc': '0' }, onPlay: onGridPlay(state),
+    });
+    state.app = h.photoshop.app;
+    h.goPage('grid');
+    fire(h.document.getElementById('dgBtn'), 'click');
+    await flush();
+    const named = h.played.filter((d) => d._obj === 'set' && d.to && d.to._obj === 'layer')
+      .map((d) => d.to.name);
+    expect(named).not.toContain('背景');
+  });
+
+  it('格子落在新画布正中，四周正好留一个间距', async () => {
+    const state = gridState();
+    const h = await loadPanel({ doc: null, prefs, onPlay: onGridPlay(state) });
+    state.app = h.photoshop.app;
+    h.goPage('grid');
+    fire(h.document.getElementById('dgBtn'), 'click');
+    await flush();
+    expect(cellsOf(state)).toEqual([
+      ['定位格 01', 100, 100], ['定位格 02', 1200, 100], ['定位格 03', 2300, 100],
+      ['定位格 04', 100, 800], ['定位格 05', 1200, 800], ['定位格 06', 2300, 800],
+    ]);
+  });
+
+  it('新文档里不会白跑一次扩画布（尺寸本来就是照着算的）', async () => {
+    const state = gridState();
+    const h = await loadPanel({ doc: null, prefs, onPlay: onGridPlay(state) });
+    state.app = h.photoshop.app;
+    h.goPage('grid');
+    fire(h.document.getElementById('dgBtn'), 'click');
+    await flush();
+    expect(h.played.some((d) => d._obj === 'canvasSize')).toBe(false);
+  });
+
+  it('参考线照建，重合的只留一条（3 列 2 行 → 9 纵 + 6 横）', async () => {
+    const state = gridState();
+    const h = await loadPanel({ doc: null, prefs, onPlay: onGridPlay(state) });
+    state.app = h.photoshop.app;
+    h.goPage('grid');
+    fire(h.document.getElementById('dgBtn'), 'click');
+    await flush();
+    const g = guidesFrom(h.played);
+    expect(g.vertical).toEqual([100, 600, 1100, 1200, 1700, 2200, 2300, 2800, 3300]);
+    expect(g.horizontal).toEqual([100, 400, 700, 800, 1100, 1400]);
+  });
+
+  it('关掉这个开关就回到「画在当前文档里」，不新建 PSD', async () => {
+    const state = gridState();
+    const h = await loadPanel({
+      doc: fakeDoc(4000, 4000), prefs: { ...prefs, 'grid.newDoc': '0' }, onPlay: onGridPlay(state),
+    });
+    state.app = h.photoshop.app;
+    h.goPage('grid');
+    fire(h.document.getElementById('dgBtn'), 'click');
+    await flush();
+    expect(state.made).toBeNull();
+    expect(state.cells.length).toBe(6);
+  });
+});
+
+describe('创建定位格：输入框里按回车', () => {
+  it('只是确认当前值并退出输入框，绝不直接开建', async () => {
+    const state = gridState();
+    const h = await loadPanel({
+      doc: fakeDoc(4000, 4000),
+      prefs: { 'grid.newDoc': '1', 'grid.w': '1000', 'grid.h': '600', 'grid.count': '6' },
+      onPlay: onGridPlay(state),
+    });
+    state.app = h.photoshop.app;
+    h.goPage('grid');
+    const w = h.document.getElementById('dgW');
+    w.value = '800';
+    fire(w, 'keydown', { key: 'Enter', preventDefault() {} });
+    await flush(10);
+    expect(w.value).toBe('');                 // 已退出输入框
+    expect(w.placeholder).toBe('800');        // 值确认下来了（落进灰字）
+    expect(state.made).toBeNull();            // 没有新建文档
+    expect(state.cells).toEqual([]);          // 也没有建任何形状层
+  });
+
+  it('回车时框里是算式：先算出结果再确认', async () => {
+    const state = gridState();
+    const h = await loadPanel({
+      doc: fakeDoc(4000, 4000),
+      prefs: { 'grid.newDoc': '1', 'grid.w': '1000', 'grid.h': '600', 'grid.count': '6' },
+      onPlay: onGridPlay(state),
+    });
+    state.app = h.photoshop.app;
+    h.goPage('grid');
+    const w = h.document.getElementById('dgW');
+    w.value = '1000+200';
+    fire(w, 'keydown', { key: 'Enter', preventDefault() {} });
+    await flush(10);
+    expect(w.placeholder).toBe('1200');
+    expect(state.cells).toEqual([]);
+  });
+});
+
+describe('数值输入框：鼠标移出即算出 +-*/，↑/↓ 加减一格', () => {
+  const el = (document, id) => document.getElementById(id);
+  const arrow = (target, key, shiftKey = false) => fire(target, 'keydown', {
+    key, shiftKey, preventDefault() {},
+  });
+
+  it('普通输入框：失焦后结果直接填回框里', async () => {
+    const { document } = await loadPanel({ doc: fakeDoc(800, 600) });
+    const gap = el(document, 'layoutGap');
+    gap.value = '100/4';
+    fire(gap, 'blur');
+    expect(gap.value).toBe('25');
+  });
+
+  it('四则运算与括号、全角都认', async () => {
+    const { document } = await loadPanel({ doc: fakeDoc(800, 600) });
+    const cases = [['1000+200', '1200'], ['(100+20)*3', '360'], ['１０００＋２００', '1200']];
+    for (const [input, want] of cases) {
+      const f = el(document, 'layoutMargin');
+      f.value = input;
+      fire(f, 'blur');
+      expect(f.value).toBe(want);
+    }
+  });
+
+  it('算不出来就原样留着，交给各页自己的校验去报错', async () => {
+    const { document } = await loadPanel({ doc: fakeDoc(800, 600) });
+    const gap = el(document, 'layoutGap');
+    for (const bad of ['1+', 'abc', '']) {
+      gap.value = bad;
+      fire(gap, 'blur');
+      expect(gap.value).toBe(bad);
+    }
+  });
+
+  it('定位格页：框常态是空的，结果落进灰字（placeholder）', async () => {
+    const { document } = await loadPanel({ doc: fakeDoc(4000, 4000) });
+    const w = el(document, 'dgW');
+    w.value = '1000+200';
+    fire(w, 'blur');
+    expect(w.value).toBe('');            // 框清空（本页的取值模型）
+    expect(w.placeholder).toBe('1200');  // 当前值以灰字呈现
+  });
+
+  it('定位格页要整数：1000/3 收敛成 333，不留半像素', async () => {
+    const { document } = await loadPanel({ doc: fakeDoc(4000, 4000) });
+    const h = el(document, 'dgH');
+    h.value = '1000/3';
+    fire(h, 'blur');
+    expect(h.placeholder).toBe('333');
+  });
+
+  it('表格页同理：结果进灰字', async () => {
+    const { document } = await loadPanel({ doc: fakeDoc(800, 600) });
+    const tw = el(document, 'tblW');
+    tw.value = '100*3';
+    fire(tw, 'blur');
+    expect(tw.placeholder).toBe('300');
+  });
+
+  it('↑/↓ 加减 1，Shift 走 10', async () => {
+    const { document } = await loadPanel({ doc: fakeDoc(4000, 4000) });
+    const c = el(document, 'dgCount');
+    c.value = '6';
+    arrow(c, 'ArrowUp');
+    expect(c.value).toBe('7');
+    arrow(c, 'ArrowUp', true);
+    expect(c.value).toBe('17');
+    arrow(c, 'ArrowDown');
+    expect(c.value).toBe('16');
+  });
+
+  it('↑/↓ 不会把值压到下限以下（数量最少 1 个）', async () => {
+    const { document } = await loadPanel({ doc: fakeDoc(4000, 4000) });
+    const c = el(document, 'dgCount');
+    c.value = '1';
+    arrow(c, 'ArrowDown');
+    expect(c.value).toBe('1');
+  });
+
+  it('算式结果同样受下限约束（和 ↑/↓ 用的是同一条夹取逻辑）', async () => {
+    const { document } = await loadPanel({ doc: fakeDoc(800, 600) });
+    const gap = el(document, 'layoutGap');
+    gap.value = '10-50';                 // 间距不能是负的
+    fire(gap, 'blur');
+    expect(gap.value).toBe('0');
+    const mx = el(document, 'moveX');
+    mx.value = '10-50';                  // 平移距离没有下限：负数用来翻方向
+    fire(mx, 'blur');
+    expect(mx.value).toBe('-40');
+  });
+
+  it('↑/↓ 也能接着算式往下走', async () => {
+    const { document } = await loadPanel({ doc: fakeDoc(800, 600) });
+    const gap = el(document, 'layoutGap');
+    gap.value = '10*2';
+    arrow(gap, 'ArrowUp');
+    expect(gap.value).toBe('21');
+  });
+
+  it('快速平移：补了算式，但 ↑/↓ 仍归本页自己管（不会加两次）', async () => {
+    const { document } = await loadPanel({ doc: fakeDoc(800, 600) });
+    const mx = el(document, 'moveX');
+    mx.value = '100+20';
+    fire(mx, 'blur');
+    expect(mx.value).toBe('120');
+    arrow(mx, 'ArrowUp');
+    expect(mx.value).toBe('121');       // 121 而不是 122
+  });
+
+  it('回车：先算出结果，本页的「回车即执行」才拿得到数字而不是那串算式', async () => {
+    const { document, played } = await loadPanel({ doc: fakeDoc(800, 600) });
+    const mx = el(document, 'moveX');
+    mx.value = '100+20';
+    fire(mx, 'keydown', { key: 'Enter', preventDefault() {} });
+    expect(mx.value).toBe('120');
+    // 没有选中图层时不会真的下发平移，这里只认「算式已被换成数字」这一点
+    expect(played.some((d) => d._obj === 'move' && d.to && d.to.horizontal._value === 120)
+      || mx.value === '120').toBe(true);
   });
 });
 

@@ -556,6 +556,64 @@ input[type="text"]::placeholder { color: #6d8ba3; }
 /* 输出为「独立单元格」时，结构开关整行置灰 */
 #tablePage .row-off { opacity: 0.4; pointer-events: none; }
 
+/* ---------- 创建定位格页 ---------- */
+/* 版面骨架照搬表格页：两列等宽 .cell + 定宽右对齐标签（.cell 那几条规则在上面已并入） */
+#gridPage { position: relative; }
+#gridPage .setting-row { padding: 7px 2px; }
+#gridPage .setting-row + .setting-row,
+#gridPage .setting-row + .switch-row,
+#gridPage .switch-row + .setting-row { border-top: 1px solid #12293f; }
+#gridPage .row-label { flex: 0 0 auto; margin-left: 0; }
+/* 同表格页：本页标签是 flex:0 0 auto，开关不会被顶到行尾，得自己占掉剩余空间 */
+#gridPage .switch { margin-left: auto; }
+
+/* 两列等宽 .cell，骨架同表格页，但【允许折行】：
+   面板拉到 300px 左右时，一行放不下两组「标签 + 输入框 + px」，
+   表格页的 flex:1 1 0 会让内容溢出、把 px 压到下一个标签上（「p列距」）。
+   这里改成 flex-basis = 内容实际宽度 112px：宽度够就并排，不够就整格换行，
+   任何面板宽度下都不压字。 */
+#gridPage .setting-row { flex-wrap: wrap; }
+#gridPage .cell { flex: 1 1 112px; min-width: 0; display: flex; align-items: center; }
+#gridPage .cell-wide { flex: 1 1 100%; }
+/* 伸缩基准 = 这一格【实际需要】的宽度，宽度够就并排、不够就整格换行。
+   数量那格没有 px 单位，比宽高窄；颜色那格要装下色块 + 六位色值，比谁都宽 */
+#gridPage .cell-num { flex: 1 1 90px; }
+#gridPage .cell-color { flex: 1 1 146px; }
+/* 标签定宽 + 右对齐：两列输入框的左边缘落在同一条竖线上（同表格页） */
+#gridPage .cell .row-label { flex: 0 0 38px; text-align: right; padding-right: 8px; }
+#gridPage .cell .num-box { flex: 0 0 auto; width: 52px; }
+#gridPage .cell .unit { flex: 0 0 auto; margin-left: 6px; font-size: 12px; color: #8ba0b3; }
+/* 色值框：76px 刚好装下 #999999（12px 字号约 50px + 6px 缩进），再宽就要跟「数量」抢位置。
+   ⚠️ 选择器必须带上 .cell .num-box：上面那条 `#gridPage .cell .num-box { width:52px }`
+   优先级更高，只写 `#gridPage .hex-box` 会被它压掉、看着像没生效 */
+#gridPage .cell .num-box.hex-box { width: 76px; }
+/* 推导结果（间距 / 排列）：左右各占一半。UXP 没有 grid，用 flex 分列 */
+.dg-calc {
+  display: flex;
+  align-items: center;
+  padding: 8px 2px 4px;
+  border-top: 1px solid #12293f;
+  font-size: 12px;
+  color: #9bb2c6;
+}
+.dg-calc > span { flex: 1 1 0; min-width: 0; }
+/* 画布读数固定一行：它一折行就会把「创建定位格」这个功能名挤成两行。
+   真正的长文案（要扩到多大）在下面的 .dg-note 里，这里只放当前尺寸 */
+#dgCanvas { flex: 0 0 auto; white-space: nowrap; }
+/* 扩画布 / 装不下的提示：整宽一行，创建前就把「画布会变成多大」说清楚 */
+.dg-note { padding: 2px 2px 0; font-size: 12px; line-height: 1.6; color: #e0a05c; }
+/* 排列示意：一行一串方块，末行短一截 —— 「末行靠左起排、不居中」一眼可见。
+   换行靠内容里的 \n（white-space: pre-line），不靠标签 */
+.dg-preview {
+  padding: 4px 2px 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  letter-spacing: 3px;
+  color: #4d8ab5;
+  white-space: pre-line;
+  word-break: break-all;
+}
+
 /* ---------- 参考线助手页 ---------- */
 #guidePage { position: relative; }
 
