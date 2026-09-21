@@ -60,7 +60,7 @@ body {
    选择器带上 class 才压得住上面那条 .app > * { flex-shrink:0 }（同优先级但更靠后不保险）。
    min-height:0 是关键：不给的话 flex 项的最小高度按内容算，内容列永远撑破而不是自己滚 */
 .app > .workspace { display: flex; flex: 1 1 auto; min-height: 0; }
-/* 功能栏：竖排七个功能 + 底部设置。整条比内容区更深一档（内容区是 .app 的 #071829，
+/* 功能栏：竖排十个功能 + 底部设置。整条比内容区更深一档（内容区是 .app 的 #071829，
    这里压到接近面板最外层的底色），靠明暗分区，不再画竖线或分隔线。
    margin-left:-2px 是出血：把【背景】拉到面板左边缘，深色条才是贴边的一整条，
    而不是浮在中间的一块。
@@ -72,7 +72,11 @@ body {
    右边由这里的 padding-right（3px）提供，磁贴看着就左右各 3px、正中。
    两边各写一半反而会变成「左＝外框+内边距、右＝内边距」，那就是先前看到的偏右。
    42px = 深色条总宽（box-sizing:border-box，flex-basis 含内边距），磁贴得 39px。
-   自身可滚 —— 面板拉得很矮时不至于把底部的设置钮挤没 */
+   自身可滚 —— 面板拉得很矮时不至于把底部的设置钮挤没。
+   ⚠️ 但这条滚动条是【有代价】的：UXP 的原生滚动条 16px 宽、画在盒子里面，一出现
+   就把磁贴从 39px 挤到 23px。所以 .tile-label 必须 nowrap（见那边的说明），
+   而且磁贴的竖向尺寸要留足余量：十个磁贴 + 设置钮约 469px，常见面板高度（≈578px）
+   还剩 100px 富余，正常不会滚。加第十一个功能之前先把这笔账重算一遍 */
 .rail {
   display: flex;
   flex-direction: column;
@@ -273,14 +277,14 @@ input[type="text"]::placeholder { color: #6d8ba3; }
 .row-off .num-box { opacity: 0.6; }
 
 /* ---------- 功能栏里的功能项 ---------- */
-/* 竖排一列，每项＝图标 + 名称小字。留着名称是有意的：七个图标里「分割 / 排版 / 表格」
+/* 竖排一列，每项＝图标 + 名称小字。留着名称是有意的：十个图标里「分割 / 排版 / 表格」
    形近，纯图标得靠猜；名字都 ≤3 字（10px 字号约 30px 宽），39px 的磁贴里放得下：
    39 − 1px 边框×2 = 37px 可用。所以磁贴左右不留内边距，宽度全给标签 */
 .tile {
   flex: 0 0 auto;
   width: 100%;
   min-width: 0;
-  padding: 0 0 3px;                  /* 项与项之间的间距 */
+  padding: 0 0 2px;                  /* 项与项之间的间距 */
   cursor: pointer;
 }
 /* .tile 只是「槽」：负责占位与间距，视觉盒下沉到 .tile-inner —— 这样槽与槽之间才
@@ -289,7 +293,8 @@ input[type="text"]::placeholder { color: #6d8ba3; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 4px 0;                    /* 整项高度 ≈ 4+18+3+12+4+2 = 43px（原来 50px） */
+  padding: 3px 0;                    /* 整项高度 ≈ 3+18+3+12+3+2 = 41px */
+  overflow: hidden;                  /* 万一被挤窄，标签在圆角盒子里截断，不溢到功能栏外 */
   background: #0c2137;
   border: 1px solid #17344e;
   border-radius: 6px;
@@ -298,6 +303,13 @@ input[type="text"]::placeholder { color: #6d8ba3; }
    任一层吃了鼠标点击就到不了槽上 */
 .tile * { pointer-events: none; }
 .tile-icon { width: 18px; height: 18px; flex: 0 0 auto; }
+/* ⚠️ 一律【不折行】。这里曾经是 word-break:break-all，真机上会滚成一个死循环：
+   功能栏一旦竖着装不下就冒出滚动条 —— UXP 那条滚动条足足 16px 宽，画在盒子【里面】，
+   39px 的磁贴当场被挤成 23px，三个字的名字（重命名 / 批处理 / 定位格 / 参考线 / 改尺寸）
+   折成两行，每个磁贴从 44px 长到 58px，功能栏更装不下，于是滚动条永远退不掉。
+   （截图实测：正常态磁贴 x=3..41、名字单行 44px；出问题时磁贴 x=3..25、滚动条 x=29..44。）
+   改成 nowrap 后磁贴高度是【定值】，跟宽度无关，这个循环就不成立了：
+   哪怕面板一时矮到出滚动条，名字最多被截一点，面板一拉高滚动条自己就没了。 */
 .tile-label {
   margin-top: 3px;
   font-size: 10px;
@@ -305,7 +317,7 @@ input[type="text"]::placeholder { color: #6d8ba3; }
   text-align: center;
   color: #c3d4e2;
   max-width: 100%;
-  word-break: break-all;             /* 万一以后加了长名字，折行而不是撑宽功能栏 */
+  white-space: nowrap;
 }
 /* 选中态：只靠整块填充，不画任何描边 —— 边框色跟底色写成同一个值，
    这样既不露出未选中那圈 #17344e，也不会多一道亮青轮廓（边框位仍占着，
