@@ -1969,11 +1969,15 @@ describe('参考线：原生弹窗 → 通知 → 记录 → 一键重放', () =
     expect(document.getElementById('gdFavBtn').querySelector('.gd-label').textContent).toBe('收藏版面');
   });
 
-  it('没有记录时两个入口都置灰', async () => {
+  it('没有记录时两个入口仍可打开空列表', async () => {
     const { document } = await loadPanel({ doc: fakeDoc(1920, 1080) });
     expect(document.getElementById('gdRecentBtn').querySelector('.gd-label').textContent).toBe('最近使用');
-    expect(document.getElementById('gdRecentBtn').classList.contains('btn-off')).toBe(true);
-    expect(document.getElementById('gdFavBtn').classList.contains('btn-off')).toBe(true);
+    expect(document.getElementById('gdRecentBtn').classList.contains('btn-off')).toBe(false);
+    expect(document.getElementById('gdFavBtn').classList.contains('btn-off')).toBe(false);
+    for (const id of ['gdRecentBtn', 'gdFavBtn']) {
+      fire(document.getElementById(id), 'click');
+      expect(document.getElementById('gdListOverlay').style.display).not.toBe('none');
+    }
   });
 
   it('没有打开文档时点「新建参考线版面」只提示，不下发任何描述符（需求 §30）', async () => {

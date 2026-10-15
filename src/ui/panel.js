@@ -2940,9 +2940,9 @@ function applyGuideDisabled() {
   Array.from(document.querySelectorAll('#guidePage .gd-btn')).forEach((b) => {
     if (b.getAttribute('data-quick')) b.classList.toggle('btn-off', noDoc);
   });
-  // 两个记录入口：列表为空时点开也没东西，直接置灰；改名 / 删除不需要文档，所以只看条数
-  gdOff('gdRecentBtn', gdBusy || !gdRecent.length);
-  gdOff('gdFavBtn', gdBusy || !gdFavs.length);
+  // 空列表也允许打开查看空状态，保留入口的悬停反馈；忙碌时禁用。
+  gdOff('gdRecentBtn', gdBusy);
+  gdOff('gdFavBtn', gdBusy);
   gdOff('gdFavNowBtn', noDoc);                // 收藏当前版面要读当前文档里的参考线
 }
 

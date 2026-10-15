@@ -136,6 +136,14 @@ body {
   flex-shrink: 0;
   border-bottom: 1px solid #353940;
 }
+/* Compact export sections; standalone feature pages need no trailing rule. */
+#projectCard, #exportConfig > .card:first-child {
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-bottom: 12px;
+}
+#guidePage, #movePage, #tablePage, #gridPage { border-bottom: none; }
+
 .card-title { margin: 0 0 12px; font-size: 13px; font-weight: 600; color: #e7e8eb; }
 .card-head { display: flex; align-items: baseline; margin-bottom: 10px; }
 .card-head .card-title { margin: 0; }
@@ -1040,7 +1048,8 @@ input[type="text"]::placeholder { color: #8b919c; }
 .rz-log-n { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rz-log-s { flex: 0 0 auto; margin-left: 8px; }
 
-.rz-nav { display: flex; align-items: center; margin-top: 4px; }
+#resizePage .rz-pane { border-bottom: none; padding-bottom: 0; margin-bottom: 12px; }
+.rz-nav { display: flex; align-items: center; margin-top: 0; }
 .rz-nav .gd-btn { height: 36px; }
 .rz-nav #rzPrevBtn { flex: 0 0 92px; }
 .rz-nav #rzNextBtn { margin-right: 0; }
