@@ -36,7 +36,7 @@ Sliceman 是一款基于 Photoshop UXP 开发的生产力插件，专门解决�
 
 ## 插件截图
 
-以下为 v1.4.2 石墨蓝 UI 的界面预览，使用当前 HTML / CSS 在浏览器中渲染，尺寸为 360 × 780，示例数据仅用于展示；不是 Photoshop 实机截图，原生输入控件的细节可能不同。安装包请从上方「下载最新版 .ccx」获取。
+当前 v1.4.3 更新了 S 标识与透明图标。以下为 v1.4.2 石墨蓝 UI 的界面预览，使用当前 HTML / CSS 在浏览器中渲染，尺寸为 360 × 780，示例数据仅用于展示；不是 Photoshop 实机截图，原生输入控件的细节可能不同。安装包请从上方「下载最新版 .ccx」获取。
 
 本次更新统一了按钮边框与配色、精简标题和说明、缩小切图与分割页面的空白；输入框保留左对齐并增加内侧留白，参考线分割与智能分割一样不再新建组。
 
@@ -625,7 +625,7 @@ npm run test:watch  # 单测 watch 模式
 npm run build       # 打包出可加载的插件目录 dist/plugin/
 npm run build:dev   # 独立身份的 UI 开发测试版 dist/uxp-dev/（不生成 CCX）
 npm run pack        # build + 打成可双击安装的 dist/Sliceman_vX.Y.Z.ccx
-npm run icons       # 重新生成插件 / 面板图标 PNG（含必需的 @1x / @2x 后缀）
+npm run icons       # 从透明 Logo 生成原尺寸图标（需要 Python 3 + Pillow）
 npm run install:ps  # build + 直接装进本机 PS 的插件目录
 npm run uninstall:ps
 ```

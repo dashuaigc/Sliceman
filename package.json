@@ -1,6 +1,6 @@
 {
   "name": "sliceman",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "Photoshop UXP 插件：颜色标记批量切图 + 图层批量处理工具集",
   "main": "index.js",
   "directories": {
