@@ -1,5 +1,5 @@
 // 把 dist/plugin/ 打成可双击安装的 .ccx（本质就是 zip，manifest.json 必须在压缩包根目录）。
-// 环境无 zip 命令，用 Windows 自带 Compress-Archive —— 0.0.10 那个能正常装的包就是它出的，保持一致。
+// 使用 Windows 自带 .NET ZIP API，避免依赖 PowerShell Archive 模块的加载环境。
 // 版本号取 src/manifest.json，避免 .ccx 文件名和 manifest 里的版本对不上。
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync, rmSync, copyFileSync, statSync } from 'node:fs';
@@ -35,10 +35,10 @@ if (missing.length) {
 
 for (const f of [zip, ccx]) if (existsSync(f)) rmSync(f);
 
-// -Path 用 目录/* ：压缩包里是扁平内容，不套一层 plugin/ 目录
+// CreateFromDirectory 默认不包含源目录名：manifest 位于压缩包根目录。
 execFileSync('powershell', [
   '-NoProfile', '-NonInteractive', '-Command',
-  `Compress-Archive -Path '${SRC_DIR}/*' -DestinationPath '${zip}' -Force`,
+  `Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::CreateFromDirectory('${SRC_DIR}', '${zip}')`,
 ], { stdio: 'inherit' });
 
 copyFileSync(zip, ccx);
