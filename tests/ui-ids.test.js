@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const html = readFileSync(join(root, 'src/ui/index.html'), 'utf8');
-const js = readFileSync(join(root, 'src/ui/panel.js'), 'utf8');
+const js = readFileSync(join(root, 'src/ui/panel.js'), 'utf8').replace(/\r\n/g, '\n');
 
 const htmlIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
 
@@ -88,8 +88,8 @@ describe('左侧功能栏与 panel.js 的契约', () => {
     for (const cls of ['workspace', 'rail', 'rail-foot', 'pages']) {
       expect(html).toContain(`class="${cls}"`);
     }
-    // 设置钮已从顶栏移进功能栏底部：顶栏那层壳不该再有
-    expect(html).not.toContain('topbar-actions');
+    // 设置入口固定在顶栏，窄面板的导航滚动不影响访问。
+    expect(html.match(/<header class="topbar">([\s\S]*?)<\/header>/)[1]).toContain('id="settingsBtn"');
   });
 
   it('分割页两个主按钮随页显隐：既不在 switchPage 里单独控制，也不能自带 display:none', () => {
@@ -100,7 +100,7 @@ describe('左侧功能栏与 panel.js 的契约', () => {
     const body = /function switchPage\(name\) \{([\s\S]*?)\n\}/.exec(js)[1];
     for (const id of ['splitBtn', 'gsBtn']) {
       expect(body).not.toContain(`show('${id}'`);
-      const tag = new RegExp(`<button id="${id}"[^>]*>`).exec(html);
+      const tag = new RegExp(`<div id="${id}"[^>]*>`).exec(html);
       expect(tag).toBeTruthy();
       expect(tag[0]).not.toMatch(/display:\s*none/);
     }
@@ -174,8 +174,8 @@ describe('左侧功能栏与 panel.js 的契约', () => {
   it('图片来源默认「选择图片」：这个功能是给磁盘上成批的图用的', () => {
     const at = html.indexOf('id="rzSrcPills"');
     expect(at).toBeGreaterThan(0);
-    const row = html.slice(at, html.indexOf('</div>', at));
-    expect(row).toContain('<span class="pill active" data-src="files">');
+    const row = html.slice(at).match(/^id="rzSrcPills">((?:\s*<div class="pill[^>]*>(?:[^<]|<span[^>]*>[^<]*<\/span>)*<\/div>)+)/)[1];
+    expect(row).toMatch(/<(?:span|div) class="pill active" data-src="files">/);
     expect(row).not.toContain('class="pill active" data-src="doc"');
     expect(js).toMatch(/let rzSrc = 'files';/);           // 面板里的初值要跟标记上的高亮一致
   });
@@ -217,13 +217,12 @@ describe('左侧功能栏与 panel.js 的契约', () => {
     expect(css).toMatch(/\.rz-anchor-row \.rz-anchor:last-child\s*\{[^}]*margin-right:\s*0/);
   });
 
-  it('空白区域填充：四个选项加末尾的色块一行排完，不许折行', () => {
-    // 选「自定义」时色块出现，一折行就把「自定义」挤到第二行去（真机反馈）
+  it('空白区域填充：窄面板允许选项整体折行，保留行间距', () => {
+    // 54px 导航下可用内容宽度更小；选项内部不折字，整项换行。
     const css = readFileSync(join(root, 'src/ui/styles.css'), 'utf8')
       .replace(/\/\*[\s\S]*?\*\//g, '');
-    expect(css.match(/\.rz-fill-row\s*\{([^}]*)\}/)[1]).toMatch(/flex-wrap:\s*nowrap/);
-    // 折行才需要的下外边距要撤掉，否则这一行比别的行高一截
-    expect(css).not.toMatch(/\.rz-fill-row \.pill[^{]*\{[^}]*margin-bottom/);
+    expect(css.match(/\.rz-fill-row\s*\{([^}]*)\}/)[1]).toMatch(/flex-wrap:\s*wrap/);
+    expect(css).toMatch(/\.rz-fill-row \.pill[^{]*\{[^}]*margin-bottom/);
   });
 
   it('输出位置照切图的导出设置做：一个「位置」文件夹图标，没有两选一的 pill', () => {

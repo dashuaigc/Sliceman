@@ -6,13 +6,23 @@
   </head>
   <body>
     <div class="app">
-      <!-- 顶部栏：只放品牌与版本号（设置钮已移到左侧功能栏底部） -->
+      <!-- 顶部栏：品牌、版本与右上角设置入口。 -->
       <header class="topbar">
         <div class="brand">
-          <span class="ps-logo">PS</span>
+          <span class="ps-logo"><svg class="brand-mark" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20 4H8L3 9l4 4h10l-4 4H4l3 3h8l6-6-4-4H7l3-3h7Z" fill="#6b96f8"/></svg></span>
           <span class="brand-name">Sliceman</span>
-          <span class="version" id="version">v1.2.0</span>
+          <span class="version" id="version">v1.4.2</span>
         </div>
+          <div class="rail-foot" id="settingsBtn" title="设置" role="button" tabindex="0" aria-label="设置">
+            <svg class="ic-btn" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="settings">
+    <g fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M58 14 H70 L73 27 C77 28 81 30 84 32 L96 25 L104 34 L97 46 C99 50 101 54 102 58 L115 62 V74 L102 77 C101 81 99 85 97 88 L104 100 L96 108 L84 101 C80 103 77 105 73 106 L70 119 H58 L55 106 C51 105 47 103 44 101 L32 108 L24 100 L31 88 C29 84 27 81 26 77 L13 74 V62 L26 58 C27 54 29 50 31 46 L24 34 L32 25 L44 32 C47 30 51 28 55 27 Z"/>
+      <circle cx="64" cy="68" r="17"/>
+    </g>
+  </svg>
+            <!-- 查到新版本时亮一个小红点：不弹窗打断，用户什么时候点开设置都还在 -->
+            <span class="rail-dot" id="settingsDot" style="display:none;"></span>
+          </div>
       </header>
 
       <!-- 工作区：左侧功能栏（竖排图标 + 名称小字）+ 右侧内容列。
@@ -24,158 +34,83 @@
       <div class="workspace">
         <nav class="rail" id="rail">
           <div class="tile active" data-page="rename">
+            <span class="tile-indicator"></span>
             <div class="tile-inner">
-              <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-  <g fill="none" stroke="#EDE9FE" stroke-width="9" stroke-linecap="round">
-    <path d="M16 28 H88"/>
-    <path d="M16 58 H72"/>
-    <path d="M16 88 H48"/>
-  </g>
-  <path d="M58 114 L63 91 L97 57 L112 72 L78 106 Z" fill="#22d3e0"/>
-  <path d="M91 63 L106 78" fill="none" stroke="#043042" stroke-width="6" stroke-linecap="round"/>
-</svg>
+              <svg class="tile-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><g class="nav-mark" fill="none" stroke="#b7bdc8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m4 16 12-12 4 4-12 12-5 1 1-5Zm10-10 4 4"/></g></svg>
               <span class="tile-label">重命名</span>
             </div>
           </div>
           <div class="tile" data-page="split">
+            <span class="tile-indicator"></span>
             <div class="tile-inner">
-              <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-  <g fill="#EDE9FE" stroke="#EDE9FE" stroke-width="5" stroke-linejoin="round" stroke-linecap="round">
-    <rect x="22" y="22" width="54" height="54" rx="8"/>
-    <rect x="46" y="46" width="54" height="54" rx="8" opacity="0.55"/>
-  </g>
-  <path d="M104 14 L108.5 27.5 L122 32 L108.5 36.5 L104 50 L99.5 36.5 L86 32 L99.5 27.5 Z" fill="#EDE9FE"/>
-</svg>
+              <svg class="tile-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><g class="nav-mark" fill="none" stroke="#b7bdc8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="m4 3 12 12M20 3 8 15"/></g></svg>
               <span class="tile-label">分割</span>
             </div>
           </div>
           <div class="tile" data-page="batch">
+            <span class="tile-indicator"></span>
             <div class="tile-inner">
-              <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-  <g fill="none" stroke="#EDE9FE" stroke-width="6" stroke-linejoin="round" stroke-linecap="round">
-    <rect x="24" y="16" width="80" height="80" rx="10"/>
-    <g opacity="0.55" stroke-width="5">
-      <circle cx="48" cy="42" r="7"/>
-      <path d="M32 78 L56 54 L70 68"/>
-    </g>
-  </g>
-  <rect x="72" y="72" width="40" height="40" rx="9" fill="#22d3e0"/>
-  <path d="M84 100 L102 82 M92 82 H102 V92" fill="none" stroke="#043042" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>
+              <svg class="tile-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><g class="nav-mark" fill="none" stroke="#b7bdc8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m3 8 9-5 9 5-9 5-9-5Zm0 5 9 5 9-5M3 18l9 5 9-5"/></g></svg>
               <span class="tile-label">批处理</span>
             </div>
           </div>
           <div class="tile" data-page="move">
+            <span class="tile-indicator"></span>
             <div class="tile-inner">
-              <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-  <g fill="none" stroke="#EDE9FE" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M64 18 V110 M18 64 H110"/>
-    <path d="M50 32 L64 18 L78 32"/>
-    <path d="M50 96 L64 110 L78 96"/>
-    <path d="M32 50 L18 64 L32 78"/>
-    <path d="M96 50 L110 64 L96 78"/>
-  </g>
-  <circle cx="64" cy="64" r="9" fill="#22d3e0"/>
-</svg>
+              <svg class="tile-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><g class="nav-mark" fill="none" stroke="#b7bdc8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18M8 7l4-4 4 4M8 17l4 4 4-4M7 8l-4 4 4 4M17 8l4 4-4 4"/></g></svg>
               <span class="tile-label">平移</span>
             </div>
           </div>
           <div class="tile" data-page="layout">
+            <span class="tile-indicator"></span>
             <div class="tile-inner">
-              <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-  <g fill="#EDE9FE">
-    <rect x="14" y="46" width="26" height="52" rx="5"/>
-    <rect x="51" y="24" width="26" height="74" rx="5"/>
-    <rect x="88" y="62" width="26" height="36" rx="5"/>
-  </g>
-  <path d="M10 112 H118" fill="none" stroke="#22d3e0" stroke-width="9" stroke-linecap="round"/>
-</svg>
+              <svg class="tile-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><g class="nav-mark" fill="none" stroke="#b7bdc8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 17V9h3v8M11 17V3h3v14M17 17v-5h3v5"/></g></svg>
               <span class="tile-label">排版</span>
             </div>
           </div>
           <div class="tile" data-page="table">
+            <span class="tile-indicator"></span>
             <div class="tile-inner">
-              <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-  <g fill="none" stroke="#EDE9FE" stroke-width="7" stroke-linejoin="round" stroke-linecap="round">
-    <rect x="16" y="24" width="96" height="80" rx="8"/>
-    <path d="M16 51 H112 M16 77 H112 M48 24 V104 M80 24 V104"/>
-  </g>
-</svg>
+              <svg class="tile-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><g class="nav-mark" fill="none" stroke="#b7bdc8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></g></svg>
               <span class="tile-label">表格</span>
             </div>
           </div>
           <div class="tile" data-page="grid">
+            <span class="tile-indicator"></span>
             <div class="tile-inner">
-              <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-  <g fill="none" stroke="#EDE9FE" stroke-width="6">
-    <rect x="16" y="16" width="44" height="44" rx="4"/>
-    <rect x="68" y="16" width="44" height="44" rx="4"/>
-    <rect x="16" y="68" width="44" height="44" rx="4"/>
-  </g>
-  <rect x="68" y="68" width="44" height="44" rx="4" fill="none" stroke="#22d3e0" stroke-width="6"/>
-  <path d="M90 68 V112 M68 90 H112" fill="none" stroke="#22d3e0" stroke-width="4" stroke-linecap="round"/>
-</svg>
+              <svg class="tile-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><g class="nav-mark" fill="none" stroke="#b7bdc8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8V3h5M16 3h5v5M21 16v5h-5M8 21H3v-5M8 8h8v8H8z"/></g></svg>
               <span class="tile-label">定位格</span>
             </div>
           </div>
           <div class="tile" data-page="guide">
+            <span class="tile-indicator"></span>
             <div class="tile-inner">
-              <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-  <rect x="20" y="20" width="88" height="88" rx="8" fill="none" stroke="#EDE9FE" stroke-width="6"/>
-  <g fill="none" stroke="#22d3e0" stroke-width="6" stroke-linecap="round">
-    <path d="M48 8 V120"/>
-    <path d="M88 8 V120"/>
-    <path d="M8 46 H120"/>
-  </g>
-</svg>
+              <svg class="tile-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><g class="nav-mark" fill="none" stroke="#b7bdc8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v20M16 2v20M2 8h20M2 16h20"/></g></svg>
               <span class="tile-label">参考线</span>
             </div>
           </div>
           <div class="tile" data-page="resize">
+            <span class="tile-indicator"></span>
             <div class="tile-inner">
-              <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-  <rect x="14" y="26" width="66" height="66" rx="7" fill="none" stroke="#EDE9FE" stroke-width="7"/>
-  <rect x="58" y="56" width="56" height="46" rx="6" fill="none" stroke="#22d3e0" stroke-width="7"/>
-  <path d="M92 20 H114 V42" fill="none" stroke="#EDE9FE" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M114 20 L88 46" fill="none" stroke="#EDE9FE" stroke-width="7" stroke-linecap="round"/>
-</svg>
+              <svg class="tile-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><g class="nav-mark" fill="none" stroke="#b7bdc8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v16h16M2 6h16v16M14 2h8v8M22 2l-7 7"/></g></svg>
               <span class="tile-label">改尺寸</span>
             </div>
           </div>
           <div class="tile" data-page="slice">
+            <span class="tile-indicator"></span>
             <div class="tile-inner">
-              <svg class="tile-icon" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-  <g fill="none" stroke="#EDE9FE" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M32 18 L92 95"/>
-    <path d="M96 18 L36 95"/>
-    <circle cx="30" cy="103" r="11"/>
-    <circle cx="98" cy="103" r="11"/>
-  </g>
-  <circle cx="64" cy="59" r="6" fill="#22d3e0"/>
-</svg>
+              <svg class="tile-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><g class="nav-mark" fill="none" stroke="#b7bdc8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m3 17 5-5 4 4 4-6 5 7"/><circle cx="8" cy="8" r="1"/></g></svg>
               <span class="tile-label">切图</span>
             </div>
           </div>
-          <!-- 设置：原来在右上角顶栏，现移到功能栏底部（和参考图一致）。
-               点它开 #settingsOverlay（关于 / 检查更新）。
-               ⚠️ 点击监听挂在外层这个 div 上，里面的 svg 一律 pointer-events:none
-               （样式表里 .rail-foot > * 已统一处理）—— UXP 下子元素会把事件目标抢走，
-               和 .switch > * 是同一个老问题 -->
-          <div class="rail-foot" id="settingsBtn" title="设置">
-            <svg class="ic-btn" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="settings">
-    <g fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M58 14 H70 L73 27 C77 28 81 30 84 32 L96 25 L104 34 L97 46 C99 50 101 54 102 58 L115 62 V74 L102 77 C101 81 99 85 97 88 L104 100 L96 108 L84 101 C80 103 77 105 73 106 L70 119 H58 L55 106 C51 105 47 103 44 101 L32 108 L24 100 L31 88 C29 84 27 81 26 77 L13 74 V62 L26 58 C27 54 29 50 31 46 L24 34 L32 25 L44 32 C47 30 51 28 55 27 Z"/>
-      <circle cx="64" cy="68" r="17"/>
-    </g>
-  </svg>
-            <!-- 查到新版本时亮一个小红点：不弹窗打断，用户什么时候点开设置都还在 -->
-            <span class="rail-dot" id="settingsDot" style="display:none;"></span>
-          </div>
+
+
         </nav>
         <div class="pages" id="pages">
 
       <!-- 项目名称（仅切图页需要，用于导出名前缀） -->
       <section class="card" id="projectCard" style="display:none;">
+
         <!-- 标题与输入框同一行；原来的说明文案改当输入框 placeholder -->
         <div class="card-head card-head-inline">
           <h3 class="card-title">项目名称</h3>
@@ -199,8 +134,8 @@
           <span class="row-label">切图方式</span>
           </div>
           <div class="setting-value" id="sliceModePills">
-            <span class="pill active" data-slicemode="all">完整切图</span>
-            <span class="pill" data-slicemode="symbols">Symbols 切图</span>
+            <div class="pill active" data-slicemode="all"><span class="pill-face"></span><span class="pill-label">完整切图</span></div>
+            <div class="pill" data-slicemode="symbols"><span class="pill-face"></span><span class="pill-label">Symbols 切图</span></div>
           </div>
         </div>
         <!-- 说明改为悬停提示：鼠标移到上面两个选项上时，在下方浮出对应说明（绝对定位，不挤动布局） -->
@@ -211,15 +146,16 @@
            排版照批量处理页那一套：每个功能各一块 .btn-wrap，主按钮紧跟自己的卡片下面
            —— 两个功能同页时，按钮不能都堆在面板底部，否则分不清哪个按钮属于谁。 -->
       <div id="splitPage" style="display:none;">
+
         <div class="btn-wrap">
           <section class="card" id="splitIntro">
             <!-- 标题 + 问号图标；说明只在悬停问号时浮出（与批量处理页同一套） -->
             <div class="feature-head">
               <span class="feature-title">智能分割</span>
               <svg class="info-ico" id="splitInfo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
-  <circle cx="64" cy="64" r="45" fill="none" stroke="#9fb3c6" stroke-width="9"/>
-  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#9fb3c6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="66" cy="95" r="6" fill="#9fb3c6"/>
+  <circle cx="64" cy="64" r="45" fill="none" stroke="#a4aab5" stroke-width="9"/>
+  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#a4aab5" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="66" cy="95" r="6" fill="#a4aab5"/>
 </svg>
               <div class="btn-tip" id="splitTip" style="display:none;"></div>
             </div>
@@ -237,12 +173,12 @@
               <div class="switch" id="splitMerge"><svg class="sw" viewBox="0 0 44 24" xmlns="http://www.w3.org/2000/svg"><rect class="sw-track" x="12" y="0" width="20" height="24"/><circle class="sw-track" cx="12" cy="12" r="12"/><circle class="sw-track" cx="32" cy="12" r="12"/><circle class="sw-knob sw-off" cx="12" cy="12" r="9"/><circle class="sw-knob sw-on" cx="32" cy="12" r="9"/></svg></div>
             </div>
           </section>
-          <button id="splitBtn" class="primary-btn">
+          <div id="splitBtn" class="primary-btn" role="button" tabindex="0">
             <svg class="play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="split">
   <path d="M45 31 L98 64 L45 97 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>
 </svg>
             <span class="btn-label">开始智能分割</span>
-          </button>
+          </div>
         </div>
 
         <div class="btn-wrap batch-next">
@@ -250,9 +186,9 @@
             <div class="feature-head">
               <span class="feature-title">参考线分割</span>
               <svg class="info-ico" id="gsInfo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
-  <circle cx="64" cy="64" r="45" fill="none" stroke="#9fb3c6" stroke-width="9"/>
-  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#9fb3c6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="66" cy="95" r="6" fill="#9fb3c6"/>
+  <circle cx="64" cy="64" r="45" fill="none" stroke="#a4aab5" stroke-width="9"/>
+  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#a4aab5" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="66" cy="95" r="6" fill="#a4aab5"/>
 </svg>
               <!-- 当前参考线切出多少块：进页 / 换文档时现读，随时可见 -->
               <span class="gd-canvas" id="gsGrid"></span>
@@ -269,12 +205,12 @@
               <div class="switch" id="gsMerged"><svg class="sw" viewBox="0 0 44 24" xmlns="http://www.w3.org/2000/svg"><rect class="sw-track" x="12" y="0" width="20" height="24"/><circle class="sw-track" cx="12" cy="12" r="12"/><circle class="sw-track" cx="32" cy="12" r="12"/><circle class="sw-knob sw-off" cx="12" cy="12" r="9"/><circle class="sw-knob sw-on" cx="32" cy="12" r="9"/></svg></div>
             </div>
           </section>
-          <button id="gsBtn" class="primary-btn">
+          <div id="gsBtn" class="primary-btn" role="button" tabindex="0">
             <svg class="play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="split by guides">
   <path d="M45 31 L98 64 L45 97 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>
 </svg>
             <span class="btn-label">按参考线分割</span>
-          </button>
+          </div>
         </div>
       </div>
 
@@ -282,41 +218,42 @@
 
       <!-- 批量处理页：两个功能同页并列，说明文案改为悬停各自主按钮时浮出 -->
       <div id="batchPage" style="display:none;">
+
         <div class="btn-wrap">
           <!-- 标题 + 问号图标；说明只在悬停问号时浮出 -->
           <div class="feature-head">
             <span class="feature-title">批量转智能对象</span>
             <svg class="info-ico" id="smartObjInfo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
-  <circle cx="64" cy="64" r="45" fill="none" stroke="#9fb3c6" stroke-width="9"/>
-  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#9fb3c6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="66" cy="95" r="6" fill="#9fb3c6"/>
+  <circle cx="64" cy="64" r="45" fill="none" stroke="#a4aab5" stroke-width="9"/>
+  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#a4aab5" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="66" cy="95" r="6" fill="#a4aab5"/>
 </svg>
             <div class="btn-tip" id="smartObjTip" style="display:none;"></div>
           </div>
-          <button id="smartObjBtn" class="primary-btn">
+          <div id="smartObjBtn" class="primary-btn" role="button" tabindex="0">
             <svg class="play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="smart object">
   <path d="M45 31 L98 64 L45 97 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>
 </svg>
             <span class="btn-label">批量转换为智能对象</span>
-          </button>
+          </div>
         </div>
 
         <div class="btn-wrap batch-next">
           <div class="feature-head">
             <span class="feature-title">批量新建独立组</span>
             <svg class="info-ico" id="groupInfo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
-  <circle cx="64" cy="64" r="45" fill="none" stroke="#9fb3c6" stroke-width="9"/>
-  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#9fb3c6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="66" cy="95" r="6" fill="#9fb3c6"/>
+  <circle cx="64" cy="64" r="45" fill="none" stroke="#a4aab5" stroke-width="9"/>
+  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#a4aab5" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="66" cy="95" r="6" fill="#a4aab5"/>
 </svg>
             <div class="btn-tip" id="groupTip" style="display:none;"></div>
           </div>
-          <button id="groupBtn" class="primary-btn">
+          <div id="groupBtn" class="primary-btn" role="button" tabindex="0">
             <svg class="play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="create groups">
   <path d="M45 31 L98 64 L45 97 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>
 </svg>
             <span class="btn-label">批量新建独立组</span>
-          </button>
+          </div>
         </div>
 
       </div>
@@ -324,15 +261,16 @@
       <!-- 快速平移页：九宫格选方向（中心那个点只是原点标记，不可点），
            下面按方向显隐距离框 —— 正向只要一个值，斜向要水平 + 垂直两个值 -->
       <section class="card" id="movePage" style="display:none;">
-        <div class="feature-head">
+        <div class="feature-head page-heading">
           <span class="feature-title">快速平移</span>
           <svg class="info-ico" id="moveInfo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
-  <circle cx="64" cy="64" r="45" fill="none" stroke="#9fb3c6" stroke-width="9"/>
-  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#9fb3c6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="66" cy="95" r="6" fill="#9fb3c6"/>
+  <circle cx="64" cy="64" r="45" fill="none" stroke="#a4aab5" stroke-width="9"/>
+  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#a4aab5" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="66" cy="95" r="6" fill="#a4aab5"/>
 </svg>
           <div class="btn-tip" id="moveTip" style="display:none;"></div>
         </div>
+
 
         <div class="setting-row setting-stack">
           <div class="stack-head">
@@ -351,19 +289,19 @@
                于是它天然不可选中，不用另外写排除逻辑 -->
           <div class="mv-grid" id="moveDirPills">
             <div class="mv-row">
-              <span class="pill mv-dir" data-dir="upLeft">↖</span>
-              <span class="pill mv-dir" data-dir="up">↑</span>
-              <span class="pill mv-dir" data-dir="upRight">↗</span>
+              <div class="pill mv-dir" data-dir="upLeft"><span class="pill-face"></span><span class="pill-label">↖</span></div>
+              <div class="pill mv-dir" data-dir="up"><span class="pill-face"></span><span class="pill-label">↑</span></div>
+              <div class="pill mv-dir" data-dir="upRight"><span class="pill-face"></span><span class="pill-label">↗</span></div>
             </div>
             <div class="mv-row">
-              <span class="pill mv-dir" data-dir="left">←</span>
+              <div class="pill mv-dir" data-dir="left"><span class="pill-face"></span><span class="pill-label">←</span></div>
               <span class="mv-origin">●</span>
-              <span class="pill mv-dir active" data-dir="right">→</span>
+              <div class="pill mv-dir active" data-dir="right"><span class="pill-face"></span><span class="pill-label">→</span></div>
             </div>
             <div class="mv-row">
-              <span class="pill mv-dir" data-dir="downLeft">↙</span>
-              <span class="pill mv-dir" data-dir="down">↓</span>
-              <span class="pill mv-dir" data-dir="downRight">↘</span>
+              <div class="pill mv-dir" data-dir="downLeft"><span class="pill-face"></span><span class="pill-label">↙</span></div>
+              <div class="pill mv-dir" data-dir="down"><span class="pill-face"></span><span class="pill-label">↓</span></div>
+              <div class="pill mv-dir" data-dir="downRight"><span class="pill-face"></span><span class="pill-label">↘</span></div>
             </div>
           </div>
         </div>
@@ -409,26 +347,27 @@
           <div class="switch" id="moveCopy"><svg class="sw" viewBox="0 0 44 24" xmlns="http://www.w3.org/2000/svg"><rect class="sw-track" x="12" y="0" width="20" height="24"/><circle class="sw-track" cx="12" cy="12" r="12"/><circle class="sw-track" cx="32" cy="12" r="12"/><circle class="sw-knob sw-off" cx="12" cy="12" r="9"/><circle class="sw-knob sw-on" cx="32" cy="12" r="9"/></svg></div>
         </div>
 
-        <button id="moveBtn" class="primary-btn">
+        <div id="moveBtn" class="primary-btn" role="button" tabindex="0">
           <svg class="play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="move">
   <path d="M45 31 L98 64 L45 97 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>
 </svg>
           <span class="btn-label" id="moveBtnLabel">快速平移</span>
-        </button>
+        </div>
       </section>
 
       <!-- 一键排版页：方向 / 对齐 / 间距 / 扩画布 / 边距，紧凑排成五行 -->
       <section class="card" id="layoutPage" style="display:none;">
-        <div class="feature-head">
+        <div class="feature-head page-heading">
           <span class="feature-title">一键排版</span>
           <svg class="info-ico" id="layoutInfo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
-  <circle cx="64" cy="64" r="45" fill="none" stroke="#9fb3c6" stroke-width="9"/>
-  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#9fb3c6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="66" cy="95" r="6" fill="#9fb3c6"/>
+  <circle cx="64" cy="64" r="45" fill="none" stroke="#a4aab5" stroke-width="9"/>
+  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#a4aab5" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="66" cy="95" r="6" fill="#a4aab5"/>
 </svg>
           <!-- 与批量处理页同款：从标题行往下浮出 -->
           <div class="btn-tip" id="layoutTip" style="display:none;"></div>
         </div>
+
 
         <div class="setting-row">
           <svg class="row-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="direction">
@@ -440,8 +379,8 @@
 </svg>
           <span class="row-label">排列方向</span>
           <div class="setting-value" id="layoutDirPills">
-            <span class="pill active" data-dir="h">横排</span>
-            <span class="pill" data-dir="v">竖排</span>
+            <div class="pill active" data-dir="h"><span class="pill-face"></span><span class="pill-label">横排</span></div>
+            <div class="pill" data-dir="v"><span class="pill-face"></span><span class="pill-label">竖排</span></div>
           </div>
         </div>
 
@@ -456,14 +395,14 @@
           <span class="row-label">对齐方式</span>
           <!-- 横排/竖排各一组：切方向时只显示对应的三个选项，各自记住上次的选择 -->
           <div class="setting-value" id="layoutAlignH">
-            <span class="pill" data-align="top">顶部</span>
-            <span class="pill" data-align="middle">居中</span>
-            <span class="pill active" data-align="bottom">底部</span>
+            <div class="pill" data-align="top"><span class="pill-face"></span><span class="pill-label">顶部</span></div>
+            <div class="pill" data-align="middle"><span class="pill-face"></span><span class="pill-label">居中</span></div>
+            <div class="pill active" data-align="bottom"><span class="pill-face"></span><span class="pill-label">底部</span></div>
           </div>
           <div class="setting-value" id="layoutAlignV" style="display:none;">
-            <span class="pill active" data-align="left">左侧</span>
-            <span class="pill" data-align="center">居中</span>
-            <span class="pill" data-align="right">右侧</span>
+            <div class="pill active" data-align="left"><span class="pill-face"></span><span class="pill-label">左侧</span></div>
+            <div class="pill" data-align="center"><span class="pill-face"></span><span class="pill-label">居中</span></div>
+            <div class="pill" data-align="right"><span class="pill-face"></span><span class="pill-label">右侧</span></div>
           </div>
         </div>
 
@@ -517,30 +456,31 @@
 
       <!-- 快速绘制表格页：主区放高频参数，低频的收进「更多设置」，避免面板过高 -->
       <section class="card" id="tablePage" style="display:none;">
-        <div class="feature-head">
+        <div class="feature-head page-heading">
           <span class="feature-title">快速绘制表格</span>
           <svg class="info-ico" id="tableInfo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
-  <circle cx="64" cy="64" r="45" fill="none" stroke="#9fb3c6" stroke-width="9"/>
-  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#9fb3c6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="66" cy="95" r="6" fill="#9fb3c6"/>
+  <circle cx="64" cy="64" r="45" fill="none" stroke="#a4aab5" stroke-width="9"/>
+  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#a4aab5" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="66" cy="95" r="6" fill="#a4aab5"/>
 </svg>
           <div class="btn-tip" id="tableTip" style="display:none;"></div>
         </div>
+
 
         <!-- 三组「先定形态」的选择放最上面：选完再填数字，输入过程不用来回跳 -->
         <div class="setting-row">
           <span class="row-label">尺寸方式</span>
           <div class="setting-value" id="tblSizeModePills">
-            <span class="pill active" data-mode="cell">单元格尺寸</span>
-            <span class="pill" data-mode="total">表格总尺寸</span>
+            <div class="pill active" data-mode="cell"><span class="pill-face"></span><span class="pill-label">单元格尺寸</span></div>
+            <div class="pill" data-mode="total"><span class="pill-face"></span><span class="pill-label">表格总尺寸</span></div>
           </div>
         </div>
 
         <div class="setting-row">
           <span class="row-label">输出</span>
           <div class="setting-value" id="tblOutputPills">
-            <span class="pill active" data-out="single">单一形状</span>
-            <span class="pill" data-out="cells">独立单元格</span>
+            <div class="pill active" data-out="single"><span class="pill-face"></span><span class="pill-label">单一形状</span></div>
+            <div class="pill" data-out="cells"><span class="pill-face"></span><span class="pill-label">独立单元格</span></div>
           </div>
         </div>
 
@@ -548,9 +488,9 @@
         <div class="setting-row" id="tblStructRow">
           <span class="row-label">结构</span>
           <div class="setting-value" id="tblStructPills">
-            <span class="pill active" data-flag="border">外边框</span>
-            <span class="pill active" data-flag="hLines">内横线</span>
-            <span class="pill active" data-flag="vLines">内竖线</span>
+            <div class="pill active" data-flag="border"><span class="pill-face"></span><span class="pill-label">外边框</span></div>
+            <div class="pill active" data-flag="hLines"><span class="pill-face"></span><span class="pill-label">内横线</span></div>
+            <div class="pill active" data-flag="vLines"><span class="pill-face"></span><span class="pill-label">内竖线</span></div>
           </div>
         </div>
 
@@ -597,29 +537,30 @@
           </div>
         </div>
 
-        <button id="tableBtn" class="primary-btn">
+        <div id="tableBtn" class="primary-btn" role="button" tabindex="0">
           <svg class="play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="draw">
   <path d="M45 31 L98 64 L45 97 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>
 </svg>
           <span class="btn-label">绘制表格</span>
-        </button>
+        </div>
       </section>
 
       <!-- 创建定位格页：填宽高数量颜色 → 一批矩形形状图层 + 配套参考线。
            间距与行列不给用户填，由宽高数量推导（(宽+高)÷16、9 个以内固定排列），
            所以这一页只有四个输入框，下面两行灰字是推导结果的实时预览 -->
       <section class="card" id="gridPage" style="display:none;">
-        <div class="feature-head">
+        <div class="feature-head page-heading">
           <span class="feature-title">创建定位格</span>
           <svg class="info-ico" id="gridInfo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
-  <circle cx="64" cy="64" r="45" fill="none" stroke="#9fb3c6" stroke-width="9"/>
-  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#9fb3c6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="66" cy="95" r="6" fill="#9fb3c6"/>
+  <circle cx="64" cy="64" r="45" fill="none" stroke="#a4aab5" stroke-width="9"/>
+  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#a4aab5" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="66" cy="95" r="6" fill="#a4aab5"/>
 </svg>
           <!-- 当前画布尺寸：够不够装、要不要扩全看它，摆在标题行随时可见 -->
           <span class="gd-canvas" id="dgCanvas">画布：—</span>
           <div class="btn-tip" id="gridTip" style="display:none;"></div>
         </div>
+
 
         <div class="setting-row">
           <div class="cell"><span class="row-label">宽度</span><div class="num-box"><input type="text" id="dgW"></div><span class="unit">px</span></div>
@@ -664,66 +605,67 @@
           <div class="switch" id="dgGuides"><svg class="sw" viewBox="0 0 44 24" xmlns="http://www.w3.org/2000/svg"><rect class="sw-track" x="12" y="0" width="20" height="24"/><circle class="sw-track" cx="12" cy="12" r="12"/><circle class="sw-track" cx="32" cy="12" r="12"/><circle class="sw-knob sw-off" cx="12" cy="12" r="9"/><circle class="sw-knob sw-on" cx="32" cy="12" r="9"/></svg></div>
         </div>
 
-        <button id="dgBtn" class="primary-btn">
+        <div id="dgBtn" class="primary-btn" role="button" tabindex="0">
           <svg class="play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="create">
   <path d="M45 31 L98 64 L45 97 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>
 </svg>
           <span class="btn-label">创建定位格</span>
-        </button>
+        </div>
       </section>
 
       <!-- 参考线助手页：新建版面 / 快速参考线 / 收藏版面 / 最近使用 / 参考线控制
            全在一页，不弹窗（弹窗只用于「起名」和「清空历史」两处必须确认的动作） -->
       <section class="card" id="guidePage" style="display:none;">
-        <div class="feature-head">
+        <div class="feature-head page-heading">
           <span class="feature-title">参考线助手</span>
           <svg class="info-ico" id="guideInfo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
-  <circle cx="64" cy="64" r="45" fill="none" stroke="#9fb3c6" stroke-width="9"/>
-  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#9fb3c6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="66" cy="95" r="6" fill="#9fb3c6"/>
+  <circle cx="64" cy="64" r="45" fill="none" stroke="#a4aab5" stroke-width="9"/>
+  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#a4aab5" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="66" cy="95" r="6" fill="#a4aab5"/>
 </svg>
           <!-- 当前画布尺寸：所有「自动」都按它算，摆在标题行随时可见（需求 §16） -->
           <span class="gd-canvas" id="gdCanvas"></span>
           <div class="btn-tip" id="guideTip" style="display:none;"></div>
         </div>
 
+
         <!-- 参数不在面板里填 —— 点按钮直接开 Photoshop 原生的「新建参考线版面」弹窗：
              它自带「预览」，点确定才创建、关掉弹窗什么都不留。插件负责把创建出来的
              版面记进「最近使用」，之后一键重放。这样做的另一个原因：UXP 收不到
              面板被折叠的通知（PS-57284），面板自绘的预览没法保证撤干净 -->
-        <button id="gdCreateBtn" class="primary-btn">
+        <div id="gdCreateBtn" class="primary-btn" role="button" tabindex="0">
           <svg class="play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="new guide layout">
   <path d="M45 31 L98 64 L45 97 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>
 </svg>
           <span class="btn-label">新建参考线版面</span>
-        </button>
+        </div>
         <!-- 快速参考线：一步到位的高频版面，不进历史记录，恒为追加 -->
         <div class="gd-head">快速参考线</div>
         <div class="gd-row">
-          <div class="gd-btn" data-quick="cross">十字中心</div>
-          <div class="gd-btn" data-quick="nine">九宫格</div>
+          <div class="gd-btn" data-quick="cross"><span class="gd-face"></span><span class="gd-label">十字中心</span></div>
+          <div class="gd-btn" data-quick="nine"><span class="gd-face"></span><span class="gd-label">九宫格</span></div>
         </div>
 
         <!-- 版面记录：两个入口并排，点开各自的弹窗列表（需求 §8 / §12） -->
         <div class="gd-head">版面记录</div>
         <div class="gd-row">
-          <div class="gd-btn" id="gdRecentBtn">最近使用</div>
-          <div class="gd-btn" id="gdFavBtn">收藏版面</div>
+          <div class="gd-btn" id="gdRecentBtn"><span class="gd-face"></span><span class="gd-label">最近使用</span></div>
+          <div class="gd-btn" id="gdFavBtn"><span class="gd-face"></span><span class="gd-label">收藏版面</span></div>
         </div>
         <!-- 把当前文档里【已经画好】的参考线整套存成收藏，不用重建一遍 -->
         <div class="gd-row">
-          <div class="gd-btn" id="gdFavNowBtn">收藏当前版面</div>
+          <div class="gd-btn" id="gdFavNowBtn"><span class="gd-face"></span><span class="gd-label">收藏当前版面</span></div>
         </div>
 
         <!-- 参考线控制：只作用于当前文档，不动插件里保存的任何记录 -->
         <div class="gd-row gd-ctrl">
-          <div class="gd-btn" id="gdVisibleBtn">隐藏参考线</div>
-          <div class="gd-btn" id="gdLockBtn">锁定参考线</div>
+          <div class="gd-btn" id="gdVisibleBtn"><span class="gd-face"></span><span class="gd-label">隐藏参考线</span></div>
+          <div class="gd-btn" id="gdLockBtn"><span class="gd-face"></span><span class="gd-label">锁定参考线</span></div>
         </div>
         <div class="gd-row gd-ctrl">
-          <div class="gd-btn gd-btn-grow" id="gdClearBtn">清除参考线</div>
-          <div class="dropdown gd-clear-dd" id="gdClearDd">
-            <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#3ce0ef" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div class="gd-btn gd-btn-grow" id="gdClearBtn"><span class="gd-face"></span><span class="gd-label">清除参考线</span></div>
+          <div class="dropdown gd-clear-dd" id="gdClearDd"><span class="gd-face"></span>
+            <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#9ab8ff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <div class="dd-menu">
               <span class="dd-item" data-clear="all">清除全部参考线</span>
               <span class="dd-item" data-clear="h">仅清除横向参考线</span>
@@ -736,8 +678,9 @@
       <!-- 批量改尺寸页：四步向导。
            ⚠️ 与 panel.js 的契约：.rz-step 的 data-step 与 #rzPane1..4 一一对应，
            导航只认这两样（tests/ui-ids.test.js 静态钉住）。
-           小按钮一律用 div.gd-btn 而不是 <button> —— 原生 button 有压不住的 UA 最小宽高。 -->
+           小按钮沿用自绘 div.gd-btn，避免原生控件的最小宽高。 -->
       <div id="resizePage" style="display:none;">
+
         <!-- 步骤指示器：圆点靠填充区分状态（不画描边，UXP 的 CSS 圆角描边会锯齿） -->
         <div class="rz-steps" id="rzSteps">
           <div class="rz-step active" data-step="1"><span class="rz-dot">1</span><span class="rz-name">选择图片</span></div>
@@ -751,17 +694,17 @@
           <div class="feature-head">
             <span class="feature-title">图片来源</span>
             <svg class="info-ico" id="rzInfo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
-  <circle cx="64" cy="64" r="45" fill="none" stroke="#9fb3c6" stroke-width="9"/>
-  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#9fb3c6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="66" cy="95" r="6" fill="#9fb3c6"/>
+  <circle cx="64" cy="64" r="45" fill="none" stroke="#a4aab5" stroke-width="9"/>
+  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#a4aab5" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="66" cy="95" r="6" fill="#a4aab5"/>
 </svg>
             <div class="btn-tip" id="rzTip" style="display:none;"></div>
           </div>
           <!-- 默认「选择图片」：这个功能是给磁盘上成批的图用的，当前文档只是顺带支持 -->
           <div class="pill-row rz-src" id="rzSrcPills">
-            <span class="pill" data-src="doc">当前文档</span>
-            <span class="pill active" data-src="files">选择图片</span>
-            <span class="pill" data-src="folder">选择文件夹</span>
+            <div class="pill" data-src="doc"><span class="pill-face"></span><span class="pill-label">当前文档</span></div>
+            <div class="pill active" data-src="files"><span class="pill-face"></span><span class="pill-label">选择图片</span></div>
+            <div class="pill" data-src="folder"><span class="pill-face"></span><span class="pill-label">选择文件夹</span></div>
           </div>
           <div class="gd-row gd-ctrl" id="rzPickRow">
             <div class="gd-btn gd-btn-grow" id="rzPickBtn">选择图片文件…</div>
@@ -786,7 +729,7 @@
             <label>预设</label>
             <div class="dropdown rz-preset-dd" id="rzPresetDd">
               <span class="dd-value" id="rzPresetValue">自定义</span>
-              <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#3ce0ef" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#9ab8ff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
               <div class="dd-menu" id="rzPresetMenu"></div>
             </div>
           </div>
@@ -799,7 +742,7 @@
             <label>调整模式</label>
             <div class="dropdown rz-mode-dd" id="rzModeDd">
               <span class="dd-value" id="rzModeValue">固定宽高</span>
-              <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#3ce0ef" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#9ab8ff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
               <div class="dd-menu">
                 <span class="dd-item active" data-mode="wh">固定宽高</span>
                 <span class="dd-item" data-mode="w">固定宽度</span>
@@ -834,23 +777,23 @@
             <div class="setting-value num-field"><div class="num-box"><input type="text" id="rzPercent"></div><span class="unit">%</span></div>
           </div>
           <div class="pill-row rz-quick" id="rzPercentQuick" style="display:none;">
-            <span class="pill" data-percent="25">25%</span>
-            <span class="pill" data-percent="50">50%</span>
-            <span class="pill" data-percent="75">75%</span>
-            <span class="pill" data-percent="150">150%</span>
-            <span class="pill" data-percent="200">200%</span>
+            <div class="pill" data-percent="25"><span class="pill-face"></span><span class="pill-label">25%</span></div>
+            <div class="pill" data-percent="50"><span class="pill-face"></span><span class="pill-label">50%</span></div>
+            <div class="pill" data-percent="75"><span class="pill-face"></span><span class="pill-label">75%</span></div>
+            <div class="pill" data-percent="150"><span class="pill-face"></span><span class="pill-label">150%</span></div>
+            <div class="pill" data-percent="200"><span class="pill-face"></span><span class="pill-label">200%</span></div>
           </div>
           <div class="setting-row rz-field" id="rzFieldTimes" style="display:none;">
             <span class="row-label">倍数</span>
             <div class="setting-value num-field"><div class="num-box"><input type="text" id="rzTimes"></div><span class="unit">x</span></div>
           </div>
           <div class="pill-row rz-quick" id="rzTimesQuick" style="display:none;">
-            <span class="pill" data-times="0.5">0.5x</span>
-            <span class="pill" data-times="1">1x</span>
-            <span class="pill" data-times="1.5">1.5x</span>
-            <span class="pill" data-times="2">2x</span>
-            <span class="pill" data-times="3">3x</span>
-            <span class="pill" data-times="4">4x</span>
+            <div class="pill" data-times="0.5"><span class="pill-face"></span><span class="pill-label">0.5x</span></div>
+            <div class="pill" data-times="1"><span class="pill-face"></span><span class="pill-label">1x</span></div>
+            <div class="pill" data-times="1.5"><span class="pill-face"></span><span class="pill-label">1.5x</span></div>
+            <div class="pill" data-times="2"><span class="pill-face"></span><span class="pill-label">2x</span></div>
+            <div class="pill" data-times="3"><span class="pill-face"></span><span class="pill-label">3x</span></div>
+            <div class="pill" data-times="4"><span class="pill-face"></span><span class="pill-label">4x</span></div>
           </div>
           <div class="setting-row rz-field" id="rzFieldMaxW" style="display:none;">
             <span class="row-label">最大宽度</span>
@@ -867,17 +810,17 @@
             <div class="rz-label-row">
               <label>适应方式</label>
               <svg class="info-ico" id="rzFitInfo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
-  <circle cx="64" cy="64" r="45" fill="none" stroke="#9fb3c6" stroke-width="9"/>
-  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#9fb3c6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="66" cy="95" r="6" fill="#9fb3c6"/>
+  <circle cx="64" cy="64" r="45" fill="none" stroke="#a4aab5" stroke-width="9"/>
+  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#a4aab5" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="66" cy="95" r="6" fill="#a4aab5"/>
 </svg>
               <div class="btn-tip" id="rzFitTip" style="display:none;"></div>
             </div>
             <div class="pill-row rz-fit-pills" id="rzFitPills">
-              <span class="pill active" data-fit="contain">等比适应</span>
-              <span class="pill" data-fit="cover">等比填充</span>
-              <span class="pill" data-fit="stretch">拉伸</span>
-              <span class="pill" data-fit="scale">仅缩放</span>
+              <div class="pill active" data-fit="contain"><span class="pill-face"></span><span class="pill-label">等比适应</span></div>
+              <div class="pill" data-fit="cover"><span class="pill-face"></span><span class="pill-label">等比填充</span></div>
+              <div class="pill" data-fit="stretch"><span class="pill-face"></span><span class="pill-label">拉伸</span></div>
+              <div class="pill" data-fit="scale"><span class="pill-face"></span><span class="pill-label">仅缩放</span></div>
             </div>
           </div>
 
@@ -907,10 +850,10 @@
           <div class="field-block" id="rzFillBlock">
             <label>空白区域填充</label>
             <div class="pill-row rz-fill-row" id="rzFillPills">
-              <span class="pill active" data-fill="none">透明</span>
-              <span class="pill" data-fill="fff">白色</span>
-              <span class="pill" data-fill="000">黑色</span>
-              <span class="pill" data-fill="custom">自定义</span>
+              <div class="pill active" data-fill="none"><span class="pill-face"></span><span class="pill-label">透明</span></div>
+              <div class="pill" data-fill="fff"><span class="pill-face"></span><span class="pill-label">白色</span></div>
+              <div class="pill" data-fill="000"><span class="pill-face"></span><span class="pill-label">黑色</span></div>
+              <div class="pill" data-fill="custom"><span class="pill-face"></span><span class="pill-label">自定义</span></div>
               <span class="color-swatch" id="rzFillSwatch"></span>
             </div>
           </div>
@@ -951,9 +894,9 @@
           <div class="feature-head">
             <span class="feature-title">输出设置</span>
             <svg class="info-ico" id="rzDestInfo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
-  <circle cx="64" cy="64" r="45" fill="none" stroke="#9fb3c6" stroke-width="9"/>
-  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#9fb3c6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="66" cy="95" r="6" fill="#9fb3c6"/>
+  <circle cx="64" cy="64" r="45" fill="none" stroke="#a4aab5" stroke-width="9"/>
+  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#a4aab5" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="66" cy="95" r="6" fill="#a4aab5"/>
 </svg>
             <div class="btn-tip" id="rzDestTip" style="display:none;"></div>
           </div>
@@ -963,7 +906,7 @@
             <!-- 未选时显示文件夹图标；选中后图标换成缩略的文件夹名，完整路径在下面那行 -->
             <span class="folder-btn" id="rzPickOutBtn">
               <svg class="folder-ico" id="rzOutIco" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="folder">
-  <g fill="none" stroke="#9fb3c6" stroke-width="8" stroke-linejoin="round" stroke-linecap="round">
+  <g fill="none" stroke="#a4aab5" stroke-width="8" stroke-linejoin="round" stroke-linecap="round">
     <path d="M20 43 C20 37 24 34 30 34 H51 L61 44 H99 C105 44 109 48 109 54 V96 C109 101 105 105 99 105 H29 C23 105 20 101 20 95 Z"/>
   </g>
 </svg>
@@ -972,7 +915,7 @@
             <!-- 位置框与这个下拉都是 flex:1 1 0，平分「位置」标签之后的宽度（同切图那一行） -->
             <div class="dropdown" id="rzFmtDd">
               <span class="dd-value" id="rzFmtValue">原格式</span>
-              <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#3ce0ef" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#9ab8ff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
               <div class="dd-menu">
                 <span class="dd-item active" data-fmt="same">原格式</span>
                 <span class="dd-item" data-fmt="png">PNG</span>
@@ -1006,7 +949,7 @@
             <div class="setting-value">
               <div class="dropdown rz-name-dd" id="rzNameDd">
                 <span class="dd-value" id="rzNameValue">保持原文件名</span>
-                <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#3ce0ef" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#9ab8ff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 <div class="dd-menu">
                   <span class="dd-item active" data-name="keep">保持原文件名</span>
                   <span class="dd-item" data-name="suffix">添加后缀</span>
@@ -1030,7 +973,7 @@
             <div class="setting-value">
               <div class="dropdown rz-dup-dd" id="rzDupDd">
                 <span class="dd-value" id="rzDupValue">自动重命名</span>
-                <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#3ce0ef" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#9ab8ff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 <div class="dd-menu">
                   <span class="dd-item active" data-dup="rename">自动重命名</span>
                   <span class="dd-item" data-dup="overwrite">覆盖</span>
@@ -1066,9 +1009,9 @@
         <div class="rz-nav" id="rzNav">
           <div class="gd-btn" id="rzPrevBtn">上一步</div>
           <div class="gd-btn rz-primary" id="rzNextBtn">下一步</div>
-          <button id="rzRunBtn" class="primary-btn" style="display:none;">
+          <div id="rzRunBtn" class="primary-btn" style="display:none;" role="button" tabindex="0">
             <span class="btn-label">开始批量修改</span>
-          </button>
+          </div>
         </div>
       </div>
 
@@ -1117,7 +1060,7 @@
             <!-- 未选时显示文件夹图标；选中后图标换成缩略的文件夹名，完整路径靠悬停提示 -->
             <span class="folder-btn" id="pickFolderBtn">
               <svg class="folder-ico" id="folderIco" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="folder">
-  <g fill="none" stroke="#9fb3c6" stroke-width="8" stroke-linejoin="round" stroke-linecap="round">
+  <g fill="none" stroke="#a4aab5" stroke-width="8" stroke-linejoin="round" stroke-linecap="round">
     <path d="M20 43 C20 37 24 34 30 34 H51 L61 44 H99 C105 44 109 48 109 54 V96 C109 101 105 105 99 105 H29 C23 105 20 101 20 95 Z"/>
   </g>
 </svg>
@@ -1126,7 +1069,7 @@
             <!-- 自绘下拉：值 + 箭头，点击展开 .dd-menu（向上弹，避免被面板底边裁掉） -->
             <div class="dropdown" id="formatDd">
               <span class="dd-value" id="formatValue">PNG</span>
-              <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#3ce0ef" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#9ab8ff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
               <div class="dd-menu">
                 <span class="dd-item active" data-format="png">PNG</span>
                 <span class="dd-item" data-format="jpg">JPG</span>
@@ -1137,7 +1080,7 @@
             </div>
             <div class="dropdown" id="scaleDd">
               <span class="dd-value" id="scaleValue">1x</span>
-              <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#3ce0ef" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#9ab8ff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
               <div class="dd-menu">
                 <span class="dd-item" data-scale="0.25">0.25x</span>
                 <span class="dd-item" data-scale="0.5">0.5x</span>
@@ -1158,42 +1101,40 @@
       <div id="renamePage">
         <section class="card">
           <!-- 标题 + 问号图标；说明只在悬停问号时浮出（与其它功能页同一套） -->
-          <div class="feature-head">
+          <div class="feature-head page-heading">
             <svg class="head-ico" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="rename">
-  <g fill="none" stroke="#9fb3c6" stroke-width="11" stroke-linecap="round">
+  <g fill="none" stroke="#a4aab5" stroke-width="11" stroke-linecap="round">
     <path d="M18 28 H88"/>
     <path d="M18 58 H72"/>
     <path d="M18 88 H48"/>
   </g>
-  <path d="M58 114 L63 91 L97 57 L112 72 L78 106 Z" fill="#22d3e0"/>
+  <path d="M58 114 L63 91 L97 57 L112 72 L78 106 Z" fill="#6b96f8"/>
 </svg>
             <h3 class="card-title">批量重命名</h3>
             <svg class="info-ico" id="renameInfo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="help">
-  <circle cx="64" cy="64" r="45" fill="none" stroke="#9fb3c6" stroke-width="9"/>
-  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#9fb3c6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="66" cy="95" r="6" fill="#9fb3c6"/>
+  <circle cx="64" cy="64" r="45" fill="none" stroke="#a4aab5" stroke-width="9"/>
+  <path d="M49 49 C52 37 76 33 83 48 C90 63 67 64 67 78" fill="none" stroke="#a4aab5" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="66" cy="95" r="6" fill="#a4aab5"/>
 </svg>
-            <!-- 查找入口和大标题同一行：标题贴左，按钮靠 margin-left:auto 顶到行尾。
-                 改名对象始终是「图层面板里选中的那些」，弹窗查完把命中的层并进选中；
-                 选中数不在这里报 —— 下面的预览逐条列着，底部状态栏也写了总数 -->
-            <span class="find-btn" id="slOpenBtn">
+<div class="btn-tip" id="renameTip" style="display:none;"></div>
+          </div>
+
+          <div class="rename-tools"><span class="selection-summary" id="renameSelection">未选择图层</span><span class="find-btn" id="slOpenBtn">
               <svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="search">
-  <g fill="none" stroke="#3ce0ef" stroke-width="14" stroke-linecap="round">
+  <g fill="none" stroke="#9ab8ff" stroke-width="14" stroke-linecap="round">
     <circle cx="54" cy="54" r="34"/>
     <path d="M79 79 L110 110"/>
   </g>
 </svg>
               <span class="find-btn-t">按名称查找</span>
-            </span>
-            <div class="btn-tip" id="renameTip" style="display:none;"></div>
-          </div>
+            </span></div>
           <div class="field-block">
             <label>重命名方式</label>
             <div class="pill-row" id="renameModePills">
-              <span class="pill active" data-mode="replace">替换</span>
-              <span class="pill" data-mode="new">重新命名</span>
-              <span class="pill" data-mode="prefix">前缀</span>
-              <span class="pill" data-mode="suffix">后缀</span>
+              <div class="pill active" data-mode="replace"><span class="pill-face"></span><span class="pill-label">替换</span></div>
+              <div class="pill" data-mode="new"><span class="pill-face"></span><span class="pill-label">重新命名</span></div>
+              <div class="pill" data-mode="prefix"><span class="pill-face"></span><span class="pill-label">前缀</span></div>
+              <div class="pill" data-mode="suffix"><span class="pill-face"></span><span class="pill-label">后缀</span></div>
             </div>
           </div>
           <!-- 查找/替换同一行；非替换模式下 findBlock 整列隐藏，右列自动占满 -->
@@ -1235,50 +1176,51 @@
             <div class="field-block field-inline">
               <label>数字位数：</label>
               <div class="pill-row" id="digitsPills">
-                <span class="pill active" data-digits="1">1 位</span>
-                <span class="pill" data-digits="2">2 位</span>
-                <span class="pill" data-digits="3">3 位</span>
-                <span class="pill" data-digits="4">4 位</span>
+                <div class="pill active" data-digits="1"><span class="pill-face"></span><span class="pill-label">1 位</span></div>
+                <div class="pill" data-digits="2"><span class="pill-face"></span><span class="pill-label">2 位</span></div>
+                <div class="pill" data-digits="3"><span class="pill-face"></span><span class="pill-label">3 位</span></div>
+                <div class="pill" data-digits="4"><span class="pill-face"></span><span class="pill-label">4 位</span></div>
               </div>
             </div>
             <div class="field-block field-inline">
               <label>命名方向：</label>
               <div class="pill-row" id="dirPills">
-                <span class="pill active" data-dir="down">从上到下</span>
-                <span class="pill" data-dir="up">从下到上</span>
+                <div class="pill active" data-dir="down"><span class="pill-face"></span><span class="pill-label">从上到下</span></div>
+                <div class="pill" data-dir="up"><span class="pill-face"></span><span class="pill-label">从下到上</span></div>
               </div>
             </div>
           </div>
           <div class="preview-block">
-            <div class="preview-head">预览 <span class="label-sub">（原名称 → 新名称）</span></div>
+            <div class="preview-head">结果预览</div>
+            <div class="pv-columns"><span>原名称</span><span>新名称</span></div>
             <div id="previewList" class="preview"></div>
           </div>
         </section>
       </div>
 
       <!-- 主操作按钮：切图/Symbols 页复用同一个（原 sliceBtn 逻辑） -->
-      <button id="sliceBtn" class="primary-btn" style="display:none;">
+      <div id="sliceBtn" class="primary-btn" style="display:none;" role="button" tabindex="0">
         <svg class="play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="play">
   <path d="M45 31 L98 64 L45 97 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>
 </svg>
         <span class="btn-label">开始导出</span>
-      </button>
+      </div>
 
       <!-- 重命名页按钮 -->
-      <button id="renameBtn" class="primary-btn">
+      <div id="renameBtn" class="primary-btn" role="button" tabindex="0">
         <span class="btn-label">应用重命名</span>
-      </button>
+      </div>
 
       <!-- 分割页的两个主按钮不在这里：那一页有两个功能，按钮各自跟在自己的卡片下面
            （见上面的 #splitPage） -->
 
       <!-- 一键排版页按钮：选中少于 2 个对象时置灰不可点 -->
-      <button id="layoutBtn" class="primary-btn" style="display:none;">
+      <div id="layoutBtn" class="primary-btn" style="display:none;" role="button" tabindex="0">
         <svg class="play-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="layout">
   <path d="M45 31 L98 64 L45 97 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>
 </svg>
         <span class="btn-label">一键排版</span>
-      </button>
+      </div>
 
 
         </div><!-- /.pages -->
@@ -1295,8 +1237,8 @@
       <div class="overlay-box">
         <p class="confirm-msg">已暂停，是否终止任务？<br><small>终止将把 PSD 恢复到切图前</small></p>
         <div class="confirm-row">
-          <button id="stopConfirmYes" class="danger">终止本次切图</button>
-          <button id="stopConfirmNo" class="ok">继续切图</button>
+          <div id="stopConfirmYes" class="danger" role="button" tabindex="0">终止本次切图</div>
+          <div id="stopConfirmNo" class="ok" role="button" tabindex="0">继续切图</div>
         </div>
       </div>
     </div>
@@ -1306,8 +1248,8 @@
       <div class="overlay-box">
         <p class="confirm-msg">当前将生成 <b id="tblCellCount"></b> 个形状图层，<br>可能影响 Photoshop 性能。</p>
         <div class="confirm-row">
-          <button id="tblConfirmYes" class="ok">继续生成</button>
-          <button id="tblConfirmNo" class="muted">取消</button>
+          <div id="tblConfirmYes" class="ok" role="button" tabindex="0">继续生成</div>
+          <div id="tblConfirmNo" class="muted" role="button" tabindex="0">取消</div>
         </div>
       </div>
     </div>
@@ -1317,8 +1259,8 @@
       <div class="overlay-box">
         <p class="confirm-msg">当前参考线将切出 <b id="gsCellCount"></b> 个图层，<br>块数较多，会比较慢。</p>
         <div class="confirm-row">
-          <button id="gsConfirmYes" class="ok">继续分割</button>
-          <button id="gsConfirmNo" class="muted">取消</button>
+          <div id="gsConfirmYes" class="ok" role="button" tabindex="0">继续分割</div>
+          <div id="gsConfirmNo" class="muted" role="button" tabindex="0">取消</div>
         </div>
       </div>
     </div>
@@ -1328,12 +1270,12 @@
       <div class="overlay-box">
         <p class="confirm-msg">目标文件夹已存在同名文件：<br><b id="overwriteName"></b><br>覆盖还是跳过？</p>
         <div class="confirm-row">
-          <button id="ovwYes" class="danger">覆盖</button>
-          <button id="ovwNo" class="muted">跳过</button>
+          <div id="ovwYes" class="danger" role="button" tabindex="0">覆盖</div>
+          <div id="ovwNo" class="muted" role="button" tabindex="0">跳过</div>
         </div>
         <div class="confirm-row">
-          <button id="ovwYesAll" class="danger">全部覆盖</button>
-          <button id="ovwNoAll" class="muted">全部跳过</button>
+          <div id="ovwYesAll" class="danger" role="button" tabindex="0">全部覆盖</div>
+          <div id="ovwNoAll" class="muted" role="button" tabindex="0">全部跳过</div>
         </div>
       </div>
     </div>
@@ -1344,8 +1286,8 @@
         <p class="confirm-msg" id="gdListTitle">最近使用</p>
         <div class="gd-list" id="gdList"></div>
         <div class="confirm-row">
-          <button id="gdListClear" class="danger">清空历史</button>
-          <button id="gdListClose" class="muted">关闭</button>
+          <div id="gdListClear" class="danger" role="button" tabindex="0">清空历史</div>
+          <div id="gdListClose" class="muted" role="button" tabindex="0">关闭</div>
         </div>
       </div>
     </div>
@@ -1356,8 +1298,8 @@
         <p class="confirm-msg" id="gdNameTitle">收藏这个版面</p>
         <div class="tf gd-name-field"><input type="text" id="gdNameInput" placeholder="给版面起个名字"></div>
         <div class="confirm-row">
-          <button id="gdNameOk" class="ok">保存</button>
-          <button id="gdNameCancel" class="muted">取消</button>
+          <div id="gdNameOk" class="ok" role="button" tabindex="0">保存</div>
+          <div id="gdNameCancel" class="muted" role="button" tabindex="0">取消</div>
         </div>
       </div>
     </div>
@@ -1368,7 +1310,7 @@
         <p class="confirm-msg">我的预设</p>
         <div class="gd-list" id="rzPresetList"></div>
         <div class="confirm-row">
-          <button id="rzPresetClose" class="muted">关闭</button>
+          <div id="rzPresetClose" class="muted" role="button" tabindex="0">关闭</div>
         </div>
       </div>
     </div>
@@ -1379,8 +1321,8 @@
         <p class="confirm-msg" id="rzNameTitle">保存为预设</p>
         <div class="tf gd-name-field"><input type="text" id="rzNameInput" placeholder="如 游戏图标 1024"></div>
         <div class="confirm-row">
-          <button id="rzNameOk" class="ok">保存</button>
-          <button id="rzNameCancel" class="muted">取消</button>
+          <div id="rzNameOk" class="ok" role="button" tabindex="0">保存</div>
+          <div id="rzNameCancel" class="muted" role="button" tabindex="0">取消</div>
         </div>
       </div>
     </div>
@@ -1391,7 +1333,7 @@
         <p class="confirm-msg">失败记录</p>
         <div class="gd-list" id="rzFailList"></div>
         <div class="confirm-row">
-          <button id="rzFailClose" class="muted">关闭</button>
+          <div id="rzFailClose" class="muted" role="button" tabindex="0">关闭</div>
         </div>
       </div>
     </div>
@@ -1401,8 +1343,8 @@
       <div class="overlay-box">
         <p class="confirm-msg">确定清空全部「最近使用」？<br><small>不影响「我的版面」，也不会删除文档里的参考线</small></p>
         <div class="confirm-row">
-          <button id="gdHistYes" class="danger">清空历史</button>
-          <button id="gdHistNo" class="muted">取消</button>
+          <div id="gdHistYes" class="danger" role="button" tabindex="0">清空历史</div>
+          <div id="gdHistNo" class="muted" role="button" tabindex="0">取消</div>
         </div>
       </div>
     </div>
@@ -1425,39 +1367,39 @@
                 <input type="text" id="slFindText" placeholder="如 Button，回车即搜索">
                 <span class="sl-x-mini" id="slFindClear">✕</span>
               </div>
-              <button id="slSearchBtn" class="sl-find-btn">搜索</button>
+              <div id="slSearchBtn" class="sl-find-btn" role="button" tabindex="0">搜索</div>
             </div>
           </div>
           <div class="field-block field-inline">
             <label>匹配方式：</label>
             <div class="pill-row" id="slMatchPills">
-              <span class="pill active" data-match="contains">包含</span>
-              <span class="pill" data-match="exact">完全匹配</span>
-              <span class="pill" data-match="prefix">前缀</span>
-              <span class="pill" data-match="suffix">后缀</span>
+              <div class="pill active" data-match="contains"><span class="pill-face"></span><span class="pill-label">包含</span></div>
+              <div class="pill" data-match="exact"><span class="pill-face"></span><span class="pill-label">完全匹配</span></div>
+              <div class="pill" data-match="prefix"><span class="pill-face"></span><span class="pill-label">前缀</span></div>
+              <div class="pill" data-match="suffix"><span class="pill-face"></span><span class="pill-label">后缀</span></div>
             </div>
           </div>
           <div class="field-block field-inline">
             <label>查找范围：</label>
             <div class="pill-row" id="slScopePills">
-              <span class="pill active" data-scope="doc">整个文档</span>
-              <span class="pill" data-scope="sel">已选中的组内</span>
+              <div class="pill active" data-scope="doc"><span class="pill-face"></span><span class="pill-label">整个文档</span></div>
+              <div class="pill" data-scope="sel"><span class="pill-face"></span><span class="pill-label">已选中的组内</span></div>
             </div>
           </div>
           <div class="field-block field-inline">
             <label>图层类型：</label>
             <div class="pill-row" id="slKindPills">
-              <span class="pill active" data-kind="all">全部</span>
-              <span class="pill" data-kind="layer">仅图层</span>
-              <span class="pill" data-kind="group">仅图层组</span>
+              <div class="pill active" data-kind="all"><span class="pill-face"></span><span class="pill-label">全部</span></div>
+              <div class="pill" data-kind="layer"><span class="pill-face"></span><span class="pill-label">仅图层</span></div>
+              <div class="pill" data-kind="group"><span class="pill-face"></span><span class="pill-label">仅图层组</span></div>
             </div>
           </div>
           <div class="field-block field-inline">
             <label>附加条件：</label>
             <!-- 这两项是多选（各自开关），但样式与上面「图层类型」那排完全一致 -->
             <div class="pill-row" id="slFlagPills">
-              <span class="pill active" data-flag="hidden">含隐藏图层</span>
-              <span class="pill" data-flag="case">区分大小写</span>
+              <div class="pill active" data-flag="hidden"><span class="pill-face"></span><span class="pill-label">含隐藏图层</span></div>
+              <div class="pill" data-flag="case"><span class="pill-face"></span><span class="pill-label">区分大小写</span></div>
             </div>
           </div>
           <div class="preview-block">
@@ -1469,7 +1411,7 @@
                    这一个向下展开：向上会顶到「附加条件」，而下面就是它要排的列表 -->
               <div class="dropdown sl-sort-dd" id="slSortDd">
                 <span class="dd-value" id="slSortValue">图层顺序</span>
-                <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#3ce0ef" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <svg class="dd-chev" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M32 48 L64 82 L96 48" fill="none" stroke="#9ab8ff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 <div class="dd-menu">
                   <span class="dd-item active" data-sort="doc">图层顺序</span>
                   <span class="dd-item" data-sort="name">按名称</span>
@@ -1479,7 +1421,7 @@
             <div id="slList" class="preview sl-list"></div>
           </div>
           <div class="sl-foot">
-            <button id="slAddBtn" class="sl-primary">＋ 添加到查找列表</button>
+            <div id="slAddBtn" class="sl-primary" role="button" tabindex="0">＋ 添加到查找列表</div>
             <span class="gd-mini" id="slBackBtn" style="display:none;">返回列表</span>
           </div>
         </div>
@@ -1491,21 +1433,21 @@
             <span class="gd-mini" id="slClearBtn">清空全部</span>
           </div>
           <div id="slGroupList" class="sl-groups"></div>
-          <button id="slMoreBtn" class="sl-more blue">＋ 继续添加</button>
+          <div id="slMoreBtn" class="sl-more blue" role="button" tabindex="0">＋ 继续添加</div>
           <div class="sl-tools">
             <span class="sl-sec" id="slPrevHead">全部匹配结果预览</span>
             <span class="gd-mini" id="slPrevAllBtn">全选</span>
           </div>
           <div id="slPrevList" class="preview sl-list"></div>
           <div class="confirm-row sl-row-acts">
-            <button id="slOkBtn" class="ok">确认</button>
-            <button id="slCancelBtn" class="muted">取消</button>
+            <div id="slOkBtn" class="ok" role="button" tabindex="0">确认</div>
+            <div id="slCancelBtn" class="muted" role="button" tabindex="0">取消</div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- 设置（功能栏底部的齿轮）：目前只有「关于 / 检查更新」一块。
+    <!-- 设置（顶栏右侧的齿轮）：目前只有「关于 / 检查更新」一块。
          更新走 GitHub 的 releases/latest 接口，下载则交给系统浏览器打开 .ccx 直链
          —— 插件自己没法装插件，下完还是得双击让 Creative Cloud 装。 -->
     <div id="settingsOverlay" class="overlay" style="display:none;">
@@ -1547,11 +1489,11 @@
              两行（真机宽度还能更窄，minimumSize 是 300）。行的显隐切在外层 #stDlRow 上，
              不切按钮本身 —— 否则藏起来时这一行的 margin 还在，底下会多出一道空白 -->
         <div class="confirm-row st-dl-row" id="stDlRow" style="display:none;">
-          <button id="stDownloadBtn" class="ok">下载新版本</button>
+          <div id="stDownloadBtn" class="ok" role="button" tabindex="0">下载新版本</div>
         </div>
         <div class="confirm-row st-acts">
-          <button id="stCheckBtn" class="blue">检查更新</button>
-          <button id="stCloseBtn" class="muted">关闭</button>
+          <div id="stCheckBtn" class="blue" role="button" tabindex="0">检查更新</div>
+          <div id="stCloseBtn" class="muted" role="button" tabindex="0">关闭</div>
         </div>
         <p class="st-hint">下载的是 .ccx 安装包，双击安装后重启 Photoshop 生效。</p>
       </div>

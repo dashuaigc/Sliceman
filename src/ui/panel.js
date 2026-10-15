@@ -48,6 +48,10 @@ import {
   shouldAutoCheck, formatTime, formatDate, formatSize, describeError,
 } from '../lib/update-core.js';
 import manifest from '../manifest.json';
+import { bindCustomButton, setButtonDisabled } from '../lib/custom-button.js';
+
+// Install disabled guards before any feature-specific click handlers.
+document.querySelectorAll('[role="button"]').forEach(bindCustomButton);
 
 const { app, action, core } = require('photoshop');
 const uxpFs = require('uxp').storage.localFileSystem;
@@ -371,7 +375,7 @@ function setSlicing(on) {
   slicing = on;
   // 切图进行中禁用功能磁贴，避免切页把正在用的主按钮隐藏
   setTilesDisabled(on);
-  // 同一按钮：空闲显示青色"开始导出"，进行中变红色"停止切图"
+  // 同一按钮：空闲显示蓝色"开始导出"，进行中变红色"停止切图"
   if (on) {
     btnLabel.textContent = '点击或按 ESC 停止切图';
     sliceBtn.classList.add('slicing');
@@ -747,7 +751,7 @@ async function runGuideSplit() {
       merged,
       guides: g.guides,
       canvas: g.canvas,
-      groupName: merged ? '参考线切片' : `${layer.name} 切片`,
+      groupName: null, // 与智能分割一致：切片直接保留为图层，不额外建组。
       onStep: (msg) => { lastStep = msg; },
       onProgress: (done, total) => setStatus(`分割中… ${done}/${total} 块`),
     });
@@ -1804,10 +1808,10 @@ function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').
 // 预览行首的类型图标：组=文件夹，图层=图片框。一律内联净化 svg，不用位图
 // （位图多了会让 Photoshop 卡死闪退，真机踩过）；描边色写死在标记里，同面板里其它拼接 svg。
 const PV_ICO_GROUP = '<svg class="pv-ico" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">'
-  + '<g fill="none" stroke="#e8b45a" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">'
+  + '<g fill="none" stroke="#b7bdc8" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">'
   + '<path d="M18 102 V30 H52 L66 46 H110 V102 Z"/></g></svg>';
 const PV_ICO_LAYER = '<svg class="pv-ico" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">'
-  + '<g fill="none" stroke="#7fb2d8" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">'
+  + '<g fill="none" stroke="#b7bdc8" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">'
   + '<rect x="20" y="28" width="88" height="72" rx="8"/>'
   + '<path d="M20 80 L46 56 L70 80"/><circle cx="86" cy="52" r="8"/></g></svg>';
 // 预览最多画这么多行：每行带图标后节点数翻几倍，UXP 下 DOM 一大就卡（同 SL_LIST_MAX 的道理）。
@@ -1821,10 +1825,12 @@ function pvMore(total) {
 }
 
 /** 预览的一行：行首类型图标 + 文字。data-kind 给测试和样式用 */
-function pvRow(layer, inner) {
+function pvRow(layer, from, to = '<span class="label-sub">—</span>') {
   const isGroup = !!layer && layer.kind === 'group';
   return `<div class="pv-row" data-kind="${isGroup ? 'group' : 'layer'}">`
-    + `${isGroup ? PV_ICO_GROUP : PV_ICO_LAYER}<span class="pv-txt">${inner}</span></div>`;
+    + `${isGroup ? PV_ICO_GROUP : PV_ICO_LAYER}<span class="pv-txt">`
+    + `<span class="pv-from">${from}</span><span class="pv-arrow">→</span>`
+    + `<span class="pv-to">${to}</span></span></div>`;
 }
 
 function readRenameCfg() {
@@ -1903,7 +1909,9 @@ async function renderRenamePreview(force) {
   const layers = await sortedByPanelOrder(await trueSelectedLayers());
   if (seq !== renderSeq) return;                     // 已被更新的渲染取代
   refreshRenameStatus(layers.length, force);
-  if (!layers.length) { previewList.innerHTML = '<i>未选中图层或组</i>'; return; }
+  document.getElementById('renameSelection').textContent = layers.length
+    ? `已选择 ${layers.length} 个图层 / 组` : '未选择图层';
+  if (!layers.length) { previewList.innerHTML = '<div class="pv-empty">未选中图层或组<br>在图层面板选择对象后，这里会显示预览</div>'; return; }
   const cfg = readRenameCfg();
   // 必填输入为空：预览退化为原名（替换模式要填查找，其它模式要填模板）
   const inputReady = cfg.mode === 'replace' ? !!cfg.find : !!cfg.template;
@@ -1918,9 +1926,9 @@ async function renderRenamePreview(force) {
     ? '<i>已开启数字编号，但模板里没有独立的 n（Button/Icon 里的 n 不算），编号不会出现</i>'
     : '';
   // rows 由 layers.map(名字) 得来，下标与 layers 一一对应 → 图标取 layers[i] 的类型
-  previewList.innerHTML = hint + rows.slice(0, PV_MAX).map((r, i) => pvRow(layers[i], r.unmatched
-    ? `${esc(r.from)} <span class="dup">未找到「${esc(cfg.find)}」</span>`
-    : `${esc(r.from)} &nbsp;→&nbsp; <b>${esc(r.to)}</b>${r.dup ? ' <span class="dup">⚠同名</span>' : ''}`
+  previewList.innerHTML = hint + rows.slice(0, PV_MAX).map((r, i) => pvRow(layers[i], esc(r.from), r.unmatched
+    ? `<span class="dup">未找到「${esc(cfg.find)}」</span>`
+    : `<b>${esc(r.to)}</b>${r.dup ? ' <span class="dup">⚠同名</span>' : ''}`
   )).join('') + pvMore(rows.length);
 }
 
@@ -2001,13 +2009,13 @@ const SL_CHIP_MAX = 4;            // 卡片里的名字只占一行，最多列�
 // 卡片上的四个图标都拼在 innerHTML 里，所以描边色写死在标记里（面板里的内联 svg 都这么写）。
 // 一律内联净化 svg，不用位图——位图多了会让 Photoshop 卡死闪退（真机踩过）
 const SL_ICO_FIND = '<svg class="sl-grp-ico" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">'
-  + '<g fill="none" stroke="#3ce0ef" stroke-width="14" stroke-linecap="round">'
+  + '<g fill="none" stroke="#9ab8ff" stroke-width="14" stroke-linecap="round">'
   + '<circle cx="54" cy="54" r="34"/><path d="M79 79 L110 110"/></g></svg>';
 const SL_ICO_EDIT = '<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">'
-  + '<g fill="none" stroke="#8ba0b3" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">'
+  + '<g fill="none" stroke="#a4aab5" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">'
   + '<path d="M28 100 L34 76 L86 24 L104 42 L52 94 Z"/><path d="M20 116 H108"/></g></svg>';
 const SL_ICO_DEL = '<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">'
-  + '<g fill="none" stroke="#e0555c" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">'
+  + '<g fill="none" stroke="#e88b91" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">'
   + '<path d="M22 34 H106"/><path d="M50 34 V20 H78 V34"/><path d="M34 34 L40 108 H88 L94 34"/></g></svg>';
 // 启用/停用的开关：形状与面板里的 .switch 完全一致（轨道 + 两个位置的滑块，靠 .on 切显隐）
 const SL_SWITCH = '<svg class="sw" viewBox="0 0 44 24" xmlns="http://www.w3.org/2000/svg">'
@@ -2841,8 +2849,8 @@ function bindDropdownBox(ddId) {
 function refreshGuideRecordBtns() {
   const rb = document.getElementById('gdRecentBtn');
   const fb = document.getElementById('gdFavBtn');
-  if (rb) rb.textContent = gdRecent.length ? `最近使用 (${gdRecent.length})` : '最近使用';
-  if (fb) fb.textContent = gdFavs.length ? `收藏版面 (${gdFavs.length})` : '收藏版面';
+  if (rb) (rb.querySelector('.gd-label') || rb).textContent = gdRecent.length ? `最近使用 (${gdRecent.length})` : '最近使用';
+  if (fb) (fb.querySelector('.gd-label') || fb).textContent = gdFavs.length ? `收藏版面 (${gdFavs.length})` : '收藏版面';
   applyGuideDisabled();
 }
 
@@ -2874,16 +2882,16 @@ function renderGuideList() {
         ? guideItemHtml(
           `★ ${esc(r.name)}`,
           `${esc(d.title)} · ${esc(d.detail)}<br>${esc(formatCanvas(r.canvas))}`,
-          `<span class="gd-mini gd-apply${applyOff}" data-act="fav-apply:${i}">应用</span>`
-          + `<span class="gd-mini" data-act="fav-rename:${i}">改名</span>`
-          + `<span class="gd-mini" data-act="fav-del:${i}">删除</span>`,
+          `<span class="gd-mini gd-apply${applyOff}" data-act="fav-apply:${i}"><span class="gd-face"></span><span class="gd-label">应用</span></span>`
+          + `<span class="gd-mini" data-act="fav-rename:${i}"><span class="gd-face"></span><span class="gd-label">改名</span></span>`
+          + `<span class="gd-mini" data-act="fav-del:${i}"><span class="gd-face"></span><span class="gd-label">删除</span></span>`,
         )
         : guideItemHtml(
           esc(d.title),
           `${esc(d.detail)}<br>${esc(formatCanvas(r.canvas))} · ${gdTime(r.at)}`,
-          `<span class="gd-mini gd-apply${applyOff}" data-act="rec-apply:${i}">应用</span>`
-          + `<span class="gd-mini gd-star" data-act="rec-star:${i}">${gdFavIndexOf(r.cfg) >= 0 ? '★' : '☆'}</span>`
-          + `<span class="gd-mini" data-act="rec-del:${i}">删除</span>`,
+          `<span class="gd-mini gd-apply${applyOff}" data-act="rec-apply:${i}"><span class="gd-face"></span><span class="gd-label">应用</span></span>`
+          + `<span class="gd-mini gd-star" data-act="rec-star:${i}"><span class="gd-face"></span><span class="gd-label">${gdFavIndexOf(r.cfg) >= 0 ? '★' : '☆'}</span></span>`
+          + `<span class="gd-mini" data-act="rec-del:${i}"><span class="gd-face"></span><span class="gd-label">删除</span></span>`,
         );
     }).join('')
     : (fav
@@ -2961,8 +2969,8 @@ function refreshGuideCtrlLabels() {
   const l = gdLocked === null ? false : gdLocked;
   const vb = document.getElementById('gdVisibleBtn');
   const lb = document.getElementById('gdLockBtn');
-  if (vb) vb.textContent = v ? '隐藏参考线' : '显示参考线';
-  if (lb) lb.textContent = l ? '解锁参考线' : '锁定参考线';
+  if (vb) (vb.querySelector('.gd-label') || vb).textContent = v ? '隐藏参考线' : '显示参考线';
+  if (lb) (lb.querySelector('.gd-label') || lb).textContent = l ? '解锁参考线' : '锁定参考线';
 }
 
 // ---- 执行：创建 / 应用 / 快速 / 清除 / 显隐 / 锁定 ----
@@ -4506,7 +4514,7 @@ const versionEl = document.getElementById('version');
 if (versionEl) versionEl.textContent = 'v' + manifest.version;
 
 // ==================== 设置 / 检查更新 ====================
-// 功能栏底部那个齿轮 → #settingsOverlay。里面只有「关于 + 检查更新」。
+// 顶栏右侧的齿轮 → #settingsOverlay。里面只有「关于 + 检查更新」。
 //
 // 数据源是 GitHub 的 releases/latest 接口（见 lib/update-core.js），
 // 只读版本号与更新说明，不上报任何东西。
@@ -4604,7 +4612,7 @@ async function stCheck(silent) {
   if (stBusy) return;
   stBusy = true;
   const btn = stEl('stCheckBtn');
-  if (btn && !silent) { btn.disabled = true; btn.textContent = '检查中…'; }
+  if (btn && !silent) { setButtonDisabled(btn, true); btn.textContent = '检查中…'; }
   if (!silent) stSetMsg('正在向 GitHub 查询最新版本…');
   try {
     // 包一层再传，别把裸的 fetch 交出去：宿主的 fetch 多半要求 this 是全局对象，
@@ -4621,7 +4629,7 @@ async function stCheck(silent) {
     if (silent) {
       stInfo = info;                                   // 存着，用户点开设置就是现成的
       stRenderCheckedAt();
-      if (info.hasUpdate) setStatus(`Sliceman ${info.tag} 已发布，点左下角齿轮查看`);
+      if (info.hasUpdate) setStatus(`Sliceman ${info.tag} 已发布，点右上角齿轮查看`);
     } else {
       stRenderResult(info);
     }
@@ -4639,7 +4647,7 @@ async function stCheck(silent) {
     }
   } finally {
     stBusy = false;
-    if (btn && !silent) { btn.disabled = false; btn.textContent = '检查更新'; }
+    if (btn && !silent) { setButtonDisabled(btn, false); btn.textContent = '检查更新'; }
   }
 }
 

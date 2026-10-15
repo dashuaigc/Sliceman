@@ -1,7 +1,8 @@
 import { build } from 'esbuild';
-import { mkdir, copyFile } from 'node:fs/promises';
+import { mkdir, copyFile, readFile, writeFile } from 'node:fs/promises';
 
-const OUT = 'dist/plugin';
+const DEV = process.argv.includes('--dev');
+const OUT = DEV ? 'dist/uxp-dev' : 'dist/plugin';
 
 // 1) 汇总出一个可被 UXP Developer Tool / .ccx 直接加载的扁平插件目录
 await mkdir(OUT, { recursive: true });
@@ -21,6 +22,21 @@ await build({
 await copyFile('src/manifest.json', `${OUT}/manifest.json`);
 await copyFile('src/ui/index.html', `${OUT}/index.html`);
 await copyFile('src/ui/styles.css', `${OUT}/styles.css`);
+
+// A separate identity lets UDT load the preview alongside the installed plugin.
+// Release source identity and Photoshop operations remain unchanged.
+if (DEV) {
+  const manifest = JSON.parse(await readFile(`${OUT}/manifest.json`, 'utf8'));
+  manifest.id = 'com.sliceman.plugin.graphite.dev';
+  manifest.name = 'Sliceman Graphite Dev';
+  for (const panel of manifest.entrypoints) {
+    panel.id = 'sliceman.graphite.dev';
+    panel.label.default = 'Sliceman · 石墨蓝测试';
+    panel.preferredDockedSize = { width: 360, height: 780 };
+    panel.preferredFloatingSize = { width: 360, height: 780 };
+  }
+  await writeFile(`${OUT}/manifest.json`, JSON.stringify(manifest, null, 2) + '\n');
+}
 
 // 注：图标已作为 inline <svg> 内联进 index.html（净化去除了 filter/gradient），
 // 不再需要随包拷贝位图目录——位图 <img> 是导致 UXP 面板 native 崩溃的根因。

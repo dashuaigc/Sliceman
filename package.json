@@ -1,6 +1,6 @@
 {
   "name": "sliceman",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "Photoshop UXP 插件：颜色标记批量切图 + 图层批量处理工具集",
   "main": "index.js",
   "directories": {
@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "icons": "node scripts/make-icons.mjs",
     "build": "node esbuild.config.mjs",
+    "build:dev": "node esbuild.config.mjs --dev",
     "pack": "node esbuild.config.mjs && node scripts/pack.mjs",
     "install:ps": "node esbuild.config.mjs && node scripts/install-local.mjs",
     "uninstall:ps": "node scripts/install-local.mjs --remove"

@@ -36,7 +36,11 @@ Sliceman 是一款基于 Photoshop UXP 开发的生产力插件，专门解决�
 
 ## 插件截图
 
-面板左侧竖排十个功能入口（图标 + 名称），各对应一个功能页，启动默认停在「重命名」；设置钮在功能栏底部，点它打开[设置（关于 / 检查更新）](#十二检查更新)。顶栏（品牌 + 版本号）与底部状态栏固定不动，只有右侧内容列滚动。
+以下为本次石墨蓝 UI 开发测试版的界面预览，使用当前 HTML / CSS 在浏览器中渲染，尺寸为 360 × 780，示例数据仅用于展示；不是 Photoshop 实机截图，原生输入控件的细节可能不同。新版尚未打包发布，下载链接仍指向已发布版本。
+
+本次更新统一了按钮边框与配色、精简标题和说明、缩小切图与分割页面的空白；输入框保留左对齐并增加内侧留白，参考线分割与智能分割一样不再新建组。
+
+面板左侧竖排十个功能入口（图标 + 名称），各对应一个功能页，启动默认停在「重命名」；设置钮在顶栏右上角，点它打开[设置（关于 / 检查更新）](#十二检查更新)。顶栏（品牌 + 版本号）与底部状态栏固定不动，只有右侧内容列滚动。
 
 ### 十个功能页
 
@@ -59,8 +63,14 @@ Sliceman 是一款基于 Photoshop UXP 开发的生产力插件，专门解决�
 
 | ① 选图片 | ② 尺寸设置 | ③ 输出设置 | ④ 开始处理 |
 |:---:|:---:|:---:|:---:|
-| ![图片来源](docs/screenshots/11-resize-source.png) | ![尺寸设置](docs/screenshots/12-resize-size.png) | ![输出设置](docs/screenshots/13-resize-output.png) | ![处理完成](docs/screenshots/14-resize-done.png) |
+| ![图片来源](docs/screenshots/11-resize-source.png) | ![尺寸设置](docs/screenshots/12-resize-size.png) | ![输出设置](docs/screenshots/13-resize-output.png) | ![开始处理](docs/screenshots/14-resize-done.png) |
 | 多选图片 / 整个文件夹 / 当前文档 | 八种模式 · 四种适应 · 锚点 · 多尺寸 | 位置 · 格式 · 命名 · 同名策略 | 成功 / 跳过 / 失败三个数 + 逐条日志 |
+
+---
+
+### 设置 / 检查更新
+
+<img src="docs/screenshots/17-settings.png" alt="设置与检查更新" width="360">
 
 ---
 
@@ -141,7 +151,7 @@ Sliceman 是一款基于 Photoshop UXP 开发的生产力插件，专门解决�
 用**当前文档里已有的参考线**把内容切成网格，每一格复制成一个独立图层。参考线怎么来的不限 —— 手拖的、PS 原生「新建参考线版面」建的、本插件参考线功能建的都行。
 
 - **画布边缘算作外边界**：3 条竖线 = 4 列；只拖竖线就切成整条的列，只拖横线就切成整条的行
-- 整格没有内容的**自动跳过**，切出来的图层按 `0`、`1`、`2`… 依次编号（从上到下、每行从左到右），并**统一放进一个新组**
+- 整格没有内容的**自动跳过**，切出来的图层按 `0`、`1`、`2`… 依次编号（从上到下、每行从左到右），**直接保留为独立图层，不新建组**（开启「合并可见内容」时也一样）
 - 标题行右侧实时显示当前参考线切出几块（如 `4 列 × 3 行 → 12 块`）；没有参考线时按钮置灰
 - 块数超过 40 会先问一句 —— 每块都要走一轮复制粘贴，块多了明显变慢
 - 默认切**选中的那一个图层 / 组**（文字 / 形状 / 智能对象也可以，切出来的都是像素）；开启**合并可见内容**则不看选中，把整张可见画面拍平后切
@@ -586,7 +596,7 @@ Sliceman 是一款基于 Photoshop UXP 开发的生产力插件，专门解决�
 
 ## 十二、检查更新
 
-点功能栏**底部的齿轮**打开「设置」，里面能看到当前版本、最新版本和上次检查的时间。
+点顶栏**右上角的齿轮**打开「设置」，里面能看到当前版本、最新版本和上次检查的时间。
 
 - **检查更新** —— 向 GitHub 查一次最新的正式发布。有新版本时，「最新版本」那行变黄，下面列出这一版的更新内容，按钮变成「下载 vX.Y.Z（大小）」。
 - **下载新版本** —— 用系统浏览器打开 `.ccx` 的下载地址。**下载完双击安装，再重启 Photoshop 生效**（插件没法替你安装插件，这一步和首次安装一样）。发布里万一没有 `.ccx`，按钮会变成「前往下载页」。
@@ -613,6 +623,7 @@ npm install         # 安装依赖
 npm test            # 运行纯逻辑单测（vitest）
 npm run test:watch  # 单测 watch 模式
 npm run build       # 打包出可加载的插件目录 dist/plugin/
+npm run build:dev   # 独立身份的 UI 开发测试版 dist/uxp-dev/（不生成 CCX）
 npm run pack        # build + 打成可双击安装的 dist/Sliceman_vX.Y.Z.ccx
 npm run icons       # 重新生成插件 / 面板图标 PNG（含必需的 @1x / @2x 后缀）
 npm run install:ps  # build + 直接装进本机 PS 的插件目录
@@ -623,12 +634,14 @@ npm run uninstall:ps
 
 ## 开发期加载（UDT）
 
-1. `npm run build`
-2. UDT → `Add Plugin` → 选 **`dist/plugin/manifest.json`**（是 dist 里的那个，不是 src）
-3. `Load` → Photoshop 出现「Sliceman」面板
-4. 改代码后重新 `npm run build`，UDT 里点 `Reload`
+本次 UI 测试版使用独立插件身份，可与正式版并存：
 
-> **改了 `src/` 一定要先 `npm run build` 再 Reload** —— PS 加载的是 `dist/plugin/`，只改源文件 Reload 读到的还是旧产物。
+1. `npm run build:dev`
+2. UDT → `Add Plugin` → 选择 **`dist/uxp-dev/manifest.json`**（不是 `src/manifest.json`）
+3. `Load` → Photoshop 出现「Sliceman · 石墨蓝测试」面板
+4. 改代码后重新 `npm run build:dev`，再在 UDT 中点 `Reload`
+
+常规构建仍可使用 `npm run build`，对应 `dist/plugin/manifest.json`。请让构建命令与 UDT 中添加的目录保持一致；仅修改源码再 Reload 不会更新构建产物。开发测试不需要打包 `.ccx`。
 
 ## 打包成 .ccx 并安装
 
@@ -674,7 +687,7 @@ npm run pack        # → dist/Sliceman_vX.Y.Z.ccx
 | `src/ps/resizer.js` | 递归收集文件 + 静默打开 + imageSize/canvasSize + 多尺寸快照回退 + 关文档 | 手动 |
 | `src/ps/renamer.js` | 图层面板顺序读取 + 批量改名写回 | 手动 |
 | `src/ps/layer-finder.js` | 读全文档图层为扁平清单（含路径 / 可见性）+ 按 id 批量选中 | 手动 |
-| `src/ps/smart-split.js` | 取像素 → 调 segment / guide-split → 各块复制成独立图层（+ 落位校正与编组） | 手动 |
+| `src/ps/smart-split.js` | 取像素 → 调 segment / guide-split → 各块复制成独立图层（参考线分割含落位校正，不额外建组） | 手动 |
 | `src/ps/smart-object.js` | 逐个转独立智能对象 | 手动 |
 | `src/ps/group-maker.js` | 逐个套父级组 | 手动 |
 | `src/ps/layouter.js` | 读 Bounds → 调 layout-core → 逐个位移 + 扩画布 | 手动 |

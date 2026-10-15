@@ -1194,7 +1194,29 @@ describe('重命名：按名称查找弹窗（查找 → 加入列表 → 确认
     expect(preview).toMatch(/Title/);
   });
 
-  // 选中数只在底部状态栏报（页面顶部那一行已经撤掉）
+  it('石墨蓝预览：选中摘要与前后两列同步，图层名称保持转义', async () => {
+    const d = doc([14], [14]);
+    d.layers.find(l => l.id === 14).name = '<Title&>';
+    const { document, notify } = await loadPanel({ doc: d, onPlay: onLayerPlay(d) });
+    await settle();
+    expect(document.getElementById('renameSelection').textContent).toBe('已选择 1 个图层 / 组');
+    clickPill(document, 'renameModePills', 'data-mode', 'prefix');
+    type(document, 'templateText', 'UI_');
+    await settle();
+    const preview = document.getElementById('previewList').innerHTML;
+    expect(preview).toContain('class="pv-from"');
+    expect(preview).toContain('class="pv-to"');
+    expect(preview).toContain('&lt;Title&amp;&gt;');
+    expect(preview).toContain('UI_&lt;Title&amp;&gt;');
+    expect(preview).not.toContain('<Title&>');
+    d.targetIds = [];
+    await notify('select');
+    await settle();
+    expect(document.getElementById('renameSelection').textContent).toBe('未选择图层');
+    expect(document.getElementById('previewList').innerHTML).toContain('未选中图层或组');
+  });
+
+  // 选中数变化时更新状态栏，但不覆盖刚写入的操作结果。
   it('选中数写进状态栏：数变了才写，刚写的结果提示不会被它冲掉', async () => {
     const d = doc([14], [14]);                                         // 先点亮 Title 一层
     const { document, notify } = await loadPanel({ doc: d, onPlay: onLayerPlay(d) });
@@ -1624,7 +1646,7 @@ describe('参考线：原生弹窗 → 通知 → 记录 → 一键重放', () =
     fire(document.getElementById('gdCreateBtn'), 'click');
     await new Promise((r) => setTimeout(r, 800));               // 弹窗返回后还会等一小会儿通知
     expect(document.getElementById('status').textContent).toMatch(/已取消，文档里的参考线没有变化/);
-    expect(document.getElementById('gdRecentBtn').textContent).toBe('最近使用');
+    expect(document.getElementById('gdRecentBtn').querySelector('.gd-label').textContent).toBe('最近使用');
   });
 
   it('PS 发回 newGuideLayout 通知 → 记入最近使用，弹窗列表里显示实际参数', async () => {
@@ -1632,7 +1654,7 @@ describe('参考线：原生弹窗 → 通知 → 记录 → 一键重放', () =
     await notify('newGuideLayout', layoutEvent());
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(document.getElementById('gdRecentBtn').textContent).toBe('最近使用 (1)');
+    expect(document.getElementById('gdRecentBtn').querySelector('.gd-label').textContent).toBe('最近使用 (1)');
     fire(document.getElementById('gdRecentBtn'), 'click');
     const html = document.getElementById('gdList').innerHTML;
     expect(html).toMatch(/4列 \/ 3行/);
@@ -1649,7 +1671,7 @@ describe('参考线：原生弹窗 → 通知 → 记录 → 一键重放', () =
       colCount: 5, rowCount: 2,                      // ← 真机抓到的那一份
       $GdCA: 0, $GdCR: 74, $GdCG: 255, $GdCB: 255,
     });
-    expect(document.getElementById('gdRecentBtn').textContent).toBe('最近使用 (1)');
+    expect(document.getElementById('gdRecentBtn').querySelector('.gd-label').textContent).toBe('最近使用 (1)');
     fire(document.getElementById('gdRecentBtn'), 'click');
     const html = document.getElementById('gdList').innerHTML;
     expect(html).toMatch(/5列 \/ 2行/);                // 列不再被漏掉
@@ -1697,9 +1719,9 @@ describe('参考线：原生弹窗 → 通知 → 记录 → 一键重放', () =
     const { document, notify } = await loadPanel({ doc: fakeDoc(1920, 1080) });
     await notify('newGuideLayout', layoutEvent());
     await notify('newGuideLayout', layoutEvent());
-    expect(document.getElementById('gdRecentBtn').textContent).toBe('最近使用 (1)');
+    expect(document.getElementById('gdRecentBtn').querySelector('.gd-label').textContent).toBe('最近使用 (1)');
     await notify('newGuideLayout', layoutEvent({ colCount: 6 }));
-    expect(document.getElementById('gdRecentBtn').textContent).toBe('最近使用 (2)');
+    expect(document.getElementById('gdRecentBtn').querySelector('.gd-label').textContent).toBe('最近使用 (2)');
     fire(document.getElementById('gdRecentBtn'), 'click');
     expect(document.getElementById('gdList').innerHTML).toMatch(/6列 \/ 3行/);
   });
@@ -1737,7 +1759,7 @@ describe('参考线：原生弹窗 → 通知 → 记录 → 一键重放', () =
     await new Promise((r) => setTimeout(r, 1200));
     const status = document.getElementById('status').textContent;
     expect(status).toBe('已创建参考线版面：4列');          // 状态栏只报摘要，详情在记录里看
-    expect(document.getElementById('gdRecentBtn').textContent).toBe('最近使用 (1)');
+    expect(document.getElementById('gdRecentBtn').querySelector('.gd-label').textContent).toBe('最近使用 (1)');
 
     fire(document.getElementById('gdRecentBtn'), 'click');
     const html = document.getElementById('gdList').innerHTML;
@@ -1756,7 +1778,7 @@ describe('参考线：原生弹窗 → 通知 → 记录 → 一键重放', () =
     fire(document.getElementById('gdCreateBtn'), 'click');
     await new Promise((r) => setTimeout(r, 1200));
     expect(document.getElementById('status').textContent).toMatch(/没能读出这一版的参数/);
-    expect(document.getElementById('gdRecentBtn').textContent).toBe('最近使用');
+    expect(document.getElementById('gdRecentBtn').querySelector('.gd-label').textContent).toBe('最近使用');
   });
 
   it('点记录里的「应用」= 不弹窗直接重放那一版', async () => {
@@ -1835,7 +1857,7 @@ describe('参考线：原生弹窗 → 通知 → 记录 → 一键重放', () =
     await new Promise((r) => setTimeout(r, 0));
     fire(document.getElementById('gdNameOk'), 'click');           // 起名弹窗按默认名确定
     await new Promise((r) => setTimeout(r, 0));
-    expect(document.getElementById('gdFavBtn').textContent).toBe('收藏版面 (1)');
+    expect(document.getElementById('gdFavBtn').querySelector('.gd-label').textContent).toBe('收藏版面 (1)');
     expect(document.getElementById('status').textContent).toMatch(/已收藏为/);
   });
 
@@ -1849,7 +1871,7 @@ describe('参考线：原生弹窗 → 通知 → 记录 → 一键重放', () =
     await new Promise((r) => setTimeout(r, 0));
     fire(document.getElementById('gdNameOk'), 'click');            // 按默认名确定
     await new Promise((r) => setTimeout(r, 0));
-    expect(document.getElementById('gdFavBtn').textContent).toBe('收藏版面 (1)');
+    expect(document.getElementById('gdFavBtn').querySelector('.gd-label').textContent).toBe('收藏版面 (1)');
     expect(document.getElementById('status').textContent).toMatch(/已收藏为「4列/);
 
     fire(document.getElementById('gdFavBtn'), 'click');
@@ -1868,7 +1890,7 @@ describe('参考线：原生弹窗 → 通知 → 记录 → 一键重放', () =
     await new Promise((r) => setTimeout(r, 0));
     fire(document.getElementById('gdFavNowBtn'), 'click');
     await new Promise((r) => setTimeout(r, 0));
-    expect(document.getElementById('gdFavBtn').textContent).toBe('收藏版面 (1)');
+    expect(document.getElementById('gdFavBtn').querySelector('.gd-label').textContent).toBe('收藏版面 (1)');
     expect(document.getElementById('status').textContent).toMatch(/已经在收藏里了/);
   });
 
@@ -1944,12 +1966,12 @@ describe('参考线：原生弹窗 → 通知 → 记录 → 一键重放', () =
     fire(document.getElementById('gdFavNowBtn'), 'click');
     await new Promise((r) => setTimeout(r, 0));
     expect(document.getElementById('status').textContent).toMatch(/还没有参考线/);
-    expect(document.getElementById('gdFavBtn').textContent).toBe('收藏版面');
+    expect(document.getElementById('gdFavBtn').querySelector('.gd-label').textContent).toBe('收藏版面');
   });
 
   it('没有记录时两个入口都置灰', async () => {
     const { document } = await loadPanel({ doc: fakeDoc(1920, 1080) });
-    expect(document.getElementById('gdRecentBtn').textContent).toBe('最近使用');
+    expect(document.getElementById('gdRecentBtn').querySelector('.gd-label').textContent).toBe('最近使用');
     expect(document.getElementById('gdRecentBtn').classList.contains('btn-off')).toBe(true);
     expect(document.getElementById('gdFavBtn').classList.contains('btn-off')).toBe(true);
   });
@@ -1997,7 +2019,7 @@ describe('参考线：原生弹窗 → 通知 → 记录 → 一键重放', () =
     expect(saved).toMatch(/"count":4/);
 
     const b = await loadPanel({ doc: fakeDoc(1920, 1080), prefs: { 'guide.recent': saved } });
-    expect(b.document.getElementById('gdRecentBtn').textContent).toBe('最近使用 (1)');
+    expect(b.document.getElementById('gdRecentBtn').querySelector('.gd-label').textContent).toBe('最近使用 (1)');
   });
 });
 
@@ -2232,7 +2254,7 @@ describe('参考线分割：切之前的把关', () => {
 //      拿格子当框、内容偏在一角就会跑位）；
 //   2) 空白格不切、编号连续；
 //   3) 万一还是跑位了，收尾会按预期外框补一条 move 把它挪回去。
-describe('参考线分割：执行段（选区 / 编号 / 落位校正 / 编组）', () => {
+describe('参考线分割：执行段（选区 / 编号 / 落位校正 / 不建组）', () => {
   const BOUNDS = { left: 0, top: 0, right: 100, bottom: 100 };
 
   /** 造像素：把这些矩形填成不透明，其余全透明 */
@@ -2320,7 +2342,7 @@ describe('参考线分割：执行段（选区 / 编号 / 落位校正 / 编组�
       right: d.to.right._value, bottom: d.to.bottom._value,
     }));
 
-  it('选区是每格内容的紧贴外框；空白格不切、编号从 0 连续给；最后统一编组', async () => {
+  it('选区紧贴内容、跳过空白并连续编号，不新建组', async () => {
     // 左上格里内容偏在角上（10..20），右下格里内容贴右下角（90..100），另两格全空
     const content = [
       { left: 10, top: 10, right: 20, bottom: 20 },
@@ -2340,11 +2362,12 @@ describe('参考线分割：执行段（选区 / 编号 / 落位校正 / 编组�
     expect(env.copies.every((c) => c.movedAbove)).toBe(true);    // 都落在原图层上方
     expect(played.filter((d) => d._obj === 'move')).toEqual([]);  // 没跑位就不挪
 
-    // 收尾编组：先选中这两层，再原地 make layerSection
+    // 切片直接保留在原图层上方，不额外创建图层组。
     const grp = played.find((d) => d._obj === 'make' && d._target?.[0]?._ref === 'layerSection');
-    expect(grp?.using?.name).toBe('素材 切片');
+    expect(grp).toBeUndefined();
     expect(document.getElementById('status').textContent)
-      .toMatch(/2 列 × 2 行 = 4 块，跳过 2 块空白，已新建 2 个图层并放进新组/);
+      .toMatch(/2 列 × 2 行 = 4 块，跳过 2 块空白，已新建 2 个图层/);
+    expect(document.getElementById('status').textContent).not.toContain('新组');
   });
 
   it('落位跑偏时按预期外框补一条 move 挪回去（差 <1px 不动）', async () => {
@@ -2370,7 +2393,7 @@ describe('参考线分割：执行段（选区 / 编号 / 落位校正 / 编组�
     expect(document.getElementById('status').textContent).toMatch(/校正落位 1 层/);
   });
 
-  it('打开「合并可见内容」：不看选中也能切，结果放进「参考线切片」组', async () => {
+  it('打开「合并可见内容」：不看选中也能切，结果直接保留为图层', async () => {
     const content = [{ left: 0, top: 0, right: 50, bottom: 50 }];
     const doc = doc4();
     doc.activeLayers = [];                                   // 什么都没选
@@ -2384,7 +2407,7 @@ describe('参考线分割：执行段（选区 / 编号 / 落位校正 / 编组�
     expect(played.filter((d) => d._obj === 'copyEvent')).toHaveLength(1);
     expect(env.copies[0].movedAbove).toBeUndefined();        // 没有原图层可依附，落在顶层
     const grp = played.find((d) => d._obj === 'make' && d._target?.[0]?._ref === 'layerSection');
-    expect(grp?.using?.name).toBe('参考线切片');
+    expect(grp).toBeUndefined();
   });
 
   it('底稿层取的是「合并后唯一可见的非组图层」，不是栈顶（栈顶可能是隐藏的文字层）', async () => {
