@@ -2358,7 +2358,15 @@ describe('参考线分割：执行段（选区 / 编号 / 落位校正 / 不建�
     // 选区 = 内容外框，不是 0..50 / 50..100 那两个格子
     expect(rectsFrom(played)).toEqual(content);
     expect(played.filter((d) => d._obj === 'copyEvent')).toHaveLength(2);
-    expect(env.copies.map((c) => c.name)).toEqual(['0', '1']);   // 空白格不占号
+    expect(env.copies.map((c) => c.name)).toEqual(['0', '1']);
+    // Native UXP can retain pointer-events:none when reset with an empty string.
+    for (const tile of document.querySelectorAll('.tile')) {
+      expect(tile.style.pointerEvents).toBe('auto');
+    }
+    goPage('table');
+    expect(document.getElementById('splitPage').style.display).toBe('none');
+    expect(document.getElementById('tablePage').style.display).not.toBe('none');
+    expect(document.getElementById('gsBtn').style.pointerEvents).toBe('auto');   // 空白格不占号
     expect(env.copies.every((c) => c.movedAbove)).toBe(true);    // 都落在原图层上方
     expect(played.filter((d) => d._obj === 'move')).toEqual([]);  // 没跑位就不挪
 
@@ -2521,6 +2529,11 @@ describe('参考线分割：执行段（选区 / 编号 / 落位校正 / 不建�
     // 实际下发的选区：一个像素都不漏、一个像素都不多
     expect(coverOf(groups[0], SHAPE_A, SHAPE_B)).toEqual({ missed: 0, leaked: 0 });
     expect(coverOf(groups[1], SHAPE_B, SHAPE_A)).toEqual({ missed: 0, leaked: 0 });
+    for (const tile of document.querySelectorAll('.tile')) expect(tile.style.pointerEvents).toBe('auto');
+    goPage('table');
+    expect(document.getElementById('splitPage').style.display).toBe('none');
+    expect(document.getElementById('tablePage').style.display).not.toBe('none');
+    expect(document.getElementById('splitBtn').style.pointerEvents).toBe('auto');
     expect(env.copies.map((c) => c.name)).toEqual(['0', '1']);
   });
 

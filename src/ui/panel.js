@@ -668,7 +668,7 @@ async function runSmartSplit() {
     splitting = false;
     setTilesDisabled(false);
     lbl.textContent = orig;
-    splitBtn.style.pointerEvents = '';
+    splitBtn.style.pointerEvents = 'auto';
     splitBtn.style.opacity = '';
   }
 }
@@ -770,7 +770,7 @@ async function runGuideSplit() {
     splitting = false;
     setTilesDisabled(false);
     lbl.textContent = orig;
-    gsBtn.style.pointerEvents = '';
+    gsBtn.style.pointerEvents = 'auto';
     gsBtn.style.opacity = '';
     refreshGuideSplitInfo();
   }
@@ -2532,7 +2532,7 @@ setupSwitch('gsMerged', false);                  // 参考线分割：默认只�
 // ---- 功能页切换：四张磁贴各对应一个功能页 ----
 const tiles = Array.from(document.querySelectorAll('.tile'));
 function setTilesDisabled(on) {
-  tiles.forEach(t => { t.style.pointerEvents = on ? 'none' : ''; t.style.opacity = on ? '0.5' : ''; });
+  tiles.forEach(t => { t.style.pointerEvents = on ? 'none' : 'auto'; t.style.opacity = on ? '0.5' : '1'; });
 }
 function show(id, on) { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; }
 function switchPage(name) {
