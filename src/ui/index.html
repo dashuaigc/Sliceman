@@ -120,7 +120,7 @@
         <!-- 标题与输入框同一行；原来的说明文案改当输入框 placeholder -->
         <div class="card-head card-head-inline">
           <h3 class="card-title">项目名称</h3>
-          <div class="head-field"><input type="text" id="projectName" placeholder="本次项目的名称(可选)"></div>
+          <div class="head-field"><input type="text" id="projectName" placeholder="本次项目的名称(可选)"><span id="projectNameHint" class="field-hint" tabindex="0" aria-label="本次项目的名称(可选)">本次项目的名称(可选)</span></div>
         </div>
       </section>
 
@@ -323,7 +323,7 @@
 </svg>
           <span class="row-label">水平距离</span>
           <div class="setting-value num-field">
-            <div class="num-box"><input type="text" id="moveX" placeholder="0"></div><span class="unit">px</span>
+            <div class="num-box"><input type="text" id="moveX" placeholder="0"><span id="moveXHint" class="field-hint" tabindex="0" aria-label="0">0</span></div><span class="unit">px</span>
           </div>
         </div>
 
@@ -337,7 +337,7 @@
 </svg>
           <span class="row-label">垂直距离</span>
           <div class="setting-value num-field">
-            <div class="num-box"><input type="text" id="moveY" placeholder="0"></div><span class="unit">px</span>
+            <div class="num-box"><input type="text" id="moveY" placeholder="0"><span id="moveYHint" class="field-hint" tabindex="0" aria-label="0">0</span></div><span class="unit">px</span>
           </div>
         </div>
 
@@ -1147,11 +1147,11 @@
           <div class="field-block field-row">
             <div class="field-col" id="findBlock">
               <label class="label-2l">查找内容<span class="label-sub">原名中包含的文字</span></label>
-              <div class="tf"><input type="text" id="findText" placeholder="如 Button"></div>
+              <div class="tf"><input type="text" id="findText" placeholder="如 Button"><span id="findTextHint" class="field-hint" tabindex="0" aria-label="如 Button">如 Button</span></div>
             </div>
             <div class="field-col">
               <label class="label-2l"><span id="templateLabel">替换为</span><span class="label-sub">开启编号后 n = 数字</span></label>
-              <div class="tf"><input type="text" id="templateText" placeholder="如 Icon_n"></div>
+              <div class="tf"><input type="text" id="templateText" placeholder="如 Icon_n"><span id="templateTextHint" class="field-hint" tabindex="0" aria-label="如 Icon_n">如 Icon_n</span></div>
             </div>
           </div>
           <div class="switch-row">
@@ -1198,7 +1198,7 @@
           </div>
           <div class="preview-block">
             <div class="preview-head">结果预览</div>
-            <div class="pv-columns"><span>原名称</span><span>新名称</span></div>
+            <div class="pv-columns"><span class="pv-from">原名称</span><span class="pv-arrow"></span><span class="pv-to">新名称</span></div>
             <div id="previewList" class="preview"></div>
           </div>
         </section>
@@ -1367,12 +1367,15 @@
         <div id="slSearchView">
           <div class="field-block">
             <label>查找内容 <span class="label-sub">（图层 / 组名称里包含的文字）</span></label>
-            <!-- 输入框（右侧带清空 ✕）+ 搜索按钮同一行；框内按回车等同于点搜索 -->
+            <!-- 清空按钮在框内；原生输入区域单独限宽，搜索按钮在框外。 -->
             <div class="sl-find-row">
               <div class="tf sl-find-box">
+                <div class="sl-find-content">
                 <input type="text" id="slFindText" placeholder="如 Button，回车即搜索">
-                <span class="sl-x-mini" id="slFindClear">✕</span>
+                <span class="sl-x-mini" id="slFindClear" role="button" tabindex="0" aria-label="清空查找内容">✕</span>
+                </div>
               </div>
+              <div class="sl-find-spacer" aria-hidden="true"></div>
               <div id="slSearchBtn" class="sl-find-btn" role="button" tabindex="0">搜索</div>
             </div>
           </div>

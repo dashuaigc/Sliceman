@@ -6,7 +6,7 @@ import { buildBaseName, makeUniqueName } from '../lib/naming.js';
 import { normalize } from '../lib/normalize.js';
 import { readDocumentTree } from '../ps/layer-tree.js';
 import { exportTask, exportSymbol, beginExport, endExport } from '../ps/exporter.js';
-import { hasCounter, buildRenameRows } from '../lib/rename-core.js';
+import { buildRenameRows } from '../lib/rename-core.js';
 import { matchLayers, describePath } from '../lib/search-core.js';
 import { readItemIndexes, applyRename } from '../ps/renamer.js';
 import { readAllLayers, selectLayersById } from '../ps/layer-finder.js';
@@ -63,13 +63,26 @@ function setStatus(msg) { statusEl.textContent = msg; }
 // 1) 聚焦时给【外层那个画边框的 div】加 .focused：边框高亮，退出即还原。
 //    UXP 下 :focus-within 靠不住（文字编辑是原生层，焦点不一定传到 DOM 上），
 //    样式表里那条留着当降级，真正生效的是这个类。
-// 2) 点进去就把框清空，不用先删旧值；原值挪到 placeholder 当灰字，全程看得见。
+// 2) 点进去就把框清空，不用先删旧值；暂存原值和提示文字，编辑时两者都隐藏。
 //    退出时框里还是空的 → 把原值放回去；输了新值 → 就按新值。
 // ⚠️ 清空只改 DOM，【不派发 input 事件】—— 派了就等于告诉各处「用户把值删空了」，
 //    预览会退化、记忆会被写空。代价是「正在编辑、还没输东西」这段时间里框里是空的，
 //    所以读值一律走 fieldValue()，别直接读 .value（万一 blur 没来也不会读成空）。
+const fieldFinishers = new Map(); // 框外点击可直接结束编辑，不依赖宿主转发合成事件
+const fieldHintNodes = new Map(); // 重命名、平移和切图页使用普通 DOM 文字，不依赖原生 placeholder 重绘
 const fieldPrev = new Map();        // 输入框 → 聚焦那一刻的原值（退出即删）
-const fieldHolder = new Map();      // 输入框 → 聚焦前的 placeholder（退出时还回去）
+const fieldHolder = new Map();      // 输入框 → 持久提示文案；隐藏期间也保留，不从空白控件重读
+
+function renderFieldHint(el) {
+  const hint = fieldHintNodes.get(el);
+  if (!hint) return;
+  const text = fieldHolder.get(el) || '';
+  const visible = !fieldPrev.has(el) && String(el.value ?? '') === '' && text !== '';
+  hint.textContent = text;
+  hint.style.display = visible ? 'block' : 'none';
+  hint.setAttribute('aria-label', text);
+  el.style.display = visible ? 'none' : 'block';
+}
 
 /** 读输入框的值：正在编辑且还没输东西时，返回它聚焦前的原值 */
 function fieldValue(el) {
@@ -80,54 +93,93 @@ function fieldValue(el) {
 
 /** 代码主动给输入框写值（预填弹窗、编辑已有查找项）：连暂存的原值一起换掉，
  *  否则退出输入框时会被旧值盖回去 */
-function fieldSet(el, v) { fieldClear(el); el.value = String(v ?? ''); }
+function fieldSet(el, v) {
+  if (!el) return;
+  fieldPrev.delete(el);
+  el.value = String(v ?? '');
+  restoreHolder(el);
+}
 
 /** 代码主动清空一个输入框（如「清空关键词」）：连暂存的原值一起丢掉，
  *  否则退出输入框时那个原值又被放回来了 */
-function fieldClear(el) {
-  if (!el) return;
-  restoreHolder(el);
-  fieldPrev.delete(el);
-  el.value = '';
-}
+function fieldClear(el) { fieldSet(el, ''); }
 
-/** 把聚焦时借用的 placeholder 还回去（没借过就什么都不做） */
+/** 恢复聚焦时隐藏的 placeholder（没有暂存就不处理） */
 function restoreHolder(el) {
   if (!fieldHolder.has(el)) return;
   const hold = fieldHolder.get(el);
-  fieldHolder.delete(el);
   el.placeholder = hold;
   el.setAttribute('placeholder', hold);
+  renderFieldHint(el);
+}
+
+function setFieldPlaceholder(el, text) {
+  const hint = String(text ?? '');
+  fieldHolder.set(el, hint);
+  const visible = fieldPrev.has(el) ? '' : hint;
+  el.placeholder = visible;
+  el.setAttribute('placeholder', visible);
+  renderFieldHint(el);
+}
+
+// UXP 点击非聚焦控件时可能不派发 blur；显式结束编辑并运行页面的失焦处理。
+function finishOtherFields(target) {
+  for (const el of Array.from(fieldPrev.keys())) {
+    if (target === el || target === el.parentNode || target === fieldHintNodes.get(el)) continue;
+    try { el.blur(); } catch { /* 由下面的失焦事件兜底 */ }
+    if (fieldPrev.has(el)) {
+      fieldFinishers.get(el)();
+      try { el.dispatchEvent(new Event('blur')); } catch { /* 通用值和提示已经恢复 */ }
+    }
+  }
+}
+for (const type of ['pointerdown', 'mousedown', 'click']) {
+  document.addEventListener(type, (event) => finishOtherFields(event.target), true);
 }
 
 function bindTextField(el) {
   if (!el) return;
-  const box = el.parentNode;                       // 画边框的是外层 div，不是 input
+  fieldHolder.set(el, String(el.placeholder || el.getAttribute('placeholder') || ''));
+  if (['findText', 'templateText', 'moveX', 'moveY', 'projectName'].includes(el.id)) {
+    fieldHintNodes.set(el, document.getElementById(el.id + 'Hint'));
+  }
+  const box = el.id === 'slFindText' ? el.parentNode.parentNode : el.parentNode; // 查找框外层负责描边
   const enter = () => {
+    finishOtherFields(el);
     if (box && box.classList) box.classList.add('focused');
     if (fieldPrev.has(el)) return;                 // focus 与 focusin 都会来，只认第一次
     const cur = String(el.value ?? '');
     fieldPrev.set(el, cur);
-    if (cur === '') return;                        // 本来就是空的：placeholder 不用借
-    fieldHolder.set(el, el.getAttribute('placeholder') || '');
     el.value = '';
-    el.placeholder = cur;                          // 原值改用灰字显示，退出前一直看得见
-    el.setAttribute('placeholder', cur);
+    el.placeholder = '';
+    el.setAttribute('placeholder', '');
+    renderFieldHint(el);
   };
   const leave = () => {
     if (box && box.classList) box.classList.remove('focused');
     if (!fieldPrev.has(el)) return;
     const prev = fieldPrev.get(el);
     fieldPrev.delete(el);
-    restoreHolder(el);
-    if (String(el.value ?? '') !== '') return;     // 输了新值：就按新值，别覆盖
-    el.value = prev;                               // 没改动：把原值放回去
+    if (String(el.value ?? '') === '') el.value = prev; // 无新输入：恢复原值
+    restoreHolder(el);                            // 最后恢复提示，避免原生控件写值时刷新掉提示
   };
   // focus/blur 不冒泡，为保险连会冒泡的 focusin/focusout 一起听；重复触发也幂等
   el.addEventListener('focus', enter);
   el.addEventListener('focusin', enter);
+  fieldFinishers.set(el, leave);
   el.addEventListener('blur', leave);
   el.addEventListener('focusout', leave);
+  const hint = fieldHintNodes.get(el);
+  if (hint) {
+    const activate = () => {
+      enter();
+      try { el.focus(); } catch { /* 输入框已显示，仍可点击输入 */ }
+    };
+    hint.addEventListener('click', activate);
+    hint.addEventListener('focus', activate);
+    el.addEventListener('input', () => renderFieldHint(el));
+    renderFieldHint(el);
+  }
 }
 
 // 面板里所有的文字输入框。新加输入框必须往这里补一个 id ——
@@ -142,6 +194,9 @@ const TEXT_FIELDS = [
   'findText', 'templateText', 'startNum', 'stepNum',
   'gdNameInput', 'rzNameInput', 'slFindText',
 ];
+
+// 先注册通用行为：失焦恢复原值后，页面再求值、保存和更新预览。
+for (const id of TEXT_FIELDS) bindTextField(document.getElementById(id));
 
 // ---- 数值输入框的通用增强：↑/↓ 加减一格，框里直接写算式 ----
 //
@@ -209,8 +264,7 @@ function bindNumField(spec) {
   el.addEventListener('focusout', resolve);
 }
 
-// 表格页 / 定位格页：真值在 state 对象里，框常态是空的（当前值走灰字 placeholder）。
-// 读要读 state，写则要【同时】写进框（让用户当场看见白字）和 state（离开后的灰字）。
+// 表格页 / 定位格页：编辑时读 state 回退，写时同时更新输入框和 state。
 const tblNumField = (id, extra) => bindNumField({
   id,
   read: () => tblVal(id),
@@ -346,8 +400,10 @@ const projectInput = document.getElementById('projectName');
 function sesGet(k) { try { return sessionStorage.getItem(k); } catch { return null; } }
 function sesSet(k, v) { try { sessionStorage.setItem(k, v); } catch { /* 不支持则不记忆 */ } }
 try { localStorage.removeItem('projectName'); } catch { /* 忽略 */ }
-projectInput.value = sesGet('projectName') || '';
-projectInput.addEventListener('input', () => sesSet('projectName', projectInput.value));
+fieldSet(projectInput, sesGet('projectName') || '');
+projectInput.addEventListener('input', () => sesSet('projectName', fieldValue(projectInput)));
+projectInput.addEventListener('blur', () => sesSet('projectName', fieldValue(projectInput)));
+projectInput.addEventListener('focusout', () => sesSet('projectName', fieldValue(projectInput)));
 
 // ---- 切图状态与停止控制 ----
 const sliceBtn = document.getElementById('sliceBtn');
@@ -1154,7 +1210,7 @@ function doMove() {
 moveBtn.addEventListener('click', () => doMove());
 
 // 距离框的键盘操作：Enter 直接执行一次平移；↑/↓ 加减 1，Shift 时加减 10。
-// ↑/↓ 读的是 fieldValue：点进框时值被清空挪进了灰字（见 bindTextField），
+// ↑/↓ 读的是 fieldValue：点进框时值被清空并暂存（见 bindTextField），
 // 直接读 .value 会从 0 开始跳，读原值才是接着刚才那个数微调
 [moveXInput, moveYInput].forEach((input) => {
   input.addEventListener('keydown', (e) => {
@@ -1209,13 +1265,7 @@ const setPillOn = (containerId, attr, value, on) => {
 const numOr = (v, dflt) => { const n = parseFloat(v); return Number.isFinite(n) ? n : dflt; };
 const intOr = (v, dflt) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : dflt; };
 
-// 本页输入框的取值模型：【真值存在 tblState 里，输入框本身常态是空的，当前值以
-// placeholder（灰色提示）显示】。点进去直接敲数字，不用先删；没敲就走开，真值原样保留。
-//
-// 这么设计的关键理由：不依赖 blur 事件。把「提交」放在 input 上（每敲一下就写进
-// tblState），blur 就只剩「把框清空、恢复灰字」这点纯装饰工作，漏了也不丢数据。
-//
-// 一律走 tblVal 取值，别直接读 .value —— 正在输入时值在框里，其余时候值在 tblState 里。
+// 数值直接显示在输入框中；state 保留编辑前/最近输入值，供聚焦清空时取用。
 const tblState = {};
 
 const tblVal = (id) => {
@@ -1223,14 +1273,13 @@ const tblVal = (id) => {
   return v !== '' ? v : (tblState[id] ?? '');
 };
 
-/** 写入一个值：存进 tblState，用灰字显示，输入框清空等着接收输入 */
+/** 写入一个值：同步 tblState 和输入框的实际值 */
 function setTblValue(id, v) {
   const s = String(v);
   tblState[id] = s;
   const el = tbl[id];
-  el.value = '';
-  el.placeholder = s;
-  el.setAttribute('placeholder', s);              // 属性/特性两头都设，稳一点
+  fieldSet(el, s);
+  setFieldPlaceholder(el, '');
 }
 
 function readTableCfg() {
@@ -1427,10 +1476,10 @@ bindTogglePills('tblStructPills', saveTableCfg);
 // 初值先给 false，紧接着的 loadTableCfg 会用记忆的值覆盖掉
 setupSwitch('tblFill', false, () => { refreshTableUi(); saveTableCfg(); });
 // 四个事件各司其职，谁漏了都不丢数据：
-//   input   —— 每敲一下就把真值提交进 tblState（唯一的「提交」时机）
+//   input   —— 每敲一下就把真值提交进 tblState（失焦时也会补做提交）
 //   focus   —— 把框清空，直接开始输入，不用先删旧值
 //   Enter   —— 确认当前输入并退出输入框
-//   blur    —— 纯装饰：清空框、把当前真值恢复成灰字提示
+//   blur    —— 确认当前值、保持显示并保存配置
 // focus/blur 不冒泡，为保险连会冒泡的 focusin/focusout 一起听；
 // 所以连会冒泡的 focusin/focusout 一起听；重复触发也幂等。
 for (const id of TBL_FIELDS) {
@@ -1443,15 +1492,13 @@ for (const id of TBL_FIELDS) {
     saveTableCfg();
   });
 
-  const clear = () => { el.value = ''; };
-  el.addEventListener('focus', clear);
-  el.addEventListener('focusin', clear);
-
   const restore = () => {
-    el.value = '';
-    el.placeholder = tblState[id] ?? '';
-    el.setAttribute('placeholder', tblState[id] ?? '');
+    const value = String(el.value ?? '').trim();
+    if (value !== '') tblState[id] = value;
+    fieldSet(el, tblState[id] ?? '');
+    setFieldPlaceholder(el, '');
     refreshSwatches();
+    saveTableCfg();
   };
   el.addEventListener('blur', restore);
   el.addEventListener('focusout', restore);
@@ -1486,15 +1533,7 @@ for (const id of DG_FIELDS) dgEl[id] = document.getElementById(id);
 const DG_FIELD_BOX = { width: 'dgW', height: 'dgH', count: 'dgCount', color: 'dgColor' };
 let gridBusy = false;
 
-// 本页输入框的取值模型与表格页同款：【真值存在 dgState 里，输入框本身常态是空的，
-// 当前值以 placeholder（灰字）显示】。
-//   · 点进去直接敲数字，不用先删旧值；
-//   · 敲了 → 按新敲的值，它同时成为新的灰字；
-//   · 没敲就把鼠标移走 → 框一律清空，不把旧值再写回白字，仍按灰字里那个值算。
-// 这么设计的关键理由：不依赖 blur 事件。把「提交」放在 input 上（每敲一下就写进
-// dgState），blur 就只剩「把框清空、恢复灰字」这点纯装饰工作，漏了也不丢数据。
-//
-// ⚠️ 一律走 dgVal 取值，别直接读 .value —— 正在输入时值在框里，其余时候值在 dgState 里。
+// 与表格页一致：实际值显示在输入框，state 用于编辑时回退和配置保存。
 const dgState = {};
 
 const dgVal = (id) => {
@@ -1502,14 +1541,13 @@ const dgVal = (id) => {
   return v !== '' ? v : (dgState[id] ?? '');
 };
 
-/** 写入一个值：存进 dgState，用灰字显示，输入框清空等着接收输入 */
+/** 写入一个值：同步 dgState 和输入框的实际值 */
 function setDgValue(id, v) {
   const s = String(v);
   dgState[id] = s;
   const el = dgEl[id];
-  el.value = '';
-  el.placeholder = s;
-  el.setAttribute('placeholder', s);              // 属性/特性两头都设，稳一点
+  fieldSet(el, s);
+  setFieldPlaceholder(el, '');
 }
 
 function readGridCfg() {
@@ -1714,12 +1752,12 @@ document.getElementById('dgSwatch').addEventListener('click', async () => {
 });
 
 // 四个事件各司其职，谁漏了都不丢数据（同表格页）：
-//   input   —— 每敲一下就把真值提交进 dgState（唯一的「提交」时机）
+//   input   —— 每敲一下就把真值提交进 dgState（失焦时也会补做提交）
 //   focus   —— 把框清空，直接开始输入，不用先删旧值
 //   Enter   —— 确认当前输入并退出输入框（= 手动触发一次 blur）。
 //              回车【不】直接创建：建定位格会改文档、还可能新建 PSD，
 //              这种动作只能由「创建定位格」那个按钮发起，别让手一滑就跑起来
-//   blur    —— 纯装饰：清空框、把当前真值恢复成灰字提示
+//   blur    —— 确认当前值、保持显示并保存配置
 // focus/blur 不冒泡，为保险连会冒泡的 focusin/focusout 一起听；重复触发也幂等。
 for (const id of DG_FIELDS) {
   const el = dgEl[id];
@@ -1731,17 +1769,14 @@ for (const id of DG_FIELDS) {
     saveGridCfg();
   });
 
-  const clear = () => { el.value = ''; };
-  el.addEventListener('focus', clear);
-  el.addEventListener('focusin', clear);
-
-  // 鼠标移走 = 把框清空、当前真值退回灰字。没敲过东西就还是原来那个值，
-  // 敲过就是新值 —— 两种情况下框里都不再留白字，看到的永远是灰字提示
+  // 失焦也提交当前输入，避免宿主漏发 input 时丢失新值。
   const restore = () => {
-    el.value = '';
-    el.placeholder = dgState[id] ?? '';
-    el.setAttribute('placeholder', dgState[id] ?? '');
+    const value = String(el.value ?? '').trim();
+    if (value !== '') dgState[id] = value;
+    fieldSet(el, dgState[id] ?? '');
+    setFieldPlaceholder(el, '');
     refreshGridPreview();
+    saveGridCfg();
   };
   el.addEventListener('blur', restore);
   el.addEventListener('focusout', restore);
@@ -1751,7 +1786,7 @@ for (const id of DG_FIELDS) {
     if (e.preventDefault) e.preventDefault();      // 别让回车顺带触发别的默认行为
     const v = String(el.value ?? '').trim();
     if (v !== '') dgState[id] = v;                 // input 一般已经提交过，这里兜底
-    restore();                                     // 值落进灰字，框清空
+    restore();                                     // 确认并显示实际值
     saveGridCfg();
     try { el.blur(); } catch { /* 不支持就算了：restore 已经把状态摆正 */ }
   });
@@ -1825,7 +1860,7 @@ function pvMore(total) {
 }
 
 /** 预览的一行：行首类型图标 + 文字。data-kind 给测试和样式用 */
-function pvRow(layer, from, to = '<span class="label-sub">—</span>') {
+function pvRow(layer, from, to = `<b>${from}</b>`) {
   const isGroup = !!layer && layer.kind === 'group';
   return `<div class="pv-row" data-kind="${isGroup ? 'group' : 'layer'}">`
     + `${isGroup ? PV_ICO_GROUP : PV_ICO_LAYER}<span class="pv-txt">`
@@ -1881,7 +1916,7 @@ async function sortedByPanelOrder(sel, forceUp) {
 function updateRenameFields() {
   show('findBlock', renameMode === 'replace');
   document.getElementById('templateLabel').textContent = MODE_LABEL[renameMode];
-  templateInput.setAttribute('placeholder', MODE_PLACEHOLDER[renameMode]);
+  setFieldPlaceholder(templateInput, MODE_PLACEHOLDER[renameMode]);
   document.getElementById('counterBlock').style.display = counterSwitchEl.checked ? '' : 'none';
 }
 
@@ -1921,12 +1956,8 @@ async function renderRenamePreview(force) {
     return;
   }
   const rows = buildRenameRows(layers.map((l) => l.name), cfg);
-  // 开着编号但模板里没有独立的 n：提示一句，避免"怎么没编号"的困惑（不阻止执行）
-  const hint = cfg.counter && cfg.template && !hasCounter(cfg.template)
-    ? '<i>已开启数字编号，但模板里没有独立的 n（Button/Icon 里的 n 不算），编号不会出现</i>'
-    : '';
   // rows 由 layers.map(名字) 得来，下标与 layers 一一对应 → 图标取 layers[i] 的类型
-  previewList.innerHTML = hint + rows.slice(0, PV_MAX).map((r, i) => pvRow(layers[i], esc(r.from), r.unmatched
+  previewList.innerHTML = rows.slice(0, PV_MAX).map((r, i) => pvRow(layers[i], esc(r.from), r.unmatched
     ? `<span class="dup">未找到「${esc(cfg.find)}」</span>`
     : `<b>${esc(r.to)}</b>${r.dup ? ' <span class="dup">⚠同名</span>' : ''}`
   )).join('') + pvMore(rows.length);
@@ -2607,59 +2638,28 @@ Array.from(document.querySelectorAll('#sliceModePills .pill')).forEach((p) => {
 
 // 智能分割 / 批量处理：说明挂在各自标题后的问号图标上
 bindTip(document.getElementById('splitInfo'), document.getElementById('splitTip'),
-  '在图层面板<b>选中一个像素图层</b>（如拼合的素材图 / 多元素图层），插件自动识别其中<b>互不相连的内容块</b>，把每一块复制成<b>独立图层</b>（按从上到下、每行从左到右的顺序，依次命名为 0、1、2…）。<br>开启<b>保持元素完整</b>：同一元素内部断开的笔画 / 描边会并回同一图层（合并距离按本图自适应推导），规则排列的字符表 / 雪碧图则自动识别为网格、按格拆分不做合并。<br>关闭时严格按像素是否相连拆分——字母 i 的点会单独成一层。<br>原图层保持不变，可放心撤销。');
+  '选中<b>一个像素图层</b>，将分离的内容拆成独立图层，按从上到下、从左到右编号。<br><b>保持元素完整</b>：尝试合并同一元素的断开部分；关闭后按相连像素拆分。<br>原图层保留，可撤销。');
 bindTip(document.getElementById('rzInfo'), document.getElementById('rzTip'),
-  '把一批图片统一改成同一套尺寸：<b>选图片 → 设尺寸 → 设输出 → 开始处理</b>四步走完即可。<br>'
-  + '来源可以是<b>当前文档、多选的图片文件、整个文件夹</b>（可含子文件夹）。<br>'
-  + '<b>默认不改原文件</b>：一律另存到新位置；来源是当前文档时先复制一份再动手，原文档一个像素都不碰。<br>'
-  + '<b>小图会放大到目标尺寸</b>，但默认不让图变形（要变形得自己选「拉伸」）。<br>'
-  + '单张失败不会中断整批 —— 跑完在「失败记录」里看原因。')
+  '批量调整图片尺寸：<b>选择来源 → 设置尺寸 → 设置输出 → 开始处理</b>。<br>支持当前文档、图片文件和文件夹。当前文档会先复制再处理。<br>处理前确认<b>输出位置和同名文件规则</b>；单张失败不影响其余图片。');
 bindTip(document.getElementById('gsInfo'), document.getElementById('gsTip'),
-  '用<b>当前文档里已有的参考线</b>把内容切成网格，每一格复制成一个<b>独立图层</b>（参考线是手拖的还是版面生成的都行）。<br>'
-  + '<b>画布边缘算作边界</b>：3 条竖线 = 4 列；只拖竖线就切成整条的列。<br>'
-  + '整格没有内容的<b>自动跳过</b>，切出来的图层按 0、1、2… 依次编号（从上到下、每行从左到右），并统一放进一个新组。<br>'
-  + '默认切<b>选中的那一个图层 / 组</b>（文字 / 形状 / 智能对象也可以，切片是像素）；开启<b>合并可见内容</b>则不看选中，把整张可见画面拍平后切。<br>'
-  + '原对象保持不变，可以撤销（块数多时可能要多按几次 Ctrl+Z）。');
+  '按当前文档的<b>参考线和画布边缘</b>分格，将有内容的格子生成像素图层，放入新组。<br>默认分割选中的一个图层或组；开启<b>合并可见内容</b>后分割整张可见画面。<br>空格自动跳过，原对象保留。');
 bindTip(document.getElementById('smartObjInfo'), document.getElementById('smartObjTip'),
-  '选中一个或多个图层，点击后<b>逐个</b>转换为<b>独立智能对象</b>——绝不把多个图层合并进同一个智能对象。<br>已是智能对象的图层自动跳过；图层名称、顺序、位置、所在图层组与视觉效果保持不变；整个批量操作在历史记录中为一步，可一次撤销。');
+  '将选中的图层<b>分别转为独立智能对象</b>，保留名称、位置和层级。<br>已有智能对象自动跳过，整批可一次撤销。');
 bindTip(document.getElementById('groupInfo'), document.getElementById('groupTip'),
-  '选中一个或多个图层 / 组，点击后为<b>每一个</b>对象分别新建一层父级组并把它嵌套进去——选中几个就建几个组，<b>绝不合并</b>。<br>新组<b>沿用原对象的名称</b>，建在对象原来的父级、原来的位置上：图层顺序、所在组、组内结构、名称、样式、混合模式、不透明度、蒙版与智能对象属性全部不变；整个批量操作在历史记录中为一步，可一次撤销。<br>无法处理的对象（如背景图层）会被跳过并在结果里报出，不影响其余对象。');
+  '为每个选中的图层或组<b>单独建立同名父组</b>，保留原有顺序和位置。<br>无法处理的对象会跳过，整批可一次撤销。');
 bindTip(document.getElementById('layoutInfo'), document.getElementById('layoutTip'),
-  '在图层面板<b>选中 2 个以上</b>的图层 / 组 / 文字 / 形状 / 智能对象，点击后按<b>横向</b>或<b>竖向</b>自动排成一排：<br>顺序<b>不看图层面板</b>，而是按对象当前在画布中的实际位置——横排先从上到下识别「行」、行内从左到右；竖排先从左到右识别「列」、列内从上到下。<br><b>间距是相邻两个对象真实边缘之间的距离</b>（不是中心距），带投影/外发光的图层按主体边界算。<br>排序后的第一个对象作为<b>锚点保持原位</b>，其余依次贴过去，整批版面不会漂走。<br>只改位置：不栅格化、不合并、不改图层类型 / 尺寸 / 层级 / 组内结构，图层组整体移动。隐藏图层若被选中也参与排版并保持隐藏；<b>锁定图层会中止排版</b>并提示解锁（插件不擅自解锁）。<br>开启「自动扩展画布」后，只向真正超出的方向扩出透明画布并留出「画布边距」；整个操作在历史记录中为一步，可一次撤销。');
+  '选中<b>至少 2 个对象</b>，按画布中的位置顺序横向或竖向排列。<br><b>间距</b>指对象边缘之间的距离；第一个对象保持原位，其余依次排列。<br>可自动扩展画布并留边距；选中锁定图层时需先解锁。');
 bindTip(document.getElementById('moveInfo'), document.getElementById('moveTip'),
-  '选中一个或多个图层 / 组，在九宫格里点一个方向、填上距离 → 所有对象<b>按同一偏移整体平移</b>，相对位置不变（相对位移，不是坐标）。<br>'
-  + '<b>上下左右</b>只要填一个距离；<b>四个斜角</b>要填水平、垂直两个（用不到的那一行会自己收起来）。<br>'
-  + '距离<b>留空＝0</b>，填<b>负数</b>自动翻到对面那个方向；框内 <b>Enter</b> 执行，<b>↑/↓</b> ±1px、<b>Shift+↑/↓</b> ±10px。<br>'
-  + '数值不清零，连点即按同一距离<b>累加</b>。<br>'
-  + '开<b>复制移动</b>则原对象留在原位，移动的是新复制出来的那一份（副本留在选中状态，可以接着再挪）。<br>'
-  + '选中父组和它的子层时只移动父组（不会走双倍）；锁定层与背景层跳过。可移到画布外，画布尺寸不变；每次一步可撤销。');
+  '选择对象、方向和距离，<b>整体平移</b>并保持相对位置。斜向移动需填写水平、垂直距离。<br><b>复制移动</b>：保留原对象，只移动副本。空值按 0 处理，负值反向移动。<br><b>Enter</b> 执行；<b>↑/↓</b> 调整 1px，配合 <b>Shift</b> 调整 10px。连续点击可累加移动；锁定层和背景层跳过。');
 
 bindTip(document.getElementById('tableInfo'), document.getElementById('tableTip'),
-  '按行列生成<b>矢量形状</b>表格，不是像素、不是选区，生成后颜色、大小、圆角都能继续改。<br>'
-  + '<b>行距 / 列距为 0</b> 时是连续表格；<b>大于 0</b> 时画成互相独立的格子。<br>'
-  + '<b>独立单元格</b>模式每格一层（R1C1…）放进组，描边与填充各自独立，可同时有。<br>'
-  + '点色块可开拾色器。表格画在<b>当前视图正中</b>，整次绘制可一次撤销。');
+  '设置行列、尺寸和样式，在<b>当前视图中心</b>生成矢量表格。<br>行距、列距为 0 时格子相连；大于 0 时分开。<b>独立单元格</b>模式每格生成一个图层。<br>点击色块选色，生成后仍可编辑。');
 
 bindTip(document.getElementById('gridInfo'), document.getElementById('gridTip'),
-  '填好宽高与数量，一次生成一批<b>同尺寸的矩形形状图层</b>（矢量，不是像素、不是选区），'
-  + '按「定位格 01、02、03…」编号，<b>不建组</b>、同一层级。<br>'
-  + '<b>间距不用填</b>：按 (宽 + 高) ÷ 16 自动算，横竖相同并取整。<br>'
-  + '<b>排列不用填</b>：9 个以内用固定版式（5 个 = 3 + 2），10 个以上自动挑最接近正方形的行列；'
-  + '各行<b>统一列坐标</b>严格对齐，末行不足时<b>靠左起排、不居中</b>。<br>'
-  + '开<b>「在新 PSD 中创建」</b>（默认开）则新建一个文档来放：画布尺寸由定位格反推'
-  + '（整体外框 + 四周各一个间距），不用先开文档，也不动手上的稿子。'
-  + '新文档的层结构是<b>「背景」（透明空层）+ 各个定位格</b>。<br>'
-  + '关掉则画在当前文档里，画布装不下时<b>从中心向四周扩</b>，四周留一个间距的安全边距，原有内容不会被裁掉。<br>'
-  + '每个定位格配<b>6 条参考线</b>（四边 + 中心十字），位置完全重合的只留一条。<br>'
-  + '每次点击都是一次<b>独立创建</b>，不会去动之前建过的定位格；整批可一次撤销。<br>'
-  + '名称里带「定位格」的图层正是<b>「Symbols 切图」</b>认的基准框，两个功能可以配合用。');
+  '按宽高和数量生成<b>同尺寸的矩形定位格</b>，自动排列并计算间距。<br>可在新 PSD 或当前文档中创建，也可添加边缘和中心参考线。<br>每次创建新的一批，已有定位格保留；可配合 <b>Symbols 切图</b>使用。');
 
 bindTip(document.getElementById('renameInfo'), document.getElementById('renameTip'),
-  '改名对象＝<b>图层面板里选中的那些</b>；组和组里的层都点亮了，就各改一次。<br>'
-  + '手点太慢用<b>「按名称查找」</b>：弹窗里查一批勾一批，攒成卡片，确认后一次性成为选中。<br>'
-  + '四种方式：<b>替换</b>（换掉原名里的查找内容）/ <b>重新命名</b>（整名替换）/ <b>前缀 / 后缀</b>。<br>'
-  + '开<b>数字编号 n</b> 后，模板里<b>单独的 n</b> 变连续数字（Button 里的 n 不算），可设起始 / 递增 / 位数 / 方向。<br>'
-  + '预览显示「原名称 → 新名称」，重名标<b class="tag-red">⚠同名</b>，没变化的行不写回 PS。给<b>背景图层</b>改名会被 PS 转成普通图层。');
+  '批量修改<b>选中的图层或组</b>名称，支持替换、重新命名、添加前缀或后缀。可用<b>按名称查找</b>批量选择对象。<br>开启编号后，模板中的<b>独立 n</b>替换为数字，如 Icon_n；Button 中的 n 不受影响。<br>先看预览再应用；背景图层改名后会转为普通图层。');
 
 tiles.forEach((t) => t.addEventListener('click', () => {
   if (slicing || splitting || converting || grouping || laying || moving || drawing || gridBusy || gdBusy) return;  // 任务进行中不切页
@@ -3409,13 +3409,7 @@ document.getElementById('gdHistYes').onclick = () => resolveClearHistory(true);
 document.getElementById('gdHistNo').onclick = () => resolveClearHistory(false);
 
 bindTip(document.getElementById('guideInfo'), document.getElementById('guideTip'),
-  '建过的参考线版面自动记下来，下次一键重放。<br>'
-  + '<b>新建参考线版面</b>——开 PS 原生弹窗，确定才创建，数值由 PS 记忆。<br>'
-  + '<b>最近使用</b>——自动记录，留 20 条；点「应用」直接重放。<br>'
-  + '<b>收藏版面</b>——点 ☆ 存成模板，可命名，不限条数。<br>'
-  + '<b>收藏当前版面</b>——把画布上现成的参考线整套存进收藏。<br>'
-  + '<b>快速参考线</b>——点了直接建，追加不覆盖。<br>'
-  + '<b>参考线控制</b>——显隐、锁定、清除（可只清横或竖）。');
+  '创建、保存和重复使用<b>参考线版面</b>。<br><b>新建</b>打开 PS 版面设置；<b>最近使用</b>记录最近 20 条；点 ☆ 可收藏，现有参考线也可整套收藏。<br><b>快速参考线</b>直接追加；下方可显示、隐藏、锁定或清除参考线。');
 
 refreshGuideRecords();
 refreshGuideCtrlLabels();
@@ -3457,21 +3451,19 @@ const RZ_MODE_NAME = {
 };
 const RZ_FIT_NAME = { contain: '等比适应', cover: '等比填充', stretch: '拉伸', scale: '仅缩放' };
 const RZ_FIT_HINT = {
-  contain: '图完整装进目标框，剩下的空白按填充色补齐。',
-  cover: '图放大到铺满目标框，超出的部分按锚点裁掉。',
-  stretch: '⚠ 强行拉成目标尺寸，不保持比例 —— 图会变形。',
-  scale: '图缩进目标框内，画布跟着图走，不补边也不裁切。',
+  contain: '完整保留图片，等比缩放后补齐空白。',
+  cover: '等比铺满目标尺寸，按锚点裁去超出部分。',
+  stretch: '直接改为目标宽高，图片可能变形。',
+  scale: '等比缩放到目标框内，不补边、不裁切。',
 };
 // 四种适应方式的说明都收进标题后的问号浮层：写成一行一句会把这一页顶得很长，
 // 而只显示「当前那一种」的旧写法等于要用户逐个点一遍才能比较。
 const RZ_FIT_TIP = FITS.map((k) => `<b>${RZ_FIT_NAME[k]}</b>：${RZ_FIT_HINT[k]}`).join('<br>');
 // 「位置」这一个控件的两种状态，说明和「现在输出到哪儿」都收进「输出设置」标题后面那个问号里
 // （页面上原来还有一行提示，跟这段话重了一半，撤了）
-const RZ_DEST_TIP = '<b>位置留空（默认）</b>：存回<b>原文件所在位置</b> —— 每张图写回它自己所在的'
-  + '那个文件夹，不新建目录。同名会把原图盖掉，建议配合「添加后缀」，'
-  + '或把「同名文件」设为自动重命名。<br>'
-  + '<b>点文件夹图标</b>：改成<b>指定文件夹</b>，所有图都存到你选的那一个目录'
-  + '（来源是「当前文档」时只能用这个）；来源是文件夹时可以再开「保持原文件夹结构」。';
+const RZ_DEST_TIP = '<b>位置留空</b>：保存到各图片的原文件所在位置。<br>'
+  + '<b>指定文件夹</b>：统一保存到所选位置；当前文档必须指定位置。文件夹来源可保留原目录结构。<br>'
+  + '<b>避免覆盖原图</b>：添加后缀，或将同名文件设为自动重命名。';
 const RZ_SKIP_TEXT = { small: '小图跳过', same: '尺寸没变化', exists: '同名跳过', invalid: '读不到尺寸' };
 
 let rzStep = 1;
@@ -3814,10 +3806,10 @@ function rzRenderPreview() {
 /** 悬停「输出设置」后面那个问号时才算：先报现在输出到哪儿，再讲两种状态各是什么意思 */
 function rzDestTipHtml() {
   const now = rzOutFolder
-    ? `<b>现在：指定文件夹</b> —— ${esc(rzOutFolder.nativePath || rzOutFolder.name || '已选择')}`
+    ? `<b>当前输出</b>：${esc(rzOutFolder.nativePath || rzOutFolder.name || '已选择')}`
     : (rzSrc === 'doc'
-      ? '<b>现在：还没指定</b> —— 来源是当前文档，必须点文件夹图标选一个。'
-      : '<b>现在：原文件所在位置</b> —— 每张图存回它自己所在的那个文件夹。');
+      ? '<b>当前输出</b>：未设置，当前文档需指定文件夹。'
+      : '<b>当前输出</b>：原文件夹。');
   return `${now}<br>${RZ_DEST_TIP}`;
 }
 
@@ -4704,10 +4696,6 @@ stRefreshDot();
 if (prefGet(ST_AUTO_KEY, '1') === '1' && shouldAutoCheck(Number(prefGet(ST_LAST_KEY, '0')))) {
   setTimeout(() => { stCheck(true); }, 3000);
 }
-
-// 所有文字输入框统一挂上「聚焦高亮 + 点进去清空」。放在最后：各功能页自己那些
-// input/keydown 监听都注册完了，通用行为排在它们后面触发，不会抢在前面把值清掉
-for (const id of TEXT_FIELDS) bindTextField(document.getElementById(id));
 
 renderRenamePreview();                                // 初始渲染一次
 updateSliceLabel();                                    // 初始化主按钮文字

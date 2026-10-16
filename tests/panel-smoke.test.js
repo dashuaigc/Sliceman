@@ -47,6 +47,7 @@ function makeEl(id = 'stub') {
       listeners.get(type).push(fn);
     },
     removeEventListener() {},
+    dispatchEvent(event) { fire(el, event.type, event); return true; },
     setAttribute(k, v) { attrs.set(k, String(v)); },
     getAttribute(k) { return attrs.has(k) ? attrs.get(k) : null; },
     removeAttribute(k) { attrs.delete(k); },
@@ -194,6 +195,13 @@ async function loadPanel(opts = {}) {
       if (!htmlIds.has(id)) throw new Error(`index.html 里没有 id="${id}"`);
       if (!els.has(id)) {
         const el = makeEl(id);
+        if (id === 'slFindText') el.parentNode.parentNode = { classList: el.classList };
+        const inputTag = [...html.matchAll(/<input\b[^>]*>/g)].find(m => m[0].includes(`id="${id}"`));
+        const hint = inputTag && /placeholder="([^"]*)"/.exec(inputTag[0]);
+        if (hint) {
+          el.placeholder = hint[1];
+          if (!opts.nativePlaceholderPropertyOnly) el.setAttribute('placeholder', hint[1]);
+        }
         // 容器元素上的 querySelectorAll 交给 spansIn（bindPillGroup / bindDropdown 靠它挂事件）
         el.querySelectorAll = (sel) => (sel === '.pill' || sel === '.dd-item' ? spansIn(id, sel.slice(1)) : []);
         els.set(id, el);
@@ -704,8 +712,7 @@ describe('创建定位格：输入框里按回车', () => {
     w.value = '800';
     fire(w, 'keydown', { key: 'Enter', preventDefault() {} });
     await flush(10);
-    expect(w.value).toBe('');                 // 已退出输入框
-    expect(w.placeholder).toBe('800');        // 值确认下来了（落进灰字）
+    expect(w.value).toBe('800');              // 确认后保留实际值
     expect(state.made).toBeNull();            // 没有新建文档
     expect(state.cells).toEqual([]);          // 也没有建任何形状层
   });
@@ -723,7 +730,7 @@ describe('创建定位格：输入框里按回车', () => {
     w.value = '1000+200';
     fire(w, 'keydown', { key: 'Enter', preventDefault() {} });
     await flush(10);
-    expect(w.placeholder).toBe('1200');
+    expect(w.value).toBe('1200');
     expect(state.cells).toEqual([]);
   });
 });
@@ -763,13 +770,12 @@ describe('数值输入框：鼠标移出即算出 +-*/，↑/↓ 加减一格', 
     }
   });
 
-  it('定位格页：框常态是空的，结果落进灰字（placeholder）', async () => {
+  it('定位格页：失焦后实际值保留计算结果', async () => {
     const { document } = await loadPanel({ doc: fakeDoc(4000, 4000) });
     const w = el(document, 'dgW');
     w.value = '1000+200';
     fire(w, 'blur');
-    expect(w.value).toBe('');            // 框清空（本页的取值模型）
-    expect(w.placeholder).toBe('1200');  // 当前值以灰字呈现
+    expect(w.value).toBe('1200');
   });
 
   it('定位格页要整数：1000/3 收敛成 333，不留半像素', async () => {
@@ -777,15 +783,15 @@ describe('数值输入框：鼠标移出即算出 +-*/，↑/↓ 加减一格', 
     const h = el(document, 'dgH');
     h.value = '1000/3';
     fire(h, 'blur');
-    expect(h.placeholder).toBe('333');
+    expect(h.value).toBe('333');
   });
 
-  it('表格页同理：结果进灰字', async () => {
+  it('表格页同理：实际值保留计算结果', async () => {
     const { document } = await loadPanel({ doc: fakeDoc(800, 600) });
     const tw = el(document, 'tblW');
     tw.value = '100*3';
     fire(tw, 'blur');
-    expect(tw.placeholder).toBe('300');
+    expect(tw.value).toBe('300');
   });
 
   it('↑/↓ 加减 1，Shift 走 10', async () => {
@@ -1440,14 +1446,14 @@ function layoutEvent(over = {}) {
   }, over);
 }
 
-// 所有文字输入框共用的一套：聚焦时外层描边高亮、框清空、原值转灰字；
+// 所有文字输入框共用的一套：聚焦时外层描边高亮、框清空、隐藏提示；
 // 退出时没输东西就把原值放回去，输了新值就按新值。
 // 桩里 el.parentNode 与元素自己共用 classList，所以描边那个类直接在元素上断言。
 describe('输入框通用行为：聚焦高亮 + 点进去清空', () => {
   const focus = (document, id) => fire(document.getElementById(id), 'focus');
   const blur = (document, id) => fire(document.getElementById(id), 'blur');
 
-  it('聚焦：描边高亮 + 框清空 + 原值转灰字；没改动就退出 → 原值回来', async () => {
+  it('聚焦：描边高亮 + 框清空 + 隐藏提示；没改动就退出 → 原值回来', async () => {
     const { document } = await loadPanel();
     const el = document.getElementById('layoutGap');
     el.value = '10';
@@ -1456,11 +1462,219 @@ describe('输入框通用行为：聚焦高亮 + 点进去清空', () => {
     focus(document, 'layoutGap');
     expect(el.classList.contains('focused')).toBe(true);
     expect(el.value).toBe('');
-    expect(el.placeholder).toBe('10');                 // 原值还看得见
+    expect(el.placeholder).toBe('');                   // 编辑时不显示原值
     blur(document, 'layoutGap');
     expect(el.classList.contains('focused')).toBe(false);
     expect(el.value).toBe('10');
-    expect(el.placeholder).toBe('');                   // 借去当灰字的 placeholder 还回来了
+    expect(el.placeholder).toBe('');                   // 恢复原来的 placeholder
+  });
+
+  it('重命名提示在聚焦及预览刷新后隐藏，失焦恢复且不进入实际值', async () => {
+    const { document } = await loadPanel();
+    await settle();
+    const el = document.getElementById('templateText');
+    fire(el, 'focus');
+    await settle();
+    expect(el.value).toBe('');
+    expect(el.getAttribute('placeholder')).toBe('');
+    fire(el, 'blur');
+    expect(el.value).toBe('');
+    expect(el.getAttribute('placeholder')).toBe('如 Icon_n');
+  });
+
+  it('所有文本/数值输入框聚焦隐藏值和提示，重复焦点事件不删除新输入', async () => {
+    const { document } = await loadPanel();
+    const html = readFileSync(join(root, 'src/ui/index.html'), 'utf8');
+    const ids = [...html.matchAll(/<input\b[^>]*type="text"[^>]*id="([^"]+)"/g)].map(m => m[1]);
+    expect(ids.length).toBeGreaterThan(30);
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      fire(el, 'focus');
+      await settle();
+      expect(el.value, id).toBe('');
+      expect(el.getAttribute('placeholder'), id).toBe('');
+      el.value = '42';
+      fire(el, 'focusin');
+      expect(el.value, id).toBe('42');
+      fire(el, 'input');
+      fire(el, 'blur');
+      fire(el, 'focusout');
+      expect(el.value, id).toBe('42');
+    }
+  });
+
+  it('宿主未发 blur：点击框外仍恢复原值和提示，切换输入框也会结束前一次编辑', async () => {
+    const { document } = await loadPanel();
+    const el = document.getElementById('layoutGap');
+    el.value = '24';
+    fire(el, 'focus');
+    fire(document, 'pointerdown', { target: document.getElementById('renameBtn') });
+    expect(el.value).toBe('24');
+    fire(el, 'focus');
+    fire(document.getElementById('templateText'), 'focus');
+    expect(el.value).toBe('24');
+    const template = document.getElementById('templateText');
+    fire(document, 'click', { target: document.getElementById('renameBtn') });
+    expect(template.getAttribute('placeholder')).toBe('如 Icon_n');
+  });
+
+  it('重命名未输入修改时两列名称一致，输入后实时预览', async () => {
+    const d = fakeLayerDoc([fakeLayer(1, 'Button')]);
+    d.targetIds = [1];
+    const { document } = await loadPanel({ doc: d, onPlay: onLayerPlay(d) });
+    await settle();
+    const preview = document.getElementById('previewList');
+    expect(preview.innerHTML).toContain('<span class="pv-to"><b>Button</b>');
+    type(document, 'findText', 'Button');
+    type(document, 'templateText', 'Icon');
+    await settle();
+    expect(preview.innerHTML).toContain('<span class="pv-to"><b>Icon</b>');
+  });
+
+  it('表格和定位格在漏发 input 时也保存失焦值，重复失焦不清空，重新加载保留', async () => {
+    const { document, localStorage } = await loadPanel();
+    for (const id of ['tblW', 'dgW']) {
+      const el = document.getElementById(id);
+      fire(el, 'focus');
+      el.value = '640';
+      fire(el, 'blur');
+      fire(el, 'focusout');
+      expect(el.value, id).toBe('640');
+      fire(el, 'focus');
+      fire(el, 'blur');
+      expect(el.value, id).toBe('640');
+    }
+    const reloaded = await loadPanel({ prefs: Object.fromEntries(localStorage._map) });
+    expect(reloaded.document.getElementById('tblW').value).toBe('640');
+    expect(reloaded.document.getElementById('dgW').value).toBe('640');
+  });
+
+  it('重命名原生提示只从属性读取时，多次空编辑仍恢复原提示', async () => {
+    const { document } = await loadPanel({ nativePlaceholderPropertyOnly: true });
+    for (const id of ['findText', 'templateText']) {
+      const el = document.getElementById(id);
+      const hint = el.placeholder;
+      expect(hint).not.toBe('');
+      for (let i = 0; i < 3; i++) {
+        fire(el, 'focus');
+        fire(el, 'focusin');
+        expect(el.placeholder).toBe('');
+        fire(el, 'blur');
+        fire(el, 'focusout');
+        expect(el.value).toBe('');
+        expect(el.placeholder).toBe(hint);
+      }
+    }
+  });
+
+  it('原生控件写回空值会刷新提示显示时，退出后仍恢复提示', async () => {
+    const { document } = await loadPanel();
+    const el = document.getElementById('findText');
+    const hint = el.placeholder;
+    let value = el.value;
+    Object.defineProperty(el, 'value', {
+      get: () => value,
+      set: next => { value = next; el.placeholder = ''; },
+    });
+    fire(el, 'focus');
+    fire(el, 'blur');
+    expect(el.value).toBe('');
+    expect(el.placeholder).toBe(hint);
+  });
+
+  it('重命名提示由独立文字呈现，反复空编辑恢复，已有值不被提示替代', async () => {
+    const { document } = await loadPanel();
+    for (const [id, text] of [['findText', '如 Button'], ['templateText', '如 Icon_n']]) {
+      const el = document.getElementById(id);
+      const hint = document.getElementById(id + 'Hint');
+      for (let i = 0; i < 3; i++) {
+        expect(hint.textContent).toBe(text);
+        expect(hint.style.display).not.toBe('none');
+        fire(hint, 'click');
+        expect(hint.style.display).toBe('none');
+        expect(el.style.display).not.toBe('none');
+        expect(el.value).toBe('');
+        fire(el, 'blur');
+        expect(hint.style.display).not.toBe('none');
+        expect(el.value).toBe('');
+      }
+      fire(hint, 'focus');
+      type(document, id, 'New');
+      fire(el, 'blur');
+      expect(el.value).toBe('New');
+      expect(hint.style.display).toBe('none');
+      fire(el, 'focus');
+      fire(el, 'blur');
+      expect(el.value).toBe('New');
+    }
+  });
+
+  it('重命名宿主不转发原生或合成 blur 时，点击框外直接恢复提示', async () => {
+    const { document } = await loadPanel();
+    const el = document.getElementById('findText');
+    const hint = document.getElementById('findTextHint');
+    el.dispatchEvent = () => true;
+    fire(hint, 'click');
+    fire(document, 'click', { target: hint });
+    expect(hint.style.display).toBe('none');
+    fire(document, 'click', { target: document.getElementById('renameBtn') });
+    expect(hint.style.display).toBe('block');
+    expect(hint.textContent).toBe('如 Button');
+    expect(el.value).toBe('');
+  });
+
+  it('平移两轴的零值提示可反复恢复，输入新距离和键盘微调后保留数值', async () => {
+    const { document } = await loadPanel();
+    for (const id of ['moveX', 'moveY']) {
+      const el = document.getElementById(id);
+      const hint = document.getElementById(id + 'Hint');
+      for (let i = 0; i < 3; i++) {
+        expect(hint.textContent).toBe('0');
+        expect(hint.style.display).toBe('block');
+        fire(hint, 'click');
+        expect(el.value).toBe('');
+        expect(hint.style.display).toBe('none');
+        fire(document, 'click', { target: document.getElementById('moveBtn') });
+        expect(el.value).toBe('');
+        expect(hint.style.display).toBe('block');
+      }
+      fire(hint, 'focus');
+      type(document, id, '24');
+      fire(el, 'blur');
+      expect(el.value).toBe('24');
+      expect(hint.style.display).toBe('none');
+      fire(el, 'focus');
+      fire(el, 'blur');
+      expect(el.value).toBe('24');
+    }
+    const x = document.getElementById('moveX');
+    fire(x, 'focus');
+    fire(x, 'keydown', { key: 'ArrowUp', preventDefault() {} });
+    fire(x, 'blur');
+    expect(x.value).toBe('25');
+  });
+
+  it('切图项目名称：空编辑恢复提示，新值失焦保留，已有值无改动恢复', async () => {
+    const { document } = await loadPanel();
+    const el = document.getElementById('projectName');
+    const hint = document.getElementById('projectNameHint');
+    for (let i = 0; i < 3; i++) {
+      expect(hint.style.display).toBe('block');
+      fire(hint, 'click');
+      expect(el.value).toBe('');
+      expect(hint.style.display).toBe('none');
+      fire(document, 'click', { target: document.getElementById('sliceBtn') });
+      expect(hint.style.display).toBe('block');
+      expect(hint.textContent).toBe('本次项目的名称(可选)');
+    }
+    fire(hint, 'focus');
+    type(document, 'projectName', 'Game');
+    fire(el, 'blur');
+    expect(el.value).toBe('Game');
+    expect(hint.style.display).toBe('none');
+    fire(el, 'focus');
+    fire(el, 'blur');
+    expect(el.value).toBe('Game');
   });
 
   it('输了新值：退出后按新值，不会被原值盖回去', async () => {
@@ -1499,16 +1713,16 @@ describe('输入框通用行为：聚焦高亮 + 点进去清空', () => {
     expect(renamesFrom(played)).toEqual([[1, 'Icon_a']]);
   });
 
-  it('表格页的框（真值本来就存在灰字里）只拿高亮，不被通用清空插一脚', async () => {
+  it('表格页聚焦隐藏提示，未输入时失焦恢复原值', async () => {
     const { document } = await loadPanel();
     const el = document.getElementById('tblRows');
-    const holder = el.placeholder;                     // 当前真值以灰字显示
+    const holder = el.value;                           // 当前真值直接显示
     expect(holder).not.toBe('');
     focus(document, 'tblRows');
     expect(el.classList.contains('focused')).toBe(true);
-    expect(el.placeholder).toBe(holder);               // 灰字里的真值没被顶掉
+    expect(el.placeholder).toBe('');                   // 编辑时隐藏提示
     blur(document, 'tblRows');
-    expect(el.placeholder).toBe(holder);
+    expect(el.value).toBe(holder);
   });
 
   it('查找弹窗的「清空关键词」：正编辑着也真清空，退出不会把词放回来', async () => {
@@ -1516,7 +1730,7 @@ describe('输入框通用行为：聚焦高亮 + 点进去清空', () => {
     const { document } = await loadPanel({ doc: d, onPlay: onLayerPlay(d) });
     fire(document.getElementById('slOpenBtn'), 'click');
     type(document, 'slFindText', 'btn');
-    focus(document, 'slFindText');                     // 点回框里，词被挪进灰字
+    focus(document, 'slFindText');                     // 点回框里，关键词被暂存
     fire(document.getElementById('slFindClear'), 'click');
     blur(document, 'slFindText');
     expect(document.getElementById('slFindText').value).toBe('');
@@ -2656,7 +2870,7 @@ describe('批量改尺寸：向导与整批执行', () => {
     expect(paneShown(document, 3)).toBe(true);
     // 没点文件夹图标 → 问号浮层就得说清楚「得指定一个位置」，而不是含糊地说存回原文件夹
     fire(document.getElementById('rzDestInfo'), 'mouseover');
-    expect(document.getElementById('rzDestTip').innerHTML).toMatch(/当前文档.*文件夹图标/);
+    expect(document.getElementById('rzDestTip').innerHTML).toMatch(/当前文档需指定文件夹/);
     expect(document.getElementById('rzOutReset').style.display).toBe('none');   // 没得撤
     // 没选输出文件夹 → 不许开跑
     fire(document.getElementById('rzRunBtn'), 'click');
@@ -2955,7 +3169,7 @@ describe('批量改尺寸：向导与整批执行', () => {
     expect(document.getElementById('rzOutIco').style.display).not.toBe('none');
     expect(document.getElementById('rzOutText').style.display).toBe('none');
     expect(document.getElementById('rzOutReset').style.display).toBe('none');
-    expect(destTip()).toMatch(/每张图存回它自己所在的那个文件夹/);
+    expect(destTip()).toContain('<b>当前输出</b>：原文件夹。');
 
     fire(document.getElementById('rzPickOutBtn'), 'click');
     await drain(10);
@@ -2970,7 +3184,7 @@ describe('批量改尺寸：向导与整批执行', () => {
     await drain(5);
     expect(document.getElementById('rzOutIco').style.display).not.toBe('none');
     expect(document.getElementById('rzOutReset').style.display).toBe('none');
-    expect(destTip()).toMatch(/每张图存回它自己所在的那个文件夹/);
+    expect(destTip()).toContain('<b>当前输出</b>：原文件夹。');
     expect(destTip()).not.toContain('D:\\out\\Resized');
   });
 

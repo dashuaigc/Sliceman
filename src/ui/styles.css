@@ -214,6 +214,18 @@ input[type="text"] {
   line-height: 20px;
   outline: none;
 }
+/* UXP 原生 placeholder 清空后可能不重绘；重命名、平移和切图页空闲提示使用独立文字。 */
+.field-hint {
+  display: none;
+  height: 20px;
+  line-height: 20px;
+  font-size: 12px;
+  color: #8b919c;
+  cursor: text;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 input[type="text"]:disabled { opacity: 0.45; }
 input[type="text"]::placeholder { color: #8b919c; }
 
@@ -411,7 +423,7 @@ input[type="text"]::placeholder { color: #8b919c; }
 }
 #renameModePills .pill.active { color: #c2d3ff; background: #2e3c58; border-color: #6082c6; }
 
-#layoutPage { position: relative; }
+#layoutPage { position: relative; padding-bottom: 0; margin-bottom: 8px; border-bottom: none; }
 #layoutPage .setting-row + .switch-row,
 #layoutPage .switch-row + .setting-row { border-top: 1px solid #353940; }
 
@@ -709,23 +721,36 @@ input[type="text"]::placeholder { color: #8b919c; }
 .sl-dialog .preview-block { margin-top: 10px; }
 .sl-dialog .preview-head { margin-bottom: 6px; color: #c4c8d0; }
 
-.sl-find-row { display: flex; align-items: center; }
-.sl-find-row .tf { flex: 1 1 auto; min-width: 0; }
+.sl-find-row { display: flex; align-items: center; width: 100%; }
+/* 框外预留 12px 间隔和 52px 搜索按钮；框内为原生输入区与清空按钮分别限宽。 */
+.sl-find-row .tf { flex: 0 0 auto; width: calc(100% - 64px); min-width: 0; margin: 0; box-sizing: border-box; }
+.sl-find-spacer { flex: 0 0 12px; width: 12px; min-width: 12px; height: 1px; }
 
-.sl-find-box { display: flex; align-items: center; }
-.sl-find-box input[type="text"] { flex: 1 1 auto; min-width: 0; }
+/* 用外层背景和 1px 内缩绘制完整描边，避开 UXP 容器 border 的右侧缺口。 */
+.sl-find-row .sl-find-box { display: block; border: none; padding: 1px; background: #42464e; border-radius: 5px; }
+.sl-find-row .sl-find-box.focused,
+.sl-find-row .sl-find-box:focus-within { background: #9ab8ff; }
+.sl-find-content { display: flex; align-items: center; width: 100%; box-sizing: border-box; padding: 4px 6px; background: #30333a; border-radius: 4px; }
+.sl-find-box input[type="text"] { flex: 0 0 auto; width: calc(100% - 28px); min-width: 0; background: #30333a; }
 .sl-x-mini {
-  flex: 0 0 auto;
-  padding: 0 6px;
+  flex: 0 0 22px;
+  width: 22px;
+  margin: 0 0 0 6px;
+  padding: 0;
+  text-align: center;
   font-size: 11px;
   color: #8b919c;
   cursor: pointer;
 }
 .sl-x-mini:hover { color: #9ab8ff; }
 .sl-find-btn {
-  flex: 0 0 auto;
-  margin-left: 6px;
-  padding: 5px 9px;
+  flex: 0 0 52px;
+  width: 52px;
+  min-width: 52px;
+  box-sizing: border-box;
+  text-align: center;
+  margin: 0;
+  padding: 5px 0;
   font-size: 12px;
   font-weight: 600;
   color: #ffffff;
@@ -1167,12 +1192,12 @@ input[type="text"]::placeholder { color: #8b919c; }
 #renamePage .card { border-bottom: none; margin-bottom: 0; padding-bottom: 8px; }
 #renamePage .preview-head { font-weight: 600; }
 .pv-columns { display: flex; padding: 8px 8px 8px 27px; background: #30333a; border: 1px solid #42464e; border-bottom: none; border-radius: 6px 6px 0 0; color: #a4aab5; font-size: 10px; }
-.pv-columns span { flex: 1 1 0; min-width: 0; }
-.pv-columns span + span { padding-left: 12px; }
+.pv-columns .pv-to { color: #a4aab5; }
 #previewList { border-color: #42464e; border-radius: 0 0 6px 6px; padding-top: 0; padding-bottom: 0; max-height: 132px; }
 #previewList .pv-row { padding-top: 6px; padding-bottom: 6px; }
 .pv-from, .pv-to { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pv-arrow { flex: 0 0 22px; color: #8b919c; text-align: center; }
+.pv-from { flex: 0 0 28%; width: 28%; }
+.pv-arrow { flex: 0 0 12%; width: 12%; display: flex; align-items: center; justify-content: center; color: #8b919c; text-align: center; }
 .pv-to { display: flex; flex-direction: column; color: #c2d3ff; overflow: visible; white-space: normal; }
 .pv-to > b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pv-to .dup { white-space: normal; font-size: 10px; }
