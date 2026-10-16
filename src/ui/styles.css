@@ -907,7 +907,6 @@ input[type="text"]::placeholder { color: #8b919c; }
   cursor: pointer;
 }
 .primary-btn > * { pointer-events: none; }
-.play-icon { width: 13px; height: 13px; margin-right: 8px; }
 #sliceBtn.slicing { background: #c34f5a; color: #ffffff; }
 
 .batch-next { margin-top: 14px; }
@@ -943,7 +942,6 @@ input[type="text"]::placeholder { color: #8b919c; }
   pointer-events: none;
 }
 .btn-tip b { font-weight: 600; color: #e7e8eb; }
-#sliceBtn.slicing .play-icon { display: none; }
 
 .bottombar {
   display: flex;
@@ -964,13 +962,17 @@ input[type="text"]::placeholder { color: #8b919c; }
 
 #resizePage .setting-value .dropdown { flex: 0 0 auto; width: 136px; margin-left: 0; }
 #resizePage .rz-tf { flex: 0 0 auto; width: 136px; }
+.rz-preset-row > label, .rz-mode-row > label { width: 48px; }
+.rz-preset-row > .dropdown, .rz-mode-row > .dropdown { flex: 1 1 0; min-width: 0; }
+#resizePage .rz-inline-action { flex: 0 0 64px; margin: 0 0 0 8px; padding: 0 4px; height: 28px; font-size: 11px; white-space: nowrap; }
 
 .rz-steps { display: flex; align-items: flex-start; margin-bottom: 10px; }
-.rz-step { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; cursor: pointer; }
+.rz-step { flex: 1 1 0; min-width: 0; display: flex; flex-direction: row; align-items: center; justify-content: center; cursor: pointer; }
 .rz-step * { pointer-events: none; }
 .rz-dot {
   width: 22px;
   height: 22px;
+  flex-shrink: 0;
   border-radius: 11px;
   display: flex;
   align-items: center;
@@ -980,7 +982,7 @@ input[type="text"]::placeholder { color: #8b919c; }
   color: #8b919c;
   background: #2b2e34;
 }
-.rz-name { margin-top: 4px; font-size: 10px; line-height: 1.2; text-align: center; color: #8b919c; }
+.rz-name { margin-left: 4px; font-size: 12px; font-weight: 600; line-height: 1.2; white-space: nowrap; color: #8b919c; }
 .rz-step.active .rz-dot { color: #ffffff; background: #527cdb; }
 .rz-step.active .rz-name { color: #e7e8eb; font-weight: 600; }
 .rz-step.done .rz-dot { color: #ffffff; background: #2e3c58; }
@@ -994,6 +996,15 @@ input[type="text"]::placeholder { color: #8b919c; }
 .rz-fill-row { align-items: center; flex-wrap: wrap; }
 .rz-fill-row .pill { flex: 0 0 auto; margin-right: 4px; padding: 0 5px; }
 .rz-fill-row .color-swatch { margin-right: 0; }
+#rzFillBlock { align-items: center; }
+#rzFillBlock > label { margin-right: 8px; font-size: 11px; }
+#rzFillBlock .rz-fill-row { flex-wrap: nowrap; }
+#rzFillBlock .pill { padding: 0 4px; margin-right: 3px; font-size: 11px; }
+#rzFillBlock .color-swatch { width: 16px; height: 16px; margin-left: 2px; }
+.rz-src, #rzOutputSettings .export-row { position: relative; }
+.rz-src .info-ico, #rzOutputSettings .export-row > .info-ico { flex-shrink: 0; margin: 0 6px 0 0; }
+#rzPreviewInfo { display: block; margin: 0 0 8px; }
+#rzRunTitle { flex: 0 0 auto; margin-left: 8px; font-size: 12px; font-weight: 600; white-space: nowrap; color: #c7cbd3; }
 
 .rz-file-list { max-height: 136px; }
 
@@ -1009,11 +1020,6 @@ input[type="text"]::placeholder { color: #8b919c; }
 .rz-duo-cell .num-box { width: 52px; }
 .rz-duo-cell .unit { margin-left: 4px; }
 
-.rz-add-row { padding: 6px 2px; }
-.rz-add-row + .rz-add-row { border-top: none; }
-.rz-add-btn { flex: 0 0 auto; height: 26px; padding: 0 8px; margin: 0 0 0 8px; }
-.rz-add-label { flex: 0 0 auto; margin-left: 0; }
-.rz-scale-tf { flex: 1 1 0; min-width: 0; margin-left: 8px; }
 
 .rz-label-row { position: relative; display: flex; align-items: center; }
 .rz-label-row label { margin: 0; }
@@ -1021,6 +1027,16 @@ input[type="text"]::placeholder { color: #8b919c; }
 .rz-fit-pills { flex-wrap: nowrap; margin-top: 8px; }
 .rz-fit-pills .pill { flex: 0 0 auto; margin-right: 4px; padding: 0 5px; }
 
+.rz-diagram-row { display: flex; align-items: flex-start; margin-top: 12px; }
+.rz-diagram-block { flex: 0 0 140px; width: 140px; }
+.rz-diagram-block > label { display: block; margin-bottom: 8px; }
+.rz-diagram-block .label-sub { margin-left: 4px; }
+.rz-diagram { width: 140px; height: 88px; }
+.rz-diagram svg { width: 140px; height: 88px; }
+.rz-diagram-row #rzAnchorBlock { flex: 0 0 auto; margin: 0 0 0 16px; }
+.rz-diagram-row #rzAnchorBlock > label { display: block; margin-bottom: 8px; }
+.rz-diagram-caption { color: #c7cbd3; font-size: 11px; margin-top: 6px; }
+.rz-diagram-example { color: #8b929f; font-size: 10px; margin-top: 4px; margin-bottom: 12px; }
 .rz-anchor-grid { display: flex; flex-direction: column; align-items: center; }
 .rz-anchor-row { display: flex; justify-content: center; }
 .rz-anchor-row .rz-anchor:last-child { margin-right: 0; }
@@ -1041,24 +1057,19 @@ input[type="text"]::placeholder { color: #8b919c; }
 .rz-anchor:hover { border-color: #6b96f8; }
 .rz-anchor.active { color: #c2d3ff; background: #2e3c58; border-color: #6082c6; }
 
-.rz-sizes { margin-top: 8px; }
-.rz-size {
-  display: flex;
-  align-items: center;
-  padding: 6px 8px;
-  margin-bottom: 6px;
-  font-size: 12px;
-  color: #c4c8d0;
-  background: #2b2e34;
-  border-radius: 6px;
-}
-.rz-size-t { flex: 1 1 auto; }
-.rz-size-del { flex: 0 0 auto; padding: 0 4px; color: #a4aab5; cursor: pointer; }
-.rz-size-del:hover { color: #e88b91; }
-.rz-empty { padding: 4px 2px; font-size: 12px; color: #8b919c; }
 
 .rz-bar { height: 8px; margin-top: 10px; background: #2b2e34; border-radius: 4px; overflow: hidden; }
 .rz-bar-fill { width: 0; height: 100%; background: #6b96f8; border-radius: 4px; }
+
+#resizePage #rzOutputSettings { border-bottom: none; padding-bottom: 0; margin-bottom: 10px; }
+#rzOutputSettings .rz-naming-row { padding-bottom: 4px; }
+#rzOutputSettings .rz-duplicate-row { padding-top: 4px; }
+#resizePage #rzRunPanel { border-bottom: none; padding-bottom: 0; margin-bottom: 0; }
+#resizePage #rzPane3 { margin-bottom: 8px; }
+.rz-progress-head { display: flex; align-items: flex-end; margin-top: 8px; }
+.rz-progress-head #rzSummary { flex: 1 1 0; min-width: 0; margin: 0; }
+#rzRunPanel .rz-bar { margin-top: 6px; }
+#rzProgText { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .rz-stats { display: flex; margin-top: 12px; }
 .rz-stat { flex: 1 1 0; display: flex; flex-direction: column; align-items: center; }

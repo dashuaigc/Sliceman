@@ -1,6 +1,7 @@
 // 面板入口：把纯逻辑（traversal/naming）与 PS 封装（layer-tree/exporter/renamer）接到 UI。
 // 由 esbuild 打包（本地模块内联，photoshop/uxp 作为宿主注入保持 external）。
 import { walk, filterTasksBySelection } from '../lib/traversal.js';
+import { resizeDiagram } from '../lib/resize-diagram.js';
 import { findSymbols } from '../lib/symbols.js';
 import { buildBaseName, makeUniqueName } from '../lib/naming.js';
 import { normalize } from '../lib/normalize.js';
@@ -13,8 +14,7 @@ import { readAllLayers, selectLayersById } from '../ps/layer-finder.js';
 import { smartSplitLayer, splitByGuides } from '../ps/smart-split.js';
 import {
   planResize, normalizeResizeCfg, fieldsOfMode, buildOutName, formatScale,
-  sanitizeFileName, ellipsizeName, splitName, isSupportedImage, parseScaleList, FITS,
-  sizeCfg, sizeLabel, normalizeSizeList,
+  sanitizeFileName, ellipsizeName, splitName, isSupportedImage, FITS,
 } from '../lib/resize-core.js';
 import {
   collectImageFiles, parentFolderOf, closeStrayResizeDocs, processOne, revealFolder,
@@ -190,7 +190,7 @@ const TEXT_FIELDS = [
   'tblLineW', 'tblRadius', 'tblLineColor', 'tblFillColor',
   'dgW', 'dgH', 'dgCount', 'dgColor',
   'rzW', 'rzH', 'rzEdge', 'rzPercent', 'rzTimes', 'rzMaxW', 'rzMaxH',
-  'rzAddW', 'rzAddH', 'rzScales', 'rzQuality', 'rzSuffix', 'rzTpl',
+  'rzQuality', 'rzSuffix', 'rzTpl',
   'findText', 'templateText', 'startNum', 'stepNum',
   'gdNameInput', 'rzNameInput', 'slFindText',
 ];
@@ -319,8 +319,6 @@ rzNumField('rzMaxH', { min: 1 });
 rzNumField('rzPercent', { min: 1, decimals: 1 });
 rzNumField('rzTimes', { min: 0, decimals: 2 });
 // 下面三个不参与预览，改完只要记住（与本页原有的 input 监听分组一致）
-bindNumField({ id: 'rzAddW', min: 1, after: () => rzSaveMemory() });
-bindNumField({ id: 'rzAddH', min: 1, after: () => rzSaveMemory() });
 bindNumField({ id: 'rzQuality', min: 1, after: () => { rzSyncOut(); rzSaveMemory(); } });
 
 // 让出事件循环一拍：使切图循环中排队的点击/按键（停止、ESC）得以处理
@@ -980,7 +978,7 @@ const TIP_MASKED_FIELD_IDS = [
   'tblLineW', 'tblLineColor', 'tblFillColor', 'tblRadius',
   'dgW', 'dgH', 'dgCount', 'dgColor',                                // 创建定位格
   'rzW', 'rzH', 'rzEdge', 'rzPercent', 'rzTimes', 'rzMaxW', 'rzMaxH',   // 批量改尺寸
-  'rzQuality', 'rzSuffix', 'rzTpl', 'rzAddW', 'rzAddH', 'rzScales',
+  'rzQuality', 'rzSuffix', 'rzTpl',
 ];
 // 「按名称查找图层」弹窗是否开着：它自己带输入框，开着期间页面上的输入框必须一直藏着
 let slOpen = false;
@@ -2580,7 +2578,7 @@ function switchPage(name) {
   show('tablePage', name === 'table');
   show('gridPage', name === 'grid');             // 创建定位格
   show('guidePage', name === 'guide');
-  show('resizePage', name === 'resize');   // 批量改尺寸：四步向导
+  show('resizePage', name === 'resize');   // 批量改尺寸：三步向导
   show('sliceBtn', name === 'slice');
   show('renameBtn', name === 'rename');
   show('layoutBtn', name === 'layout');
@@ -2639,8 +2637,6 @@ Array.from(document.querySelectorAll('#sliceModePills .pill')).forEach((p) => {
 // 智能分割 / 批量处理：说明挂在各自标题后的问号图标上
 bindTip(document.getElementById('splitInfo'), document.getElementById('splitTip'),
   '选中<b>一个像素图层</b>，将分离的内容拆成独立图层，按从上到下、从左到右编号。<br><b>保持元素完整</b>：尝试合并同一元素的断开部分；关闭后按相连像素拆分。<br>原图层保留，可撤销。');
-bindTip(document.getElementById('rzInfo'), document.getElementById('rzTip'),
-  '批量调整图片尺寸：<b>选择来源 → 设置尺寸 → 设置输出 → 开始处理</b>。<br>支持当前文档、图片文件和文件夹。当前文档会先复制再处理。<br>处理前确认<b>输出位置和同名文件规则</b>；单张失败不影响其余图片。');
 bindTip(document.getElementById('gsInfo'), document.getElementById('gsTip'),
   '按当前文档的<b>参考线和画布边缘</b>分格，将有内容的格子生成像素图层，放入新组。<br>默认分割选中的一个图层或组；开启<b>合并可见内容</b>后分割整张可见画面。<br>空格自动跳过，原对象保留。');
 bindTip(document.getElementById('smartObjInfo'), document.getElementById('smartObjTip'),
@@ -3423,7 +3419,7 @@ refreshGuideDocState();
 // 取消全由 Photoshop 管，关掉弹窗文档里什么都不留。插件只做它做得好的部分——
 // 把建过的版面记下来，下次一键重放。
 
-// ---- 批量改尺寸：四步向导（选择图片 → 尺寸设置 → 输出设置 → 开始处理）----
+// ---- 批量改尺寸：三步向导（选择图片 → 尺寸设置 → 输出与处理）----
 //
 // 分工：**策略全在这里**（来源怎么收、名字怎么起、同名怎么办、往哪个文件夹写），
 //   机制在 src/ps/resizer.js（打开 → 改 → 存 → 关），算式在 src/lib/resize-core.js（已单测）。
@@ -3434,7 +3430,7 @@ refreshGuideDocState();
 //   localFileSystem: fullAccess，已声明）—— 先探一次，真拿不到才要求改用「指定文件夹」；
 //   来源是当前文档时根本没有磁盘入口，只能写到指定文件夹。
 
-const RZ_STEPS = 4;
+const RZ_STEPS = 3;
 const RZ_PRESET_KEY = 'rz.presets';
 // 内置预设：只覆盖最常用的几套，用户自己存的排在后面
 const RZ_BUILTIN = [
@@ -3446,15 +3442,15 @@ const RZ_BUILTIN = [
   { name: '缩放 50%', builtin: true, cfg: { mode: 'percent', percent: 50 } },
 ];
 const RZ_MODE_NAME = {
-  wh: '固定宽高', w: '固定宽度', h: '固定高度', long: '最长边',
+  wh: '指定宽高', w: '按宽度缩放', h: '按高度缩放', long: '最长边',
   short: '最短边', percent: '百分比缩放', times: '尺寸倍数', max: '最大尺寸限制',
 };
 const RZ_FIT_NAME = { contain: '等比适应', cover: '等比填充', stretch: '拉伸', scale: '仅缩放' };
 const RZ_FIT_HINT = {
-  contain: '完整保留图片，等比缩放后补齐空白。',
-  cover: '等比铺满目标尺寸，按锚点裁去超出部分。',
-  stretch: '直接改为目标宽高，图片可能变形。',
-  scale: '等比缩放到目标框内，不补边、不裁切。',
+  contain: '保持比例、保留完整图片，空白处补边；锚点决定图片位置。',
+  cover: '保持比例铺满目标尺寸，裁掉超出部分；锚点决定保留位置。',
+  stretch: '直接改为指定宽高，不保持原比例，图片可能变形。',
+  scale: '保持比例缩放到指定宽高以内，不补边、不裁切，输出尺寸随图片比例变化。',
 };
 // 四种适应方式的说明都收进标题后的问号浮层：写成一行一句会把这一页顶得很长，
 // 而只显示「当前那一种」的旧写法等于要用户逐个点一遍才能比较。
@@ -3481,11 +3477,10 @@ let rzSkippedDirs = [];
 // 输出位置只有这一个状态：null = 原文件所在位置，有值 = 指定文件夹。
 // （原来另有一个 rzDest 的两选一，两处状态能互相说反话，撤了）
 let rzOutFolder = null;
-// 多尺寸列表，两种档混着放：{width,height} 固定宽高 / {times} 按原图倍率
-let rzSizes = [];
 let rzRunning = false;
 let rzStopReq = false;
 let rzDone = false;                 // 这一批跑完了：主按钮变「返回」
+let rzProcessed = 0;                // 已处理的源图片数（含成功、跳过和失败），不是输出文件数
 let rzDirty = false;                // 跑完之后又改了参数：主按钮变回「开始批量修改」
 let rzFails = [];
 let rzPresets = [];
@@ -3498,7 +3493,6 @@ const rzNamesCache = new Map();     // 目录 → 已有文件名集合（小写
 const rzEl = (id) => document.getElementById(id);
 const rzChecked = (id) => !!(rzEl(id) && rzEl(id).checked);
 const rzVal = (id) => fieldValue(rzEl(id)).trim();
-const rzMultiOn = () => rzChecked('rzMulti') && rzMode === 'wh';
 const rzFolderKey = (f) => (f && (f.nativePath || f.name)) || '?';
 
 /**
@@ -3542,8 +3536,8 @@ function rzShowStep() {
   show('rzRunBtn', rzStep === RZ_STEPS);
   if (rzStep === 1) rzSyncSrc();
   if (rzStep === 2) rzSyncMode();
-  if (rzStep === 3) rzSyncOut();
-  if (rzStep === 4) {
+  if (rzStep === 3) {
+    rzSyncOut();
     // 跑完之后又回去改了参数 → 这一批的结果不作数了，主按钮变回「开始批量修改」
     if (rzDone && rzDirty) rzClearDone();
     rzSyncSummary();
@@ -3552,9 +3546,8 @@ function rzShowStep() {
 }
 
 /**
- * 第 4 步主按钮的文字：跑着是「停止处理」，跑完是「返回」，其余是「开始批量修改」。
- * 卡片标题跟着走：还没开跑是「准备就绪」（不是「开始处理」—— 那是步骤指示器上那一步的
- * 名字，写在标题上会让人以为已经在跑了），跑着是「正在处理」，跑完是「处理完成 / 已停止」。
+ * 第 3 步主按钮的文字：跑着是「停止处理」，跑完是「返回」，其余是「开始批量修改」。
+ * 处理区标题跟着走：尚未执行为「准备就绪」，执行中为「正在处理」，结束后为「处理完成 / 已停止」。
  */
 function rzSyncRunBtn() {
   const lbl = rzEl('rzRunBtn').querySelector('.btn-label');
@@ -3574,7 +3567,7 @@ function rzClearDone() {
   rzStopReq = false;
   rzStats(0, 0, 0);
   rzEl('rzLog').innerHTML = '';
-  rzProgress(0, 0, '');              // total=0 → 进度条归零、文字回到「尚未开始」
+  rzProgress(0, 0, '');              // 清空计数、进度和当前文件名
   show('rzDoneRow', false);
   rzSyncRunBtn();
 }
@@ -3591,7 +3584,6 @@ async function rzValidate(step) {
     for (const f of fieldsOfMode(cfg.mode)) {
       if (!(cfg[f] > 0)) return '尺寸参数要填大于 0 的数值。';
     }
-    if (rzMultiOn() && !rzSizes.length) return '开了多尺寸输出，但列表是空的 —— 先添加尺寸。';
     return null;
   }
   if (step === 3) {
@@ -3610,7 +3602,7 @@ async function rzValidate(step) {
 }
 
 /**
- * 换页。四步之间**随便切**，不设卡（哪一步都可能是回头补设置的）——
+ * 换页。三步之间**随便切**，不设卡（哪一步都可能是回头补设置的）——
  * 校验只在点「开始批量修改」时做一次，缺什么就跳到那一步说清楚（见 rzRun）。
  * 处理中不许换页：那会儿的界面得盯着进度和「停止处理」。
  */
@@ -3708,7 +3700,7 @@ async function rzScanFolder(folder) {
   setStatus(files.length ? `扫描完成：${files.length} 张图片` : '这个文件夹里没有找到支持的图片格式。');
 }
 
-/** 清空第 1 步选好的图片（第 4 步点「返回」时归零，免得以为还是上一批） */
+/** 清空第 1 步选好的图片（第 3 步点「返回」时归零，免得以为还是上一批） */
 function rzResetSource() {
   rzFiles = [];
   rzRoot = null;
@@ -3739,45 +3731,16 @@ function rzSyncMode() {
 
   // 适应方式 / 锚点 / 填充只有「固定宽高」才谈得上
   const fit = activePill('rzFitPills', 'data-fit') || 'contain';
+  const diagram = resizeDiagram(rzMode, fit);
+  rzEl('rzDiagram').innerHTML = diagram.svg;
+  rzEl('rzDiagramCaption').textContent = diagram.caption;
+  rzEl('rzDiagramExample').textContent = `示例：${diagram.example}`;
   show('rzFitBlock', rzMode === 'wh');
-  show('rzAnchorBlock', rzMode === 'wh' && fit !== 'scale' && fit !== 'stretch');
+  show('rzAnchorBlock', diagram.anchor);
   show('rzFillBlock', rzMode === 'wh' && fit === 'contain');
   show('rzFillSwatch', rzFill === 'custom');
 
-  // 多尺寸只在固定宽高下可用（列表存的是宽×高对）
-  const multiRow = rzEl('rzMultiRow');
-  if (multiRow) multiRow.classList.toggle('row-off', rzMode !== 'wh');
-  show('rzMultiBox', rzMultiOn());
-  if (rzMultiOn()) rzPrefillAdd();
-  rzRenderSizes();
   rzRenderPreview();
-}
-
-/** 多尺寸那两行的默认值：宽高带出上面填的那一档，倍率给个 1,2,3 —— 空着让人不知道该填什么。
- *  注意两行各管各的：宽高那行是绝对尺寸，倍率那行按原图算，不拿这里的宽高当基准。 */
-function rzPrefillAdd() {
-  const cfg = rzCfg();
-  if (!rzVal('rzAddW') && rzEl('rzAddW')) rzEl('rzAddW').value = String(cfg.width);
-  if (!rzVal('rzAddH') && rzEl('rzAddH')) rzEl('rzAddH').value = String(cfg.height);
-  if (!rzVal('rzScales') && rzEl('rzScales')) rzEl('rzScales').value = '1,2,3';
-}
-
-function rzRenderSizes() {
-  const box = rzEl('rzSizeList');
-  if (!box) return;
-  box.innerHTML = rzSizes.length
-    ? rzSizes.map((s, i) => `<div class="rz-size"><span class="rz-size-t">${esc(sizeLabel(s))}</span>`
-      + `<span class="rz-size-del gd-mini" data-act="rz-del:${i}">✕</span></div>`).join('')
-    : '<div class="rz-empty">还没有添加尺寸。在下面填好宽高点「添加」，或者填倍率按原图的倍数加几档。</div>';
-  Array.from(document.querySelectorAll('#rzSizeList .gd-mini')).forEach((el) => {
-    const [, idx] = String(el.getAttribute('data-act') || '').split(':');
-    el.addEventListener('click', () => {
-      rzSizes.splice(parseInt(idx, 10), 1);
-      rzSaveMemory();
-      rzRenderSizes();
-      rzRenderPreview();
-    });
-  });
 }
 
 /** 标题行右侧的 before → after（有原始尺寸才显示） */
@@ -3791,17 +3754,19 @@ function rzRenderPreview() {
     const d = app.activeDocument;
     src = { width: Math.round(d.width), height: Math.round(d.height) };
   }
+  // UXP 对动态 :empty 的布局刷新不稳定；空预览必须显式隐藏，
+  // 否则切换适应方式后它的 8px 下边距可能仍占位。
+  show('rzPreviewInfo', !!src);
   if (!src) { el.textContent = ''; return; }
   const cfg = rzCfg();
-  const size = rzMultiOn() && rzSizes.length ? rzSizes[0] : null;
-  const p = planResize(src, sizeCfg(cfg, size));
+  const p = planResize(src, cfg);
   if (p.skip) { el.textContent = `${src.width}×${src.height} → ${RZ_SKIP_TEXT[p.skip] || '跳过'}`; return; }
   const canvas = (p.canvas.width !== p.image.width || p.canvas.height !== p.image.height)
     ? ` / 画布 ${p.canvas.width}×${p.canvas.height}` : '';
   el.textContent = `${src.width}×${src.height} → ${p.image.width}×${p.image.height}${canvas}`;
 }
 
-// ---- ③ 输出设置 ----
+// ---- ③ 输出与处理 ----
 
 /** 悬停「输出设置」后面那个问号时才算：先报现在输出到哪儿，再讲两种状态各是什么意思 */
 function rzDestTipHtml() {
@@ -3828,6 +3793,7 @@ function rzSyncOut() {
   show('rzSuffixRow', rzNameMode === 'suffix');
   show('rzTplRow', rzNameMode === 'tpl');
   rzRenderNameSample();
+  if (rzStep === 3 && !rzRunning) rzSyncSummary();
 }
 
 /**
@@ -3839,17 +3805,16 @@ function rzRenderNameSample() {
     || (app.activeDocument ? app.activeDocument.name : 'image.jpg');
   const { base, ext } = splitName(name);
   const outExt = extOf(rzFmt === 'same' ? (ext || 'png') : rzFmt);
-  const size = rzMultiOn() && rzSizes.length ? rzSizes[0] : null;
   const cfg = rzCfg();
-  const p = planResize({ width: cfg.width, height: cfg.height }, sizeCfg(cfg, size));
+  const p = planResize({ width: cfg.width, height: cfg.height }, cfg);
   const out = rzOutName(base, p, 0);
   // 状态栏也只有一行，两边各自压成「头…尾」（真机上那些 40 多字的文件名整着拼就溢出了）
   const text = `命名示例：${ellipsizeName(`${base}.${ext || 'jpg'}`, 16)} → ${ellipsizeName(`${out}.${outExt}`, 16)}`;
-  if (rzStep === 3) setStatus(text);
+  if (rzStep === 3 && !rzRunning && !rzDone) setStatus(text);
   return text;
 }
 
-/** 一个输出文件的名字（不含扩展名）。多尺寸时保证名字里带尺寸，否则各档会互相覆盖 */
+/** 当前尺寸规则对应的输出文件名（不含扩展名）。 */
 function rzOutName(base, plan, index) {
   const vars = {
     name: base,
@@ -3862,7 +3827,6 @@ function rzOutName(base, plan, index) {
   if (rzNameMode === 'tpl') out = buildOutName(rzVal('rzTpl') || '{name}_{width}x{height}', vars);
   else if (rzNameMode === 'suffix') out = base + (rzVal('rzSuffix') || '_resized');
   else out = base;
-  if (rzMultiOn() && out.indexOf(String(vars.width)) < 0) out = `${out}_${vars.width}x${vars.height}`;
   return sanitizeFileName(out);
 }
 
@@ -3883,13 +3847,12 @@ function rzResetOut() {
   rzSyncOut();
 }
 
-// ---- ④ 汇总与执行 ----
+// ---- ③ 汇总与执行 ----
 
 function rzSyncSummary() {
   const el = rzEl('rzSummary');
   if (!el) return;
   const n = rzSrc === 'doc' ? (app.activeDocument ? 1 : 0) : rzFiles.length;
-  const sizes = rzMultiOn() && rzSizes.length ? rzSizes.length : 1;
   const cfg = rzCfg();
   const mode = RZ_MODE_NAME[cfg.mode] || cfg.mode;
   const param = cfg.mode === 'wh' ? `${cfg.width}×${cfg.height}`
@@ -3898,12 +3861,8 @@ function rzSyncSummary() {
         : cfg.mode === 'percent' ? `${cfg.percent}%`
           : cfg.mode === 'times' ? `${cfg.times}x`
             : cfg.mode === 'max' ? `≤ ${cfg.maxW}×${cfg.maxH}` : `${cfg.edge}px`;
-  el.textContent = `共 ${n} 张图片 · ${mode} ${param}`
-    + (sizes > 1 ? ` · ${sizes} 档尺寸 → 预计输出 ${n * sizes} 个文件` : '')
+  el.textContent = `共 ${n}/${rzProcessed} 张图片 · ${mode} ${param}`
     + (rzSkippedDirs.length ? `\n已跳过输出目录：${rzSkippedDirs.join('、')}` : '');
-  const run = rzEl('rzRunInfo');
-  const d = rzSrc === 'doc' ? app.activeDocument : null;
-  if (run) run.textContent = d ? `${Math.round(d.width)}×${Math.round(d.height)}` : '';
 }
 
 function rzStats(ok, skip, fail) {
@@ -3917,7 +3876,10 @@ function rzProgress(done, total, name) {
   const fill = rzEl('rzBarFill');
   if (fill) fill.style.width = `${pct}%`;
   const t = rzEl('rzProgText');
-  if (t) t.textContent = total ? `${done} / ${total}　${name || ''}` : '尚未开始';
+  rzProcessed = done;
+  rzSyncSummary();
+  if (t) t.textContent = name || '';
+  show('rzProgText', !!name);
 }
 
 function rzLogRow(name, results) {
@@ -4028,6 +3990,8 @@ function rzSetRunning(on) {
   // 「停止处理」就是主按钮本身，而它和「上一步」同在 #rzNav 里 —— 整行不能藏，
   // 只藏「上一步」（藏整行等于把停止键一起藏掉，处理中就停不下来了）
   show('rzPrevBtn', !on);
+  // 合并页的输出设置在执行时收起，避免改动影响正在处理的后续文件。
+  show('rzOutputSettings', !on);
   rzSyncRunBtn();
 }
 
@@ -4053,7 +4017,6 @@ async function rzRun() {
   rzDirty = false;
   rzSetRunning(true);
 
-  const sizes = rzMultiOn() && rzSizes.length ? rzSizes.slice() : [null];
   const cfg = rzCfg();
   const t0 = Date.now();
   let ok = 0; let skip = 0; let fail = 0; let done = 0;
@@ -4066,7 +4029,7 @@ async function rzRun() {
       rzProgress(done, items.length, item.name);
       try {
         const r = await processOne(item, {
-          sizes,
+          sizes: [null],
           cfg,
           interpolation: 'automaticInterpolation',   // 重采样算法的入口已去掉，交给 PS 自己挑
           fillHex: rzFillValue(),
@@ -4288,11 +4251,16 @@ function rzRenderFailList() {
 
 // ---- 参数记忆 ----
 
-const RZ_MEM_KEYS = ['rzW', 'rzH', 'rzEdge', 'rzPercent', 'rzTimes', 'rzMaxW', 'rzMaxH', 'rzSuffix', 'rzTpl', 'rzQuality',
-  'rzAddW', 'rzAddH', 'rzScales'];
+const RZ_MEM_KEYS = ['rzW', 'rzH', 'rzEdge', 'rzPercent', 'rzTimes', 'rzMaxW', 'rzMaxH', 'rzSuffix', 'rzTpl', 'rzQuality'];
 
-/** 改过参数 —— 上一批的结果就不作数了（第 4 步的「返回」要变回「开始批量修改」） */
-function rzTouch() { rzDirty = true; }
+/** 改过参数 —— 上一批的结果就不作数了（第 3 步的「返回」要变回「开始批量修改」） */
+function rzTouch() {
+  rzDirty = true;
+  if (rzStep === 3 && !rzRunning) {
+    if (rzDone) rzClearDone();
+    rzSyncSummary();
+  }
+}
 
 function rzSaveMemory() {
   rzTouch();
@@ -4308,12 +4276,11 @@ function rzSaveMemory() {
   // 重开面板就回到「原文件所在位置」这个默认
   prefSet('rz.keepTree', rzChecked('rzKeepTree') ? '1' : '0');
   prefSet('rz.webpLossless', rzChecked('rzWebpLossless') ? '1' : '0');
-  prefSet('rz.sizes', JSON.stringify(rzSizes));
   for (const k of RZ_MEM_KEYS) prefSet(`rz.v.${k}`, rzVal(k));
 }
 
 function rzRestoreMemory() {
-  const dflt = { rzW: '1920', rzH: '1080', rzEdge: '2048', rzPercent: '50', rzTimes: '2', rzMaxW: '2048', rzMaxH: '2048', rzSuffix: '_resized', rzTpl: '{name}_{width}x{height}', rzQuality: '90', rzScales: '1,2,3' };
+  const dflt = { rzW: '1920', rzH: '1080', rzEdge: '2048', rzPercent: '50', rzTimes: '2', rzMaxW: '2048', rzMaxH: '2048', rzSuffix: '_resized', rzTpl: '{name}_{width}x{height}', rzQuality: '90' };
   for (const k of RZ_MEM_KEYS) {
     const el = rzEl(k);
     if (el) el.value = prefGet(`rz.v.${k}`, dflt[k] || '');
@@ -4334,10 +4301,7 @@ function rzRestoreMemory() {
   setDropdownValue('rzNameDd', 'rzNameValue', 'data-name', rzNameMode);
   rzDup = prefGet('rz.dup', 'rename');
   setDropdownValue('rzDupDd', 'rzDupValue', 'data-dup', rzDup);
-  // 归一一下再收：存下来的可能是上个版本的列表，也可能被手改坏了
-  let saved = [];
-  try { saved = JSON.parse(prefGet('rz.sizes', '[]')); } catch { saved = []; }
-  rzSizes = normalizeSizeList(saved);
+
 }
 
 function rzSetAnchor(a) {
@@ -4385,7 +4349,6 @@ setupSwitch('rzRecursive', false, () => {
     rzSyncOut();
   })();
 });
-setupSwitch('rzMulti', false, () => { rzSyncMode(); rzSaveMemory(); });
 setupSwitch('rzKeepTree', true, rzSaveMemory);
 setupSwitch('rzWebpLossless', true, () => { rzSyncOut(); rzSaveMemory(); });
 
@@ -4412,46 +4375,6 @@ rzEl('rzPresetClose').addEventListener('click', () => showOverlay('rzPresetOverl
 rzEl('rzFailClose').addEventListener('click', () => showOverlay('rzFailOverlay', false));
 rzEl('rzNameOk').addEventListener('click', () => rzResolveName(rzVal('rzNameInput')));
 rzEl('rzNameCancel').addEventListener('click', () => rzResolveName(''));
-/** 往多尺寸列表里塞一档固定宽高；返回是否真的加进去了（重复的不加） */
-function rzPushSize(w, h) {
-  if (!(w > 0 && h > 0)) return false;
-  if (rzSizes.some((s) => s.width === w && s.height === h)) return false;
-  rzSizes.push({ width: w, height: h });
-  return true;
-}
-/** 往多尺寸列表里塞一档倍率（相对每张原图，不折成绝对像素 —— 每张图的原尺寸不一样） */
-function rzPushScale(k) {
-  if (!(k > 0)) return false;
-  if (rzSizes.some((s) => s.times === k)) return false;
-  rzSizes.push({ times: k });
-  return true;
-}
-function rzSizesChanged() {
-  rzSaveMemory();
-  rzRenderSizes();
-  rzRenderPreview();
-}
-// 「添加」用的是它自己那两个输入框（默认带出上面填的那一档），所以想加几档就加几档 ——
-// 原来只能加「当前尺寸」，一档加完得回上面改宽高才能加第二档。
-rzEl('rzAddSize').addEventListener('click', () => {
-  const w = Math.round(numOr(rzVal('rzAddW'), 0));
-  const h = Math.round(numOr(rzVal('rzAddH'), 0));
-  if (!(w > 0 && h > 0)) return setStatus('要添加的宽和高都得填大于 0 的数值。');
-  if (!rzPushSize(w, h)) return setStatus(`${w} × ${h} 已经在列表里了。`);
-  rzSizesChanged();
-  return setStatus(`已添加 ${w} × ${h}`);
-});
-// 倍率的基准是**每张原图自己的尺寸**，不是上面那行填的宽高 —— @2x 就该是「原图的两倍」。
-// （折成绝对像素是不对的：一批图横竖大小都不同，折一次就把所有图钉死在同一个尺寸上了。）
-rzEl('rzAddScales').addEventListener('click', () => {
-  const ks = parseScaleList(rzVal('rzScales'));
-  if (!ks.length) return setStatus('倍率填成用逗号隔开的数字，如 1,2,3（最多 8 档、单档不超过 20 倍）。');
-  let added = 0;
-  for (const k of ks) if (rzPushScale(k)) added++;
-  if (!added) return setStatus('这些倍率都已经在列表里了。');
-  rzSizesChanged();
-  return setStatus(`已按原图的 ${ks.join('、')} 倍添加 ${added} 档`);
-});
 Array.from(document.querySelectorAll('#rzAnchorGrid .rz-anchor')).forEach((el) => {
   el.addEventListener('click', () => {
     rzAnchor = el.getAttribute('data-anchor');
@@ -4459,7 +4382,7 @@ Array.from(document.querySelectorAll('#rzAnchorGrid .rz-anchor')).forEach((el) =
     rzSaveMemory();
   });
 });
-// 步骤指示器上的 1234 直接点着换页，前后都能点、不设卡（校验只在「开始批量修改」时做，
+// 步骤指示器上的 123 直接点着换页，前后都能点、不设卡（校验只在「开始批量修改」时做，
 // 缺什么就跳到那一步说清楚）。处理中 rzGoStep 自己会拦住不动。
 Array.from(document.querySelectorAll('#rzSteps .rz-step')).forEach((el) => {
   el.addEventListener('click', () => {
@@ -4475,11 +4398,6 @@ for (const id of ['rzW', 'rzH', 'rzEdge', 'rzPercent', 'rzTimes', 'rzMaxW', 'rzM
 for (const id of ['rzSuffix', 'rzTpl', 'rzQuality']) {
   const el = rzEl(id);
   if (el) el.addEventListener('input', () => { rzSyncOut(); rzSaveMemory(); });
-}
-// 多尺寸那两行只需要记住，不用重画什么（列表要点「添加」才变）
-for (const id of ['rzAddW', 'rzAddH', 'rzScales']) {
-  const el = rzEl(id);
-  if (el) el.addEventListener('input', rzSaveMemory);
 }
 // 四种适应方式的说明：挂在「适应方式」后面那个问号上
 bindTip(rzEl('rzFitInfo'), rzEl('rzFitTip'), RZ_FIT_TIP);

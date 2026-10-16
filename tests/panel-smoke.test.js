@@ -2773,7 +2773,7 @@ describe('参考线分割：执行段（选区 / 编号 / 落位校正 / 不建�
   });
 });
 
-// 批量改尺寸：四步向导 + 整批执行。
+// 批量改尺寸：三步向导 + 整批执行。
 // 这一段在 Node 里把「选图片 → 设尺寸 → 设输出 → 跑」整条链走完，守住四件真机上
 // 最容易错、又最难肉眼发现的事：
 //   1) 每一步的校验真的拦得住（没选图不许往下走）；
@@ -2781,6 +2781,61 @@ describe('参考线分割：执行段（选区 / 编号 / 落位校正 / 不建�
 //   3) 文件名、扩展名、JPG 质量换算（面板 1-100 → PS 的 12 档）正确；
 //   4) 多尺寸时一个文件只打开一次（靠快照回退），而不是重开三遍。
 describe('批量改尺寸：向导与整批执行', () => {
+  it('移除多尺寸入口，旧尺寸列表不会让一张图片输出多份', async () => {
+    const html = readFileSync(join(root, 'src/ui/index.html'), 'utf8');
+    expect(html).not.toContain('id="rzMulti"');
+    const { document, out } = await runOnce({ prefs: {
+      'rz.sizes': JSON.stringify([{ width: 100, height: 100 }, { times: 2 }]),
+    } });
+    expect(out._created).toHaveLength(1);
+    expect(document.getElementById('rzSummary').textContent).not.toContain('档尺寸');
+  });
+
+  it('第三步同时提供输出设置和开始处理，完成后修改输出可直接再次运行', async () => {
+    const ctx = await loadPanel();
+    ctx.goPage('resize');
+    clickStep(ctx.document, 3);
+    expect(ctx.document.getElementById('rzRunBtn').style.display).not.toBe('none');
+    expect(ctx.document.getElementById('rzNextBtn').style.display).toBe('none');
+    expect(ctx.document.querySelectorAll('#rzSteps .rz-step')).toHaveLength(3);
+    expect(ctx.document.getElementById('rzSummary').textContent).toContain('共 0/0 张图片');
+    const { document } = await runOnce();
+    expect(runLabel(document)).toBe('返回');
+    expect(document.getElementById('rzSummary').textContent).toContain('共 1/1 张图片');
+    pickDd(document, 'rzNameDd', 'rzNameDd', 'data-name', 'suffix');
+    expect(runLabel(document)).toBe('开始批量修改');
+    expect(document.getElementById('rzSuffixRow').style.display).not.toBe('none');
+    expect(document.getElementById('rzSummary').textContent).toContain('共 1/0 张图片');
+    fire(document.getElementById('rzPrevBtn'), 'click');
+    expect(paneShown(document, 2)).toBe(true);
+  });
+
+  it('尺寸规则和适应方式切换时更新示意图，并隐藏不适用的锚点', async () => {
+    const { document, goPage } = await loadPanel();
+    goPage('resize');
+    const diagram = document.getElementById('rzDiagram');
+    const anchor = document.getElementById('rzAnchorBlock');
+    const fitBlock = document.getElementById('rzFitBlock');
+    const seen = new Set();
+    for (const fit of ['contain', 'cover', 'stretch', 'scale']) {
+      clickPill(document, 'rzFitPills', 'data-fit', fit);
+      seen.add(diagram.innerHTML);
+      expect(anchor.style.display === 'none').toBe(fit === 'stretch' || fit === 'scale');
+    }
+    expect(seen.size).toBe(4);
+    for (const mode of ['w', 'h', 'long', 'short', 'percent', 'times', 'max']) {
+      pickDd(document, 'rzModeDd', 'rzModeDd', 'data-mode', mode);
+      seen.add(diagram.innerHTML);
+      expect(anchor.style.display).toBe('none');
+      expect(fitBlock.style.display).toBe('none');
+    }
+    expect(seen.size).toBe(11);
+    pickDd(document, 'rzModeDd', 'rzModeDd', 'data-mode', 'wh');
+    clickPill(document, 'rzFitPills', 'data-fit', 'contain');
+    expect(anchor.style.display).not.toBe('none');
+    expect(fitBlock.style.display).not.toBe('none');
+  });
+
   const fakeFile = (name) => ({ name, isFile: true, isFolder: false, nativePath: `D:\\img\\${name}` });
 
   /** 输出文件夹桩：记下建过的文件名与子目录 */
@@ -2848,9 +2903,7 @@ describe('批量改尺寸：向导与整批执行', () => {
     expect(document.getElementById('status').textContent).not.toMatch(/还没有选到图片/);
     fire(document.getElementById('rzNextBtn'), 'click');
     await drain(5);
-    fire(document.getElementById('rzNextBtn'), 'click');
-    await drain(5);
-    expect(paneShown(document, 4)).toBe(true);
+    expect(paneShown(document, 3)).toBe(true);
     // 点「开始批量修改」才拦：跳回缺东西的那一步，并报出「第几步 + 缺什么」
     fire(document.getElementById('rzRunBtn'), 'click');
     await drain(5);
@@ -2900,9 +2953,7 @@ describe('批量改尺寸：向导与整批执行', () => {
     await drain(5);
     fire(document.getElementById('rzPickOutBtn'), 'click');   // 点文件夹图标 → 指定输出位置
     await drain(10);
-    fire(document.getElementById('rzNextBtn'), 'click');       // → 第 4 步
-    await drain(5);
-    expect(paneShown(document, 4)).toBe(true);
+    expect(paneShown(document, 3)).toBe(true);
 
     fire(document.getElementById('rzRunBtn'), 'click');
     await drain();
@@ -2926,49 +2977,6 @@ describe('批量改尺寸：向导与整批执行', () => {
     expect(document.getElementById('status').textContent).toMatch(/处理完成：成功 1/);
   });
 
-  it('多尺寸输出：一个文件只打开一次，靠快照回退存三档，名字各带尺寸', async () => {
-    const doc = fakeImageDoc(1024, 1024);
-    const out = fakeFolder();
-    const { document, goPage, played } = await loadPanel({
-      doc, folder: out, files: [fakeFile('icon.png')],
-    });
-    goPage('resize');
-    clickSrc(document, 'files');
-    fire(document.getElementById('rzPickBtn'), 'click');
-    await drain(10);
-    fire(document.getElementById('rzNextBtn'), 'click');
-    await drain(5);
-
-    typeIn(document, 'rzW', 1024);
-    typeIn(document, 'rzH', 1024);
-    fire(document.getElementById('rzMulti'), 'click');         // 开多尺寸
-    fire(document.getElementById('rzAddScales'), 'click');     // 1x / 2x / 3x（按原图算）
-    await drain(5);
-    expect(document.getElementById('rzSizeList').innerHTML).toMatch(/原图 × 2/);
-    // 列表里的 ✕ 能删掉那一档（面板拼的 innerHTML → 桩里还原成可点的假元素）
-    fire(document.querySelectorAll('#rzSizeList .gd-mini')[2], 'click');
-    await drain(3);
-    expect(document.getElementById('rzSizeList').innerHTML).not.toMatch(/原图 × 3/);
-    fire(document.getElementById('rzAddScales'), 'click');      // 再加回来
-    await drain(3);
-
-    fire(document.getElementById('rzNextBtn'), 'click');
-    await drain(5);
-    fire(document.getElementById('rzPickOutBtn'), 'click');   // 点文件夹图标 → 指定输出位置
-    await drain(10);
-    fire(document.getElementById('rzNextBtn'), 'click');
-    await drain(5);
-    fire(document.getElementById('rzRunBtn'), 'click');
-    await drain();
-
-    // 只打开一次（一条 open 描述符），建一次快照、回退两次
-    expect(descOf(played, 'open')).toHaveLength(1);
-    expect(played.filter((d) => d._obj === 'make' && d._target && d._target[0]._ref === 'snapshotClass')).toHaveLength(1);
-    expect(played.filter((d) => d._obj === 'select' && d._target && d._target[0]._ref === 'snapshotClass')).toHaveLength(2);
-    // 三档各存一次，名字带算出来的实际尺寸（原图 1024 → 1x/2x/3x），互不覆盖
-    expect(out._created).toEqual(['icon_1024x1024.png', 'icon_2048x2048.png', 'icon_3072x3072.png']);
-    expect(document.getElementById('rzOkN').textContent).toBe('3');
-  });
 
   // 「小图处理」三选一的入口已经撤掉（选了 1024 却输出 512 太反直觉），恒按「放大到目标」。
   // 这条钉住那个默认值 —— 撤控件时最容易顺手把默认值也带偏。
@@ -2990,8 +2998,6 @@ describe('批量改尺寸：向导与整批执行', () => {
     await drain(5);
     fire(document.getElementById('rzPickOutBtn'), 'click');   // 点文件夹图标 → 指定输出位置
     await drain(10);
-    fire(document.getElementById('rzNextBtn'), 'click');
-    await drain(5);
     fire(document.getElementById('rzRunBtn'), 'click');
     await drain();
 
@@ -3045,7 +3051,7 @@ describe('批量改尺寸：向导与整批执行', () => {
 
     pickDd(document, 'rzPresetDd', 'rzPresetMenu', 'data-preset', '-1');  // 自定义
     await drain(3);
-    expect(modeName(document)).toBe('固定宽高');
+    expect(modeName(document)).toBe('指定宽高');
     expect(shown(document, 'rzFieldWH')).toBe(true);           // 参数区跟着回来
     expect(shown(document, 'rzFieldPercent')).toBe(false);
     expect(document.getElementById('rzW').value).toBe('800');
@@ -3061,7 +3067,7 @@ describe('批量改尺寸：向导与整批执行', () => {
     pickDd(document, 'rzPresetDd', 'rzPresetMenu', 'data-preset', '-1');
     await drain(3);
     expect(document.getElementById('rzW').value).toBe('777');
-    expect(modeName(document)).toBe('固定宽高');
+    expect(modeName(document)).toBe('指定宽高');
   });
 
   it('套了预设又手动改调整模式：下拉的名字回到「自定义」', async () => {
@@ -3080,7 +3086,7 @@ describe('批量改尺寸：向导与整批执行', () => {
 
   const clickStep = (document, n) => fire(document.querySelector(`#rzSteps .rz-step[data-step="${n}"]`), 'click');
 
-  it('步骤指示器上的 1234 往前点也换页（跨步也行）', async () => {
+  it('步骤指示器上的 123 往前点也换页（跨步也行）', async () => {
     const { document, goPage } = await loadPanel({ doc: fakeImageDoc(1920, 1080), folder: fakeFolder() });
     goPage('resize');
     clickStep(document, 3);                                     // 1 → 3，跨过第 2 步
@@ -3091,13 +3097,13 @@ describe('批量改尺寸：向导与整批执行', () => {
     expect(paneShown(document, 1)).toBe(true);
   });
 
-  it('步骤指示器不设卡：什么都没选也点得进第 4 步，缺什么留给「开始批量修改」去说', async () => {
+  it('步骤指示器不设卡：什么都没选也点得进第 3 步，缺什么留给「开始批量修改」去说', async () => {
     const { document, goPage } = await loadPanel({ doc: null });
     goPage('resize');
     clickSrc(document, 'files');            // 选了「选择图片」但一张都没选
-    clickStep(document, 4);
+    clickStep(document, 3);
     await drain(5);
-    expect(paneShown(document, 4)).toBe(true);
+    expect(paneShown(document, 3)).toBe(true);
     expect(document.getElementById('status').textContent).not.toMatch(/还没有选到图片/);
   });
 
@@ -3115,7 +3121,7 @@ describe('批量改尺寸：向导与整批执行', () => {
     clickSrc(document, 'files');
     fire(document.getElementById('rzPickBtn'), 'click');
     await drain(10);
-    clickStep(document, 4);                       // 位置留空 = 存回原文件所在位置（默认）
+    clickStep(document, 3);                       // 位置留空 = 存回原文件所在位置（默认）
     await drain(5);
     fire(document.getElementById('rzRunBtn'), 'click');
     await drain(5);
@@ -3188,7 +3194,7 @@ describe('批量改尺寸：向导与整批执行', () => {
     expect(destTip()).not.toContain('D:\\out\\Resized');
   });
 
-  // 走完一整批，停在第 4 步的「已完成」状态上，方便下面几条各自往后接。
+  // 走完一整批，停在第 3 步的「已完成」状态上，方便下面几条各自往后接。
   async function runOnce(over = {}) {
     const doc = fakeImageDoc(1920, 1080);
     const out = fakeFolder();
@@ -3204,8 +3210,6 @@ describe('批量改尺寸：向导与整批执行', () => {
     await drain(5);
     fire(document.getElementById('rzPickOutBtn'), 'click');   // 点文件夹图标 → 指定输出位置
     await drain(10);
-    fire(document.getElementById('rzNextBtn'), 'click');
-    await drain(5);
     fire(document.getElementById('rzRunBtn'), 'click');
     await drain();
     return { ...ctx, doc, out };
@@ -3228,19 +3232,15 @@ describe('批量改尺寸：向导与整批执行', () => {
     expect(document.getElementById('rzDoneRow').style.display).toBe('none');
   });
 
-  it('跑完后回上一步改了参数，再回第 4 步：「返回」变回「开始批量修改」', async () => {
+  it('跑完后回上一步改了参数，再回第 3 步：「返回」变回「开始批量修改」', async () => {
     const { document } = await runOnce();
     expect(runLabel(document)).toBe('返回');
-    fire(document.getElementById('rzPrevBtn'), 'click');      // → 第 3 步
-    await drain(5);
     fire(document.getElementById('rzPrevBtn'), 'click');      // → 第 2 步
     await drain(5);
     typeIn(document, 'rzW', 800);                             // 改了尺寸 → 上一批不作数
     fire(document.getElementById('rzNextBtn'), 'click');
     await drain(5);
-    fire(document.getElementById('rzNextBtn'), 'click');
-    await drain(5);
-    expect(paneShown(document, 4)).toBe(true);
+    expect(paneShown(document, 3)).toBe(true);
     expect(runLabel(document)).toBe('开始批量修改');
     expect(document.getElementById('rzRunTitle').textContent).toBe('准备就绪');
   });
@@ -3466,7 +3466,7 @@ describe('批量改尺寸：向导与整批执行', () => {
     await drain(5);
     fire(document.getElementById('rzNextBtn'), 'click');        // → 第 3 步（默认「原文件所在位置」）
     await drain(5);
-    fire(document.getElementById('rzNextBtn'), 'click');        // → 第 4 步
+    fire(document.getElementById('rzNextBtn'), 'click');        // → 第 3 步
     await drain(5);
     fire(document.getElementById('rzRunBtn'), 'click');
     await drain();
@@ -3487,7 +3487,7 @@ describe('批量改尺寸：向导与整批执行', () => {
     expect(paneShown(document, 1)).toBe(true);
     expect(document.getElementById('rzSrcInfo').textContent).toMatch(/可以一次选中多个图片文件/);
     // 真清空了，再点「开始批量修改」才会被第 1 步拦住（不然会以为还是上一批、直接又跑一遍）
-    clickStep(document, 4);
+    clickStep(document, 3);
     await drain(5);
     fire(document.getElementById('rzRunBtn'), 'click');
     await drain(5);
@@ -3495,97 +3495,10 @@ describe('批量改尺寸：向导与整批执行', () => {
     expect(document.getElementById('status').textContent).toMatch(/第 1 步.*还没有选到图片/);
   });
 
-  it('多尺寸：「添加」用它自己那行的宽高，想加几档加几档；倍率也照填的来', async () => {
-    const { document, goPage } = await loadPanel({
-      doc: fakeImageDoc(1024, 1024), files: [fakeFile('icon.png')],
-    });
-    goPage('resize');
-    clickSrc(document, 'files');
-    fire(document.getElementById('rzPickBtn'), 'click');
-    await drain(10);
-    fire(document.getElementById('rzNextBtn'), 'click');
-    await drain(5);
-    typeIn(document, 'rzW', 1024);
-    typeIn(document, 'rzH', 1024);
-    fire(document.getElementById('rzMulti'), 'click');          // 开多尺寸
-    await drain(5);
-    // 那一行默认带出上面填的一档，省得空着让人不知道填什么
-    expect(document.getElementById('rzAddW').value).toBe('1024');
-    expect(document.getElementById('rzScales').value).toBe('1,2,3');
-
-    const list = () => document.getElementById('rzSizeList').innerHTML;
-    typeIn(document, 'rzAddW', 800);
-    typeIn(document, 'rzAddH', 600);
-    fire(document.getElementById('rzAddSize'), 'click');
-    await drain(3);
-    typeIn(document, 'rzAddW', 320);
-    typeIn(document, 'rzAddH', 240);
-    fire(document.getElementById('rzAddSize'), 'click');        // 第二档：不用回上面改宽高
-    await drain(3);
-    expect(list()).toMatch(/800 × 600/);
-    expect(list()).toMatch(/320 × 240/);
-
-    // 倍率按**原图**算，跟上面那行的 320×240 无关：加进去的是两档倍率，不是折好的像素
-    typeIn(document, 'rzScales', '0.5,2');
-    fire(document.getElementById('rzAddScales'), 'click');
-    await drain(3);
-    expect(list()).toMatch(/原图 × 0\.5/);
-    expect(list()).toMatch(/原图 × 2/);
-    expect(list()).not.toMatch(/160 × 120/);            // 320×240 的 0.5 倍 —— 不该出现
-    expect(document.getElementById('status').textContent).toMatch(/已按原图的 0\.5、2 倍添加 2 档/);
-  });
 
   // 倍率档的意义就在这儿：一批图尺寸各不相同，同一档要按各自的原尺寸出。
   // 折成绝对像素的话，横图竖图全被钉死成同一个尺寸。
-  it('多尺寸：倍率档按每张原图各自的尺寸算，横图竖图各出各的', async () => {
-    const doc = fakeImageDoc(400, 200);
-    const out = fakeFolder();
-    const { document, goPage } = await loadPanel({ doc, folder: out, files: [fakeFile('wide.png')] });
-    goPage('resize');
-    clickSrc(document, 'files');
-    fire(document.getElementById('rzPickBtn'), 'click');
-    await drain(10);
-    fire(document.getElementById('rzNextBtn'), 'click');
-    await drain(5);
-    typeIn(document, 'rzW', 1024);            // 主尺寸填成方的：倍率档不该理会它
-    typeIn(document, 'rzH', 1024);
-    fire(document.getElementById('rzMulti'), 'click');
-    typeIn(document, 'rzScales', '1,2');
-    fire(document.getElementById('rzAddScales'), 'click');
-    await drain(5);
-    fire(document.getElementById('rzNextBtn'), 'click');
-    await drain(5);
-    fire(document.getElementById('rzPickOutBtn'), 'click');
-    await drain(10);
-    fire(document.getElementById('rzNextBtn'), 'click');
-    await drain(5);
-    fire(document.getElementById('rzRunBtn'), 'click');
-    await drain();
 
-    expect(out._created).toEqual(['wide_400x200.png', 'wide_800x400.png']);
-    expect(document.getElementById('rzOkN').textContent).toBe('2');
-  });
-
-  it('多尺寸：倍率填成一堆废话时只提示，不往列表里塞垃圾', async () => {
-    const { document, goPage } = await loadPanel({
-      doc: fakeImageDoc(1024, 1024), files: [fakeFile('icon.png')],
-    });
-    goPage('resize');
-    clickSrc(document, 'files');
-    fire(document.getElementById('rzPickBtn'), 'click');
-    await drain(10);
-    fire(document.getElementById('rzNextBtn'), 'click');
-    await drain(5);
-    typeIn(document, 'rzW', 512);
-    typeIn(document, 'rzH', 512);
-    fire(document.getElementById('rzMulti'), 'click');
-    await drain(5);
-    typeIn(document, 'rzScales', 'abc, -1, 0');
-    fire(document.getElementById('rzAddScales'), 'click');
-    await drain(3);
-    expect(document.getElementById('rzSizeList').innerHTML).toMatch(/还没有添加尺寸/);
-    expect(document.getElementById('status').textContent).toMatch(/倍率填成用逗号隔开的数字/);
-  });
 });
 
 // 完整切图：文件名与「完整导出超出画布部分」。

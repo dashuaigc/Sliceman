@@ -107,7 +107,7 @@ describe('左侧功能栏与 panel.js 的契约', () => {
     expect(/<div id="splitPage"[^>]*style="display:none;?"/.test(html)).toBe(true);
   });
 
-  it('改尺寸页第 4 步的两个按钮并排一行：主按钮就在 .rz-nav 里，且宽度不再是 100%', () => {
+  it('改尺寸页第 3 步的两个按钮并排一行：主按钮就在 .rz-nav 里，且宽度不再是 100%', () => {
     // 「开始批量修改」原来是 .rz-nav 之外的整宽主按钮，跟「上一步」上下叠着。
     // 现在它进了导航行，两件事必须同时成立，否则又变回两行：
     //   · 标记上它是 .rz-nav 的子节点（按 div 深度扫，别用贪婪正则）
@@ -307,15 +307,6 @@ describe('左侧功能栏与 panel.js 的契约', () => {
     expect(core).toContain('new Folder(p).execute()');
   });
 
-  it('多尺寸那两行的输入框都登记进了「弹窗/提示时躲开」名单', () => {
-    // 漏一个，它就会在提示框或弹窗开着时戳穿上层（UXP 的文字控件恒画在最上层）
-    const masked = /const TIP_MASKED_FIELD_IDS = \[([\s\S]*?)\]/.exec(js);
-    expect(masked).toBeTruthy();
-    for (const id of ['rzAddW', 'rzAddH', 'rzScales']) {
-      expect(htmlIds.has(id)).toBe(true);
-      expect(masked[1]).toContain(`'${id}'`);
-    }
-  });
 
   it('内容列右侧留出滚动条的位置（否则主按钮右侧圆角被滚动条压成直角）', () => {
     // UXP 的原生滚动条永远画在 DOM 之上，z-index 管不着。.pages 是唯一的滚动区，
