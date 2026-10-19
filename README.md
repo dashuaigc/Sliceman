@@ -9,7 +9,7 @@
 
 <p align="center">
   <a href="https://github.com/dashuaigc/Sliceman/releases/latest"><strong>下载最新版</strong></a>　 ·　
-  <a href="#start">开始使用</a>　 ·　
+  <a href="#start">安装插件</a>　 ·　
   <a href="#features">功能导航</a>　 ·　
   <a href="#recipes">跟着案例做</a>　 ·　
   <a href="#faq">常见问题</a>
@@ -33,39 +33,13 @@
 
 <a id="start"></a>
 
-## 开始使用
-
-### 01　安装插件
+## 安装插件
 
 1. 打开 [Release 下载页](https://github.com/dashuaigc/Sliceman/releases/latest)，下载文件名以 **`.ccx`** 结尾的安装包。
 2. 双击安装包，按 Adobe 安装窗口的提示完成安装。
 3. 重启 Photoshop，从 **「插件」菜单**打开 Sliceman。
 
 双击没有反应时，先检查 Creative Cloud 桌面端是否已经安装并登录。通过 UXP Developer Tool 加载的开发版，使用方法见文末的开发说明。
-
-### 02　先选对象，再选功能
-
-左侧是十个功能入口，右侧是当前功能的设置；右上角齿轮用于查看版本与检查更新，底部状态栏显示操作结果或需要补充的内容。
-
-| 你准备做什么 | 开始前需要什么 |
-| :--- | :--- |
-| 改名、平移、排版、批处理 | 在 Photoshop **图层面板**中选中要操作的图层或组 |
-| 智能分割 | 选中 **一个像素图层**，其中有互相分开的内容 |
-| 表格、参考线 | 打开一个 Photoshop 文档 |
-| 定位格 | 可直接在新 PSD 中创建，也可放入当前文档 |
-| 改尺寸 | 选择磁盘图片、文件夹，或使用当前文档 |
-| 切图 | 打开准备导出的 PSD，按需要整理组名和颜色标记 |
-
-这里说的“选中”，通常是指**图层面板里的选中项**，不是画布上的蚂蚁线选区。
-
-### 03　输入数值时，可以直接重新填写
-
-- 点击输入框，会暂时清空，方便填写新值；**没有输入就离开，会恢复原值或提示文字**。
-- 输入新值后，点击其他位置结束编辑。数值框支持 `1920/2`、`100*3+20` 等算式。
-- `↑ / ↓` 调整 1，配合 `Shift` 调整 10。
-- 大多数功能的 `?` 可以悬停查看说明；执行前后留意底部状态栏。
-
-**平移页是一个例外提示：输入框内按 Enter 会直接执行平移。** 只想保存距离时，点击框外即可。
 
 <a id="features"></a>
 
@@ -1027,5 +1001,5 @@ npm run pack        # 生成版本对应的 CCX 与 ZIP
   <a href="https://github.com/dashuaigc/Sliceman/releases/latest">下载插件</a>　·　
   <a href="https://github.com/dashuaigc/Sliceman/issues">反馈问题</a>　·　
   <a href="LICENSE">MIT 许可证</a>　·　
-  <a href="#start">返回开始使用</a>
+  <a href="#start">返回安装插件</a>
 </p>
