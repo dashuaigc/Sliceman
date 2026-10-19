@@ -35,11 +35,65 @@
 
 ## 下载安装
 
-1. 打开 [Release 下载页](https://github.com/dashuaigc/Sliceman/releases/latest)，下载文件名以 **`.ccx`** 结尾的安装包。
-2. 双击安装包，按 Adobe 安装窗口的提示完成安装。
-3. 重启 Photoshop，从 **「插件」菜单**打开 Sliceman。
+### 先选安装方式
 
-双击没有反应时，先检查 Creative Cloud 桌面端是否已经安装并登录。通过 UXP Developer Tool 加载的开发版，使用方法见文末的开发说明。
+两种安装包提供相同的插件功能，主要区别是安装和更新方式。**任选一种即可，不需要两种都装。** Photoshop 最低要求为 **23.3**。
+
+| 安装方式 | 下载哪个文件 | 适合谁 | 需要什么 |
+| :--- | :--- | :--- | :--- |
+| **Creative Cloud 版** | `Sliceman_v版本号.ccx` | 通过 Adobe 安装管理插件的用户；Windows / macOS | 已安装并登录 Creative Cloud 桌面端 |
+| **一键安装版** | `Sliceman_Setup_v版本号.zip` | 希望直接运行安装程序的 Windows 用户 | 完整解压安装包；不需要 Creative Cloud |
+
+打开 [Release 下载页](https://github.com/dashuaigc/Sliceman/releases/latest)，展开 **Assets（资源）**，按上表选择文件。以 v1.4.5 为例：Creative Cloud 版选 `Sliceman_v1.4.5.ccx`，一键安装版选 `Sliceman_Setup_v1.4.5.zip`。以后有新版时，以页面上的最新版本号为准。
+
+> **认准文件名**：一键安装包必须带有 **`Setup`**。普通的 `Sliceman_v版本号.zip` 和 GitHub 自动生成的 `Source code` 源码包，不是这里的一键安装包。
+
+### 方式一 · Creative Cloud 版（.ccx）
+
+[![Creative Cloud 版安装流程](docs/readme-preview/47-install-ccx.svg)](docs/readme-preview/47-install-ccx.svg)
+
+1. **准备 Creative Cloud**：先安装 Creative Cloud 桌面应用并登录 Adobe 账号。这里指桌面应用，不是只在浏览器里登录 Adobe 网站。
+2. **下载 CCX 文件**：在 Release 的 Assets 中下载 `Sliceman_v版本号.ccx`。这个文件直接双击安装，**不用解压，也不用改后缀名**。
+3. **完成安装**：双击 `.ccx`，由 Creative Cloud 打开安装流程，按照窗口提示完成安装。
+4. **重新启动 Photoshop**：先保存正在编辑的文件，退出 Photoshop 后再重新打开。
+5. **打开 Sliceman**：在 Photoshop 顶部的 **「插件」或「增效工具」菜单**中找到 Sliceman 并打开。菜单名称可能因 Photoshop 版本不同而变化。
+
+**双击 CCX 没有反应？** 先打开 Creative Cloud 桌面端，确认已登录，再重新双击文件。如果出现错误，保留提示信息，并核对 Photoshop 版本和下载文件是否完整。
+
+**以后怎么更新？** 下载新版 `.ccx`，仍通过 Creative Cloud 安装。需要卸载时，在 Creative Cloud 的插件管理页面找到 Sliceman，选择卸载。
+
+### 方式二 · 一键安装版（Setup ZIP，仅 Windows）
+
+[![Windows 一键安装版安装流程](docs/readme-preview/48-install-setup.svg)](docs/readme-preview/48-install-setup.svg)
+
+1. **下载 Setup 压缩包**：在 Release 的 Assets 中下载 `Sliceman_Setup_v版本号.zip`。
+2. **先完整解压**：右键压缩包，选择 **「全部解压缩」**，再打开解压得到的文件夹。**不要在压缩包预览窗口里直接运行，也不要只把 EXE 单独拖出来。** 安装程序需要同一文件夹中的配套文件。
+3. **双击「一键安装.exe」**：认准蓝色 S 图标。安装仅针对当前 Windows 用户，通常无需以管理员身份运行。
+4. **按 Photoshop 当前状态继续**：
+   - **Photoshop 没打开**：安装器会自动开始安装。
+   - **Photoshop 正在运行**：窗口会显示 **「等待 Photoshop 退出」**。先保存文件，再正常退出 Photoshop；安装器确认进程完全结束后会自动继续，不需要再次点击安装。
+   - 等待 Photoshop 退出期间可以点击 **「取消」**；此时不会修改插件文件。
+5. **等待「安装完成」**：安装开始后保持窗口打开，期间不要重新启动 Photoshop。
+6. **打开插件**：出现“安装完成”后启动 Photoshop，从 **「增效工具」菜单 → Sliceman** 打开插件。若该版本菜单显示为“插件”，请在对应菜单中查找。
+
+> 这套安装程序需要 Windows PowerShell 5.1、.NET Framework 4.5 或以上，以及 Photoshop 23.3 或以上；不需要 Node.js、npm、UXP Developer Tool。它采用本地插件注册方式，实际能否加载仍需在你的 Photoshop 版本中确认。
+
+### 一键安装版怎样更新、卸载？
+
+[![一键安装版更新与卸载流程](docs/readme-preview/49-install-maintain.svg)](docs/readme-preview/49-install-maintain.svg)
+
+**更新**：下载新版 `Sliceman_Setup_v版本号.zip`，完整解压后再次运行 **「一键安装.exe」**。程序只替换一键安装版，不影响 Creative Cloud 版或其他插件。
+
+**卸载**：在解压后的安装包目录中，双击橙红色减号图标的 **「卸载.exe」**，再点击 **「确认卸载」**。仅打开卸载窗口不会执行卸载，也不需要输入数字。Photoshop 仍在运行时，同样先保存并退出，再等待“卸载完成”。本地版用户设置会保留，方便以后重装。
+
+**不要混用更新包**：一键安装版面板里的“检查更新”仍会连接项目发布页；下载 `.ccx` 不会升级一键安装版，请继续选带 `Setup` 的 ZIP。
+
+### 安装后找不到插件怎么办？
+
+- **先重启 Photoshop**，确认版本为 23.3 或以上，再检查「插件 / 增效工具」菜单。
+- **一键安装版提示文件缺失**：重新完整解压 ZIP，保持安装器和配套文件在一起后再运行。
+- **一键安装版提示操作未完成**：查看窗口里的中文提示及日志位置；受管理电脑可能限制 PowerShell 脚本运行，可联系电脑管理员协助。
+- **两种版本都装过**：它们可以共存，设置各自独立，菜单里可能出现同名入口。为避免混淆，建议保留自己常用的一种，并通过对应方式卸载另一种。
 
 <a id="features"></a>
 
