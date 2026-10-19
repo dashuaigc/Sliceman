@@ -1011,9 +1011,16 @@ Symbols 的输出框由定位格和内容边界决定，不使用这个开关；
 
 ## 更新与反馈
 
-点击右上角齿轮进入 **设置**，可以查看当前版本、手动检查更新，或开启自动检查。发现新版本后，下载 `.ccx`，安装并重启 Photoshop。
+点击右上角齿轮进入 **设置**，可以查看当前版本、手动检查更新，并开启自动检查。自动检查每天最多进行一次；发现更新时会显示红点。无法检查时，也可以直接打开 [Release 下载页](https://github.com/dashuaigc/Sliceman/releases/latest)。
 
-自动检查每天最多进行一次；发现更新时用红点提醒。无法连接时，也可以直接打开 [Release 页面](https://github.com/dashuaigc/Sliceman/releases)。
+**更新时请选择与当前安装方式一致的安装包：**
+
+| 当前使用的版本 | 下载的更新包 | 更新步骤 |
+| :--- | :--- | :--- |
+| Creative Cloud 版 | `Sliceman_v版本号.ccx` | 双击 CCX，通过 Creative Cloud 完成安装，再重启 Photoshop |
+| 一键安装版（Windows） | `Sliceman_Setup_v版本号.zip` | 完整解压后运行「一键安装.exe」，按提示保存并退出 Photoshop，等待「安装完成」后重启 |
+
+> 一键安装版的“检查更新”同样连接项目发布页，但 `.ccx` **不会升级一键安装版**。请认准带 `Setup` 的 ZIP，不要直接运行压缩包里的 EXE。详细流程见 [下载安装](#start)。
 
 <details>
 <summary><strong>查看设置窗口</strong></summary>
