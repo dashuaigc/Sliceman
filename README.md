@@ -9,7 +9,7 @@
 
 <p align="center">
   <a href="https://github.com/dashuaigc/Sliceman/releases/latest"><strong>下载最新版</strong></a>　 ·　
-  <a href="#start">安装插件</a>　 ·　
+  <a href="#start">下载安装</a>　 ·　
   <a href="#features">功能导航</a>　 ·　
   <a href="#recipes">跟着案例做</a>　 ·　
   <a href="#faq">常见问题</a>
@@ -33,7 +33,7 @@
 
 <a id="start"></a>
 
-## 安装插件
+## 下载安装
 
 1. 打开 [Release 下载页](https://github.com/dashuaigc/Sliceman/releases/latest)，下载文件名以 **`.ccx`** 结尾的安装包。
 2. 双击安装包，按 Adobe 安装窗口的提示完成安装。
@@ -255,7 +255,7 @@
 2. 进入 **批处理**，点击 **批量转为智能对象**。
 3. 每个对象会成为独立智能对象，原来已经是智能对象的会跳过。
 
-**分别套一个同名组**
+**分别新建独立的组**
 
 1. 选中需要整理的多个对象。
 2. 点击 **批量新建独立组**。
@@ -1001,5 +1001,5 @@ npm run pack        # 生成版本对应的 CCX 与 ZIP
   <a href="https://github.com/dashuaigc/Sliceman/releases/latest">下载插件</a>　·　
   <a href="https://github.com/dashuaigc/Sliceman/issues">反馈问题</a>　·　
   <a href="LICENSE">MIT 许可证</a>　·　
-  <a href="#start">返回安装插件</a>
+  <a href="#start">返回下载安装</a>
 </p>
