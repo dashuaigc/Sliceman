@@ -23,7 +23,7 @@ details{padding:15px 20px;margin:12px 0;border:1px solid #e0e7f0;border-radius:1
 
 <p align="center">
   <a href="https://github.com/dashuaigc/Sliceman/releases/latest"><strong>下载最新版</strong></a>　 ·　
-  <a href="#start">开始使用</a>　 ·　
+  <a href="#start">安装插件</a>　 ·　
   <a href="#features">功能导航</a>　 ·　
   <a href="#recipes">跟着案例做</a>　 ·　
   <a href="#faq">常见问题</a>
@@ -62,57 +62,13 @@ details{padding:15px 20px;margin:12px 0;border:1px solid #e0e7f0;border-radius:1
 <p>界面图片来自 v1.4.5 的实际 HTML/CSS 浏览器渲染，使用示例数据，非 Photoshop 实机截图。绘制的示意图用于解释行为，未标尺寸的图形不代表精确比例。点击示意图可打开原图查看细节。</p>
 </blockquote>
 <p><a id="start"></a></p>
-<h2>开始使用</h2>
-<h3>01　安装插件</h3>
+<h2>安装插件</h2>
 <ol>
 <li>打开 <a href="https://github.com/dashuaigc/Sliceman/releases/latest">Release 下载页</a>，下载文件名以 <strong><code>.ccx</code></strong> 结尾的安装包。</li>
 <li>双击安装包，按 Adobe 安装窗口的提示完成安装。</li>
 <li>重启 Photoshop，从 <strong>「插件」菜单</strong>打开 Sliceman。</li>
 </ol>
 <p>双击没有反应时，先检查 Creative Cloud 桌面端是否已经安装并登录。通过 UXP Developer Tool 加载的开发版，使用方法见文末的开发说明。</p>
-<h3>02　先选对象，再选功能</h3>
-<p>左侧是十个功能入口，右侧是当前功能的设置；右上角齿轮用于查看版本与检查更新，底部状态栏显示操作结果或需要补充的内容。</p>
-<div class="table-scroll"><table>
-<thead>
-<tr>
-<th align="left">你准备做什么</th>
-<th align="left">开始前需要什么</th>
-</tr>
-</thead>
-<tbody><tr>
-<td align="left">改名、平移、排版、批处理</td>
-<td align="left">在 Photoshop <strong>图层面板</strong>中选中要操作的图层或组</td>
-</tr>
-<tr>
-<td align="left">智能分割</td>
-<td align="left">选中 <strong>一个像素图层</strong>，其中有互相分开的内容</td>
-</tr>
-<tr>
-<td align="left">表格、参考线</td>
-<td align="left">打开一个 Photoshop 文档</td>
-</tr>
-<tr>
-<td align="left">定位格</td>
-<td align="left">可直接在新 PSD 中创建，也可放入当前文档</td>
-</tr>
-<tr>
-<td align="left">改尺寸</td>
-<td align="left">选择磁盘图片、文件夹，或使用当前文档</td>
-</tr>
-<tr>
-<td align="left">切图</td>
-<td align="left">打开准备导出的 PSD，按需要整理组名和颜色标记</td>
-</tr>
-</tbody></table></div>
-<p>这里说的“选中”，通常是指<strong>图层面板里的选中项</strong>，不是画布上的蚂蚁线选区。</p>
-<h3>03　输入数值时，可以直接重新填写</h3>
-<ul>
-<li>点击输入框，会暂时清空，方便填写新值；<strong>没有输入就离开，会恢复原值或提示文字</strong>。</li>
-<li>输入新值后，点击其他位置结束编辑。数值框支持 <code>1920/2</code>、<code>100*3+20</code> 等算式。</li>
-<li><code>↑ / ↓</code> 调整 1，配合 <code>Shift</code> 调整 10。</li>
-<li>大多数功能的 <code>?</code> 可以悬停查看说明；执行前后留意底部状态栏。</li>
-</ul>
-<p><strong>平移页是一个例外提示：输入框内按 Enter 会直接执行平移。</strong> 只想保存距离时，点击框外即可。</p>
 <p><a id="features"></a></p>
 <h2>功能导航 · 从你要做的事情开始</h2>
 <div class="table-scroll"><table>
@@ -1237,10 +1193,10 @@ npm run pack        # 生成版本对应的 CCX 与 ZIP
   <a href="https://github.com/dashuaigc/Sliceman/releases/latest">下载插件</a>　·　
   <a href="https://github.com/dashuaigc/Sliceman/issues">反馈问题</a>　·　
   <a href="https://github.com/dashuaigc/Sliceman/blob/main/LICENSE">MIT 许可证</a>　·　
-  <a href="#start">返回开始使用</a>
+  <a href="#start">返回安装插件</a>
 </p>
 </main><style>
 .guide-nav{position:fixed;left:20px;top:90px;width:136px;max-height:calc(100vh - 120px);overflow:auto;padding:12px;background:#fff;border:1px solid #dce4ef;border-radius:14px;box-shadow:0 8px 28px #18386012;z-index:10;font-size:14px}.guide-nav strong{display:block;padding:5px 9px 10px}.guide-nav a{display:block;padding:6px 10px;border-radius:7px;color:#53647f;line-height:1.65}.guide-nav a:hover{background:#f1f5fc;text-decoration:none}.guide-nav a[aria-current]{background:#e9f0ff;color:#3068d9;font-weight:700}.guide-top,.guide-menu{position:fixed;border:1px solid #d5e1f4;background:#fff;color:#3068d9;border-radius:12px;padding:11px 15px;font:600 14px 'Microsoft YaHei',sans-serif;box-shadow:0 6px 24px #18386018;cursor:pointer;z-index:11}.guide-top{right:20px;bottom:30px}.guide-menu{display:none;left:16px;bottom:24px}body main{width:calc(100% - 240px);max-width:1080px;margin-left:max(176px,calc((100% - 1080px)/2));margin-right:64px}.guide-nav a:focus-visible,.guide-top:focus-visible,.guide-menu:focus-visible{outline:3px solid #94b5fc;outline-offset:2px}
 @media(min-width:1440px){.guide-nav{left:calc((100% - 1080px)/2 - 156px)}.guide-top{right:auto;left:calc((100% + 1080px)/2 + 20px)}}
 @media(max-width:900px){body main{width:auto;margin:16px 16px 80px;padding:24px}.guide-menu{display:block}.guide-nav{display:none;top:auto;bottom:80px;left:16px;max-height:65vh;width:160px}.guide-nav.is-open{display:block}.guide-top{right:16px;bottom:24px}.review-bar{position:relative}}@media print{.guide-nav,.guide-top,.guide-menu{display:none!important}body main{width:auto;margin:0;padding:0}}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
-</style><nav class="guide-nav" id="guide-navigation" aria-label="功能快速导航"><strong>功能导航</strong><a href="#start">开始使用</a><a href="#rename">重命名</a><a href="#split">分割</a><a href="#batch">批处理</a><a href="#move">平移</a><a href="#layout">排版</a><a href="#table">表格</a><a href="#grid">定位格</a><a href="#guides">参考线</a><a href="#resize">改尺寸</a><a href="#slice">切图</a><a href="#faq">常见问题</a></nav><button class="guide-menu" aria-controls="guide-navigation" aria-expanded="false" type="button">功能导航</button><button class="guide-top" type="button" aria-label="返回顶部">↑ 返回顶部</button><script>(()=>{const nav=document.querySelector('.guide-nav'),menu=document.querySelector('.guide-menu'),links=[...nav.querySelectorAll('a')];const targets=links.map(a=>document.getElementById(a.hash.slice(1)));function mark(){let index=0;targets.forEach((el,i)=>{if(el&&el.getBoundingClientRect().top<=150)index=i});links.forEach((a,i)=>{if(i===index)a.setAttribute('aria-current','location');else a.removeAttribute('aria-current')})}let scheduled=false;window.addEventListener('scroll',()=>{if(!scheduled){scheduled=true;requestAnimationFrame(()=>{mark();scheduled=false})}},{passive:true});menu.addEventListener('click',()=>{const open=nav.classList.toggle('is-open');menu.setAttribute('aria-expanded',String(open))});nav.addEventListener('click',e=>{if(e.target.closest('a')){nav.classList.remove('is-open');menu.setAttribute('aria-expanded','false')}});document.querySelector('.guide-top').addEventListener('click',()=>window.scrollTo({top:0,behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth'}));document.addEventListener('keydown',e=>{if(e.key==='Escape'){nav.classList.remove('is-open');menu.setAttribute('aria-expanded','false')}});mark()})();</script></body></html>
+</style><nav class="guide-nav" id="guide-navigation" aria-label="功能快速导航"><strong>功能导航</strong><a href="#start">安装插件</a><a href="#rename">重命名</a><a href="#split">分割</a><a href="#batch">批处理</a><a href="#move">平移</a><a href="#layout">排版</a><a href="#table">表格</a><a href="#grid">定位格</a><a href="#guides">参考线</a><a href="#resize">改尺寸</a><a href="#slice">切图</a><a href="#faq">常见问题</a></nav><button class="guide-menu" aria-controls="guide-navigation" aria-expanded="false" type="button">功能导航</button><button class="guide-top" type="button" aria-label="返回顶部">↑ 返回顶部</button><script>(()=>{const nav=document.querySelector('.guide-nav'),menu=document.querySelector('.guide-menu'),links=[...nav.querySelectorAll('a')];const targets=links.map(a=>document.getElementById(a.hash.slice(1)));function mark(){let index=0;targets.forEach((el,i)=>{if(el&&el.getBoundingClientRect().top<=150)index=i});links.forEach((a,i)=>{if(i===index)a.setAttribute('aria-current','location');else a.removeAttribute('aria-current')})}let scheduled=false;window.addEventListener('scroll',()=>{if(!scheduled){scheduled=true;requestAnimationFrame(()=>{mark();scheduled=false})}},{passive:true});menu.addEventListener('click',()=>{const open=nav.classList.toggle('is-open');menu.setAttribute('aria-expanded',String(open))});nav.addEventListener('click',e=>{if(e.target.closest('a')){nav.classList.remove('is-open');menu.setAttribute('aria-expanded','false')}});document.querySelector('.guide-top').addEventListener('click',()=>window.scrollTo({top:0,behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth'}));document.addEventListener('keydown',e=>{if(e.key==='Escape'){nav.classList.remove('is-open');menu.setAttribute('aria-expanded','false')}});mark()})();</script></body></html>
