@@ -34,7 +34,7 @@ async (page) => {
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.goto('http://127.0.0.1:8765/dist/plugin/index.html');
-  await page.waitForFunction(() => document.getElementById('version').textContent === 'v1.4.7');
+  await page.waitForFunction(() => document.getElementById('version').textContent === 'v1.4.8');
   const shot = async name => {
     await page.evaluate(() => document.activeElement?.blur());
     await page.screenshot({ path: 'D:/Sliceman/docs/screenshots/' + name + '.png', animations: 'disabled' });
@@ -85,6 +85,10 @@ async (page) => {
   await page.locator('#dgGap').press('Tab');
   await shot('20-grid-gap');
   await go('batch');
+  await page.evaluate(() => { document.getElementById('status').textContent = '插件已加载'; });
+  await page.locator('#spHideExistingYes').click();
+  await shot('22-batch-hide-existing');
+  await page.locator('#spHideExistingNo').click();
   // Hold a mock modal so the actual UI enters its busy state; no Photoshop IO.
   await page.evaluate(() => {
     const ps = window.require('photoshop');
@@ -110,5 +114,5 @@ async (page) => {
     document.getElementById('status').textContent = '成功 6 个，跳过 0 个，失败 0 个';
   });
   await shot('19-batch-done');
-  return { screenshots: 20, errors };
+  return { screenshots: 21, errors };
 }

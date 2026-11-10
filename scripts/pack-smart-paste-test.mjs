@@ -4,7 +4,7 @@ import { resolve, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 const source = resolve('dist/uxp-dev');
-const name = 'Sliceman_UDT_SmartPaste_20261110';
+const name = 'Sliceman_UDT_SmartPaste_HideExisting_20261110';
 const folder = resolve('dist', name), zip = resolve('dist', `${name}.zip`);
 const manifest = JSON.parse(readFileSync(join(source, 'manifest.json'), 'utf8').replace(/^\uFEFF/, ''));
 manifest.id = 'com.sliceman.plugin.smartpaste.dev';

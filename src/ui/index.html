@@ -17,7 +17,7 @@
             </g>
           </svg></span>
           <span class="brand-name">Sliceman</span>
-          <span class="version" id="version">v1.4.7</span>
+          <span class="version" id="version">v1.4.8</span>
         </div>
           <div class="rail-foot" id="settingsBtn" title="设置" role="button" tabindex="0" aria-label="设置">
             <svg class="ic-btn" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="settings">
@@ -263,8 +263,15 @@
           <div class="sp-option">
             <span class="sp-label">放置位置</span>
             <div class="sp-choices">
-              <div id="spPlacementOriginal" class="sp-choice active" role="button" tabindex="0" aria-pressed="true">原位</div>
-              <div id="spPlacementCenter" class="sp-choice" role="button" tabindex="0" aria-pressed="false">居中</div>
+              <div id="spPlacementCenter" class="sp-choice active" role="button" tabindex="0" aria-pressed="true" title="把本次新增图层作为整体，移到内部画布中心">居中</div>
+              <div id="spPlacementOriginal" class="sp-choice" role="button" tabindex="0" aria-pressed="false" title="使用 Photoshop 原位粘贴，不额外移动或缩放">原位</div>
+            </div>
+          </div>
+          <div class="sp-option">
+            <span class="sp-label">隐藏原有图层</span>
+            <div class="sp-choices">
+              <div id="spHideExistingNo" class="sp-choice active" role="button" tabindex="0" aria-pressed="true" title="保留原有图层的显示状态">否</div>
+              <div id="spHideExistingYes" class="sp-choice" role="button" tabindex="0" aria-pressed="false" title="隐藏内部原有图层和组，新增图层保留复制时的显示状态">是</div>
             </div>
           </div>
           <div id="spApply" class="primary-btn sp-apply" role="button" tabindex="0">粘贴到智能对象内部</div>

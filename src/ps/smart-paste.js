@@ -99,6 +99,13 @@ export function createSmartPasteService(photoshop) {
         }
       }
     }
+    // 新增层已移出原有组并完成定位后才隐藏旧根层，避免把新增内容一起藏起来。
+    // 隐藏组即可隐藏其全部内容，保留子层原来的眼睛状态，方便之后恢复。
+    if (cfg.hideExisting === true) {
+      for (const layer of originalRoots) {
+        if (layer.visible) layer.visible = false;
+      }
+    }
     return added.length;
   }
 
@@ -106,7 +113,7 @@ export function createSmartPasteService(photoshop) {
     if (busy) throw Error('正在批量粘贴，请等待当前操作完成。');
     busy = true;
     try {
-      const cfg = { position: 'top', placement: 'original', ...settings };
+      const cfg = { position: 'top', placement: 'center', hideExisting: false, ...settings };
       if (!['top', 'bottom'].includes(cfg.position) || !['original', 'center'].includes(cfg.placement)) throw Error('添加位置设置无效。');
       const origin = app.activeDocument;
       if (!origin) throw Error('请先打开 Photoshop 文档。');

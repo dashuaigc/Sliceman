@@ -113,9 +113,51 @@ function fixture() {
 }
 
 describe('直接粘贴到智能对象内部', () => {
-  it('默认原位粘贴多层、保留属性，不套新组，保存关闭并恢复选择', async () => {
+  it('默认和明确选择否时保留原有图层的显示状态', async () => {
+    for (const settings of [{}, { hideExisting: false }]) {
+      const h = fixture(); h.parent.activeLayers = [h.a];
+      const original = [h.layer(h.a._content), h.layer(h.a._content, { visible: false })];
+      h.a._content.layers = [...original];
+      await h.service.pasteIntoSmartObjects(settings);
+      expect(original.map(l => l.visible)).toEqual([true, false]);
+    }
+  });
+  it('选择是时隐藏原有根层与组，保留组内状态和本次新增图层的状态', async () => {
+    const h = fixture(); h.ps.pasteNested = true;
+    h.ps.clipboard = [{ name: '新增显示', visible: true }, { name: '新增隐藏', visible: false }];
+    const originals = [h.a, h.b].map(target => {
+      const d = target._content;
+      d.layers = [h.layer(d, { kind: 'group', name: '原有组', layers: [{ visible: true }, { visible: false }] }), h.layer(d, { isBackgroundLayer: true })];
+      return [...d.layers];
+    });
+    const result = await h.service.pasteIntoSmartObjects({ hideExisting: true, placement: 'center' });
+    expect(result).toMatchObject({ applied: 2, failed: 0 });
+    for (const [i, target] of [h.a, h.b].entries()) {
+      expect(originals[i].map(l => l.visible)).toEqual([false, false]);
+      expect(originals[i][0].layers.map(l => l.visible)).toEqual([true, false]);
+      expect(target._content.layers.slice(0, 2).map(l => l.visible)).toEqual([true, false]);
+      expect(target._content.saved).toBe(true);
+    }
+  });
+  it('粘贴或定位失败时不隐藏原有层，也不保存对象', async () => {
+    for (const failure of ['pasteError', 'failMove']) {
+      const h = fixture(); h.parent.activeLayers = [h.a]; h.ps[failure] = true;
+      const original = h.a._content.layers[0];
+      expect(await h.service.pasteIntoSmartObjects({ hideExisting: true })).toMatchObject({ applied: 0, failed: 1 });
+      expect(original.visible).toBe(true);
+      expect(h.a._content.saved).toBeUndefined();
+    }
+  });
+  it('隐藏失败时放弃保存，不把部分隐藏的内容写回对象', async () => {
+    const h = fixture(); h.parent.activeLayers = [h.a];
+    Object.defineProperty(h.a._content.layers[0], 'visible', { get: () => true, set: () => { throw Error('无法隐藏'); } });
+    expect(await h.service.pasteIntoSmartObjects({ hideExisting: true })).toMatchObject({ applied: 0, failed: 1 });
+    expect(h.a._content.saved).toBeUndefined();
+    expect(h.a._content.closed).toBe(true);
+  });
+  it('选择原位粘贴多层、保留属性，不套新组，保存关闭并恢复选择', async () => {
     const h = fixture();
-    const result = await h.service.pasteIntoSmartObjects();
+    const result = await h.service.pasteIntoSmartObjects({ placement: 'original' });
     expect(result).toMatchObject({ applied: 2, failed: 0, skipped: 0 });
     expect(h.a._content.layers.map(l => l.name)).toEqual(['高光', '纹理', '原有内容']);
     expect(h.a._content.layers[0]).toMatchObject({ opacity: 50, isClippingMask: true, fx: { shadow: 10 } });
@@ -128,9 +170,9 @@ describe('直接粘贴到智能对象内部', () => {
     expect(h.app.activeDocument).toBe(h.parent);
     expect(h.parent.activeLayers.map(l => l.id)).toEqual([h.a.id, h.b.id]);
   });
-  it('居中时按所有新增层联合边界平移一次、保持相对位置', async () => {
+  it('默认居中时按所有新增层联合边界平移一次、保持相对位置', async () => {
     const h = fixture(); h.parent.activeLayers = [h.a];
-    await h.service.pasteIntoSmartObjects({ placement: 'center' });
+    await h.service.pasteIntoSmartObjects();
     expect(h.events.filter(e => e[0] === 'offset')).toEqual([['offset', ['高光', '纹理'], 130, 90]]);
     expect(h.a._content.layers[1].bounds.left - h.a._content.layers[0].bounds.left).toBe(60);
   });

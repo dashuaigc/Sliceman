@@ -159,7 +159,7 @@ body {
 .sp-card { margin-top: 20px; padding-top: 14px; border-top: 1px solid #353940; }
 .sp-intro { margin-top: 6px; margin-bottom: 12px; }
 .sp-option { display: flex; align-items: center; margin: 9px 0; }
-.sp-label { flex: 0 0 auto; margin-right: 10px; font-size: 11px; color: #a4aab5; }
+.sp-label { flex: 0 0 66px; margin-right: 10px; font-size: 11px; color: #a4aab5; }
 .sp-choices { display: flex; flex: 1 1 0; min-width: 0; }
 .sp-choice { display: flex; flex: 1 1 0; align-items: center; justify-content: center; padding: 5px 7px;
   min-height: 28px; font-size: 11px; color: #c4c8d0; background: #30333a; border: 1px solid #42464e;

@@ -5,12 +5,13 @@ import { bindCustomButton, setButtonDisabled } from '../lib/custom-button.js';
 const STORAGE_KEY = 'smartPaste.settings';
 const OPTIONS = [
   ['position', [['spPositionTop', 'top'], ['spPositionBottom', 'bottom']]],
-  ['placement', [['spPlacementOriginal', 'original'], ['spPlacementCenter', 'center']]],
+  ['placement', [['spPlacementCenter', 'center'], ['spPlacementOriginal', 'original']]],
+  ['hideExisting', [['spHideExistingNo', false], ['spHideExistingYes', true]]],
 ];
 
 export function initSmartPastePanel({ setStatus = () => {}, setBusy = () => {}, bindButtons = true } = {}) {
   const el = id => document.getElementById(id);
-  const cfg = { position: 'top', placement: 'original' };
+  const cfg = { position: 'top', placement: 'center', hideExisting: false };
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
     for (const [key, choices] of OPTIONS) {

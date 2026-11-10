@@ -56,33 +56,53 @@ describe('智能对象内部粘贴面板', () => {
     expect(markup.includes('id="spStop"')).toBe(false);
   });
 
-  it('默认最上方和原位，直接执行无需获取样板', async () => {
+  it('默认最上方和居中，直接执行无需获取样板', async () => {
     await init();
     expect(el('spPositionTop').getAttribute('aria-pressed')).toBe('true');
-    expect(el('spPlacementOriginal').getAttribute('aria-pressed')).toBe('true');
+    expect(el('spPlacementCenter').getAttribute('aria-pressed')).toBe('true');
+    expect(el('spHideExistingNo').getAttribute('aria-pressed')).toBe('true');
     await click('spApply');
-    expect(api.pasteIntoSmartObjects).toHaveBeenCalledWith({ position: 'top', placement: 'original' }, expect.any(Object));
+    expect(api.pasteIntoSmartObjects).toHaveBeenCalledWith({ position: 'top', placement: 'center', hideExisting: false }, expect.any(Object));
     expect(status).toHaveBeenLastCalledWith(expect.stringContaining('成功 2'));
     expect(el('spApply').textContent).toBe('粘贴到智能对象内部');
     expect(el('spApply').classList.contains('sp-stopping')).toBe(false);
   });
 
-  it('用户可以选择最下方与整体居中，设置会保存', async () => {
+  it('用户可以选择最下方与原位，设置会保存', async () => {
     await init();
-    await click('spPositionBottom'); await click('spPlacementCenter'); await click('spApply');
-    expect(api.pasteIntoSmartObjects.mock.calls[0][0]).toEqual({ position: 'bottom', placement: 'center' });
-    expect(localStorage.setItem).toHaveBeenLastCalledWith('smartPaste.settings', JSON.stringify({ position: 'bottom', placement: 'center' }));
+    await click('spPositionBottom'); await click('spPlacementOriginal'); await click('spApply');
+    expect(api.pasteIntoSmartObjects.mock.calls[0][0]).toEqual({ position: 'bottom', placement: 'original', hideExisting: false });
+    expect(localStorage.setItem).toHaveBeenLastCalledWith('smartPaste.settings', JSON.stringify({ position: 'bottom', placement: 'original', hideExisting: false }));
   });
 
   it('读取有效选项，损坏的存储退回默认值', async () => {
     localStorage.getItem = () => '{bad json';
     await init(); await click('spApply');
-    expect(api.pasteIntoSmartObjects.mock.calls[0][0]).toEqual({ position: 'top', placement: 'original' });
+    expect(api.pasteIntoSmartObjects.mock.calls[0][0]).toEqual({ position: 'top', placement: 'center', hideExisting: false });
     document = fakeDocument(); globalThis.document = document;
-    localStorage.getItem = () => JSON.stringify({ position: 'bottom', placement: 'center' });
+    localStorage.getItem = () => JSON.stringify({ position: 'bottom', placement: 'original', hideExisting: false });
     await init();
     expect(el('spPositionBottom').getAttribute('aria-pressed')).toBe('true');
-    expect(el('spPlacementCenter').getAttribute('aria-pressed')).toBe('true');
+    expect(el('spPlacementOriginal').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('隐藏原有图层可选择是，传给宿主并记住设置', async () => {
+    await init(); await click('spHideExistingYes'); await click('spApply');
+    expect(api.pasteIntoSmartObjects.mock.calls[0][0].hideExisting).toBe(true);
+    expect(JSON.parse(localStorage.setItem.mock.calls.at(-1)[1]).hideExisting).toBe(true);
+    document = fakeDocument(); globalThis.document = document;
+    localStorage.getItem = () => JSON.stringify({ hideExisting: true });
+    await init();
+    expect(el('spHideExistingYes').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('旧设置或非布尔隐藏选项默认不隐藏', async () => {
+    for (const saved of [{ placement: 'center' }, { hideExisting: 'false' }, { hideExisting: 'true' }]) {
+      document = fakeDocument(); globalThis.document = document;
+      localStorage.getItem = () => JSON.stringify(saved);
+      await init();
+      expect(el('spHideExistingNo').getAttribute('aria-pressed')).toBe('true');
+    }
   });
 
   it('主按钮在运行时变为停止，停止结束后恢复粘贴，且不重复启动任务', async () => {
@@ -98,6 +118,9 @@ describe('智能对象内部粘贴面板', () => {
     expect(el('spApply').textContent).toBe('停止');
     expect(el('spApply').classList.contains('sp-stopping')).toBe(true);
     expect(el('spPositionBottom').getAttribute('aria-disabled')).toBe('true');
+    expect(el('spHideExistingYes').getAttribute('aria-disabled')).toBe('true');
+    await click('spHideExistingYes');
+    expect(el('spHideExistingNo').getAttribute('aria-pressed')).toBe('true');
     hooks.onProgress(1, 3, '目标 A');
     expect(status).toHaveBeenLastCalledWith(expect.stringContaining('1 / 3'));
     await click('spPositionBottom'); await click('spApply');
