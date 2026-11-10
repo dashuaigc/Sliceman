@@ -44,9 +44,34 @@ describe('附件挑选', () => {
   const ccx = { name: 'Sliceman_v1.3.0.ccx', browser_download_url: 'https://x/a.ccx', size: 207360 };
   const zip = { name: 'Sliceman_v1.3.0.zip', browser_download_url: 'https://x/a.zip', size: 207360 };
 
-  it('优先 .ccx（双击即装），没有才退 .zip', () => {
+  it('Creative Cloud 版只选 CCX，没有对应包不退到普通 ZIP', () => {
     expect(pickAsset([zip, ccx]).name).toBe('Sliceman_v1.3.0.ccx');
-    expect(pickAsset([zip]).name).toBe('Sliceman_v1.3.0.zip');
+    expect(pickAsset([zip])).toBe(null);
+  });
+
+  const localId = 'com.sliceman.plugin.local';
+  const setup = { name: 'Sliceman_Setup_v1.3.0.zip', browser_download_url: 'https://x/setup.zip', size: 320000 };
+  it('一键安装版无论附件顺序如何都只选 Setup', () => {
+    expect(pickAsset([ccx, zip, setup], localId)?.name).toBe(setup.name);
+    expect(pickAsset([setup, zip, ccx], localId)?.name).toBe(setup.name);
+  });
+  it('一键安装版缺少 Setup 时不误选 CCX、普通 ZIP 或源码 ZIP', () => {
+    expect(pickAsset([ccx, zip, { name: 'Source-code.zip', browser_download_url: 'https://x/source.zip' }], localId)).toBe(null);
+  });
+  it('Creative Cloud 版缺少 CCX 时不误选 Setup', () => {
+    expect(pickAsset([setup], 'com.sliceman.plugin')).toBe(null);
+  });
+  it('只选择本次 Release 对应版本的安装包，跳过旧附件', () => {
+    const fresh = { ...setup, name: 'Sliceman_Setup_v1.4.6.zip' };
+    expect(pickAsset([setup, fresh], localId, '1.4.6')?.name).toBe(fresh.name);
+    expect(pickAsset([ccx], 'com.sliceman.plugin', '1.4.6')).toBe(null);
+  });
+  it('附件扩展名大小写兼容，未上传完成的附件不可选择', () => {
+    expect(pickAsset([{ ...setup, name: setup.name.toUpperCase() }], localId)?.name).toBe(setup.name.toUpperCase());
+    expect(pickAsset([{ ...setup, state: 'new' }], localId)).toBe(null);
+  });
+  it('其他产品的 CCX 附件不作为 Sliceman 更新包', () => {
+    expect(pickAsset([{ name: 'OtherPlugin_v1.3.0.ccx', browser_download_url: 'https://x/other.ccx' }])).toBe(null);
   });
 
   it('没有可下载的附件时返回 null，不炸', () => {
@@ -152,6 +177,45 @@ describe('Release 报文解析', () => {
     expect(downloadUrlOf(parseRelease(json, '1.2.0'))).toBe('https://x/a.ccx');
     expect(downloadUrlOf(parseRelease({ ...json, assets: [] }, '1.2.0'))).toBe(json.html_url);
     expect(downloadUrlOf(null)).toBe(LATEST_PAGE);
+  });
+
+  it('识别 v1.4.6，并按当前插件身份返回对应的安装包', () => {
+    const release = { ...json, tag_name: 'v1.4.6', assets: [
+      { name: 'Sliceman_v1.4.6.ccx', browser_download_url: 'https://x/v1.4.6.ccx' },
+      { name: 'Sliceman_Setup_v1.4.6.zip', browser_download_url: 'https://x/setup-v1.4.6.zip' },
+    ] };
+    const local = parseRelease(release, '1.4.5', 'com.sliceman.plugin.local');
+    const cc = parseRelease(release, '1.4.5', 'com.sliceman.plugin');
+    expect(local).toMatchObject({ ok: true, hasUpdate: true, version: '1.4.6' });
+    expect(downloadUrlOf(local)).toBe('https://x/setup-v1.4.6.zip');
+    expect(downloadUrlOf(cc)).toBe('https://x/v1.4.6.ccx');
+    expect(parseRelease(release, '1.4.6', 'com.sliceman.plugin.local').hasUpdate).toBe(false);
+    expect(parseRelease(release, '1.4.7', 'com.sliceman.plugin').hasUpdate).toBe(false);
+  });
+  it('缺少本安装版附件时打开发布页，保留新版提示', () => {
+    const local = parseRelease(json, '1.2.0', 'com.sliceman.plugin.local');
+    expect(local.hasUpdate).toBe(true);
+    expect(local.asset).toBe(null);
+    expect(downloadUrlOf(local)).toBe(json.html_url);
+  });
+
+  it('v1.4.6 安装版可发现 v1.4.7，升级后不再提示相同版本', () => {
+    const release = {
+      tag_name: 'v1.4.7',
+      assets: [
+        { name: 'Sliceman_v1.4.7.ccx', state: 'uploaded', browser_download_url: 'https://x/1.4.7.ccx' },
+        { name: 'Sliceman_Setup_v1.4.7.zip', state: 'uploaded', browser_download_url: 'https://x/setup-1.4.7.zip' },
+      ],
+    };
+    for (const [id, url] of [
+      ['com.sliceman.plugin', 'https://x/1.4.7.ccx'],
+      ['com.sliceman.plugin.local', 'https://x/setup-1.4.7.zip'],
+    ]) {
+      const info = parseRelease(release, '1.4.6', id);
+      expect(info.hasUpdate).toBe(true);
+      expect(downloadUrlOf(info)).toBe(url);
+      expect(parseRelease(release, '1.4.7', id).hasUpdate).toBe(false);
+    }
   });
 });
 

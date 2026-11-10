@@ -1,7 +1,7 @@
 // 检查更新的纯逻辑：版本号比较、GitHub Release 报文解析、更新说明转成可直接渲染的行。
 // 这里不碰 DOM，也不碰 photoshop/uxp —— 网络请求由调用方把 fetch 传进来
 //（见 fetchLatestRelease 的第一个参数），Node 里就能用假 fetch 把「超时 / 限流 /
-// 报文缺字段 / 没有 .ccx 附件」这些分支全测一遍，不用开 PS。
+// 报文缺字段 / 没有对应安装包」这些分支全测一遍，不用开 PS。
 //
 // 更新源用 GitHub 的 releases/latest 接口：它只返回【最新的正式发布】，草稿与
 // pre-release 会被它自己过滤掉，插件这边不用再判断一次。
@@ -11,7 +11,7 @@ export const REPO_NAME = 'Sliceman';
 
 /** 最新正式版的 JSON 接口（要在 manifest 的 requiredPermissions.network.domains 里放行） */
 export const LATEST_API = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`;
-/** 最新正式版的网页（拿不到 .ccx 直链时退回这个，让浏览器去打开发布页） */
+/** 最新正式版的网页（拿不到对应安装包直链时退回这个） */
 export const LATEST_PAGE = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/latest`;
 
 /** 一次检查最多等多久（UXP 里 fetch 卡住不会自己醒，必须外面计时） */
@@ -85,14 +85,26 @@ export function isNewer(remote, local) {
   return compareVersions(remote, local) > 0;
 }
 
+/** 本地一键安装版的构建会同时替换 manifest 文件和面板导入的身份。 */
+export function isLocalEdition(pluginId) {
+  return pluginId === 'com.sliceman.plugin.local';
+}
+
 /**
- * 从 Release 的附件里挑一个能下载的包：优先 .ccx（双击就能装），退而求其次 .zip。
+ * 按安装身份挑选本次 Release 的包；缺包时不跨安装方式回退。
  * @returns {{name:string, url:string, size:number}|null}
  */
-export function pickAsset(assets) {
+export function pickAsset(assets, pluginId = '', version = '') {
   const list = Array.isArray(assets) ? assets : [];
-  const usable = list.filter((a) => a && a.browser_download_url && a.name);
-  const hit = usable.find((a) => /\.ccx$/i.test(a.name)) || usable.find((a) => /\.zip$/i.test(a.name));
+  const pattern = isLocalEdition(pluginId)
+    ? /^Sliceman_Setup_v(.+)\.zip$/i
+    : /^Sliceman_v(.+)\.ccx$/i;
+  const hit = list.find((a) => {
+    if (!a || !a.browser_download_url || (a.state && a.state !== 'uploaded')) return false;
+    const match = pattern.exec(String(a.name || ''));
+    if (!match || !parseVersion(match[1]).ok) return false;
+    return !version || (parseVersion(version).ok && compareVersions(match[1], version) === 0);
+  });
   if (!hit) return null;
   return {
     name: String(hit.name),
@@ -162,18 +174,19 @@ function cleanInline(s) {
  * 把 Release 报文整理成面板要用的形状。
  * @param {object} json releases/latest 的返回
  * @param {string} current 本地版本（manifest.version）
+ * @param {string} pluginId 当前安装身份（manifest.id）
  * @returns {{ok:boolean, reason?:string, version:string, tag:string, title:string,
  *            publishedAt:string, pageUrl:string, asset:object|null,
  *            notes:Array, hasUpdate:boolean}}
  */
-export function parseRelease(json, current) {
+export function parseRelease(json, current, pluginId) {
   const j = json && typeof json === 'object' ? json : {};
   const tag = String(j.tag_name ?? '').trim();
   const version = tag.replace(/^[vV]/, '');
   if (!parseVersion(version).ok) {
     return { ok: false, reason: 'GitHub 返回的内容里没有版本号', hasUpdate: false, notes: [] };
   }
-  const asset = pickAsset(j.assets);
+  const asset = pickAsset(j.assets, pluginId, version);
   return {
     ok: true,
     version,
@@ -187,7 +200,7 @@ export function parseRelease(json, current) {
   };
 }
 
-/** 点「下载新版本」时该打开哪个网址：有 .ccx 直链就直接下，没有就打开发布页 */
+/** 点「下载新版本」时该打开哪个网址：有对应安装包直链就直接下，否则打开发布页 */
 export function downloadUrlOf(info) {
   if (info && info.asset && info.asset.url) return info.asset.url;
   if (info && info.pageUrl) return info.pageUrl;

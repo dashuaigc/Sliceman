@@ -15,7 +15,7 @@
   <a href="#faq">常见问题</a>
 </p>
 
-<p align="center"><sub>适用版本 v1.4.6 · Photoshop 23.3 及以上 · Windows / macOS 快捷键按系统对应使用</sub></p>
+<p align="center"><sub>适用版本 v1.4.7 · Photoshop 23.3 及以上 · Windows / macOS 快捷键按系统对应使用</sub></p>
 
 ---
 
@@ -29,7 +29,7 @@
 | 拆开素材，分别转智能对象或建组 | 绘制表格、创建定位格 | 按图层颜色或定位格导出图片 |
 | **让源文件更清楚** | **让画面更规整** | **让输出更省事** |
 
-> 界面图片来自 v1.4.6 的实际 HTML/CSS 浏览器渲染，使用示例数据，非 Photoshop 实机截图。绘制的示意图用于解释行为，未标尺寸的图形不代表精确比例。点击示意图可打开原图查看细节。
+> 界面图片来自 v1.4.6 / v1.4.7 的实际 HTML/CSS 浏览器渲染（设置窗口已更新为 v1.4.7），使用示例数据，非 Photoshop 实机截图。绘制的示意图用于解释行为，未标尺寸的图形不代表精确比例。点击示意图可打开原图查看细节。
 
 <a id="start"></a>
 
@@ -44,7 +44,7 @@
 | **Creative Cloud 版** | `Sliceman_v版本号.ccx` | 通过 Adobe 安装管理插件的用户；Windows / macOS | 已安装并登录 Creative Cloud 桌面端 |
 | **一键安装版** | `Sliceman_Setup_v版本号.zip` | 希望直接运行安装程序的 Windows 用户 | 完整解压安装包；不需要 Creative Cloud |
 
-打开 [Release 下载页](https://github.com/dashuaigc/Sliceman/releases/latest)，展开 **Assets（资源）**，按上表选择文件。以 v1.4.6 为例：Creative Cloud 版选 `Sliceman_v1.4.6.ccx`，一键安装版选 `Sliceman_Setup_v1.4.6.zip`。以后有新版时，以页面上的最新版本号为准。
+打开 [Release 下载页](https://github.com/dashuaigc/Sliceman/releases/latest)，展开 **Assets（资源）**，按上表选择文件。以 v1.4.7 为例：Creative Cloud 版选 `Sliceman_v1.4.7.ccx`，一键安装版选 `Sliceman_Setup_v1.4.7.zip`。以后有新版时，以页面上的最新版本号为准。
 
 > **认准文件名**：一键安装包必须带有 **`Setup`**。普通的 `Sliceman_v版本号.zip` 和 GitHub 自动生成的 `Source code` 源码包，不是这里的一键安装包。
 
@@ -86,7 +86,7 @@
 
 **卸载**：在解压后的安装包目录中，双击橙红色减号图标的 **「卸载.exe」**，再点击 **「确认卸载」**。仅打开卸载窗口不会执行卸载，也不需要输入数字。Photoshop 仍在运行时，同样先保存并退出，再等待“卸载完成”。本地版用户设置会保留，方便以后重装。
 
-**不要混用更新包**：一键安装版面板里的“检查更新”仍会连接项目发布页；下载 `.ccx` 不会升级一键安装版，请继续选带 `Setup` 的 ZIP。
+**自动选择安装格式**：从 v1.4.7 起，一键安装版的“下载新版本”会选择 Setup ZIP，Creative Cloud 版会选择 `.ccx`。缺少对应包时打开发布页。v1.4.6 及以前的一键安装版首次升级，请手动从发布页选择 Setup ZIP；`.ccx` 不会升级本地版。
 
 ### 安装后找不到插件怎么办？
 
@@ -1053,6 +1053,12 @@ Symbols 的输出框由定位格和内容边界决定，不使用这个开关；
 
 ## 更新与反馈
 
+### v1.4.7 · 修复更新包选择
+
+- **安装格式**：一键安装版下载对应版本的 Setup ZIP，Creative Cloud 版下载 `.ccx`，不再混用。
+- **缺包处理**：缺少本安装版的附件时打开发布页，不会误选普通 ZIP、源码包或其他版本的附件。
+- **设置提示**：安装步骤随当前安装版切换；已验证 v1.4.6 的识别与 v1.4.7 的升级判断。
+
 ### v1.4.6 · 定位格间距与智能对象内部批量粘贴
 
 - **定位格**：新增可留空的对象间距输入框，填写后统一控制横向与纵向间隔；留空沿用旧版自动值，支持 0 px。
@@ -1069,12 +1075,16 @@ Symbols 的输出框由定位格和内容边界决定，不使用这个开关；
 | Creative Cloud 版 | `Sliceman_v版本号.ccx` | 双击 CCX，通过 Creative Cloud 完成安装，再重启 Photoshop |
 | 一键安装版（Windows） | `Sliceman_Setup_v版本号.zip` | 完整解压后运行「一键安装.exe」，按提示保存并退出 Photoshop，等待「安装完成」后重启 |
 
-> 一键安装版的“检查更新”同样连接项目发布页，但 `.ccx` **不会升级一键安装版**。请认准带 `Setup` 的 ZIP，不要直接运行压缩包里的 EXE。详细流程见 [下载安装](#start)。
+> **旧版首次升级**：v1.4.6 及以前的一键安装版仍带有旧下载逻辑，请手动从发布页选择 Setup ZIP 安装 v1.4.7；之后的更新会自动选择正确格式。请完整解压后运行 EXE。详细流程见 [下载安装](#start)。
 
 <details>
-<summary><strong>查看设置窗口</strong></summary>
+<summary><strong>查看两种安装版的设置窗口</strong></summary>
 
-<p align="center"><img src="docs/screenshots/17-settings.png" width="280" alt="设置窗口：版本信息、自动检查更新和手动检查按钮"></p>
+<p align="center"><strong>Creative Cloud 版 · 下载 CCX</strong></p>
+<p align="center"><img src="docs/screenshots/17-settings.png" width="280" alt="Creative Cloud 版设置窗口：下载 CCX 与安装提示"></p>
+
+<p align="center"><strong>一键安装版 · 下载 Setup ZIP</strong></p>
+<p align="center"><img src="docs/screenshots/21-settings-local.png" width="280" alt="一键安装版设置窗口：下载 Setup ZIP 与安装提示"></p>
 
 </details>
 

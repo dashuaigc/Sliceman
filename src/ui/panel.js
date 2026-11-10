@@ -44,7 +44,7 @@ import {
   readGuidesVisible, readGuidesLocked, toggleGuidesVisible, toggleGuidesLock,
 } from '../ps/guides.js';
 import {
-  fetchLatestRelease, parseRelease, downloadUrlOf, isNewer, LATEST_PAGE,
+  fetchLatestRelease, parseRelease, downloadUrlOf, isNewer, isLocalEdition, LATEST_PAGE,
   shouldAutoCheck, formatTime, formatDate, formatSize, describeError,
 } from '../lib/update-core.js';
 import manifest from '../manifest.json';
@@ -4449,15 +4449,19 @@ if (versionEl) versionEl.textContent = 'v' + manifest.version;
 // ⚠️ 联网要 manifest 的 requiredPermissions.network.domains 放行 api.github.com，
 //    而权限是【装载插件时】读的：从旧版升上来的用户不重装插件，fetch 会被直接拒掉
 //    （describeError 里专门给这种情况留了一句提示）。
-// ⚠️ 插件装不了插件：点「下载新版本」是把 .ccx 直链交给系统浏览器
+// ⚠️ 插件装不了插件：点「下载新版本」是把当前安装版对应的直链交给系统浏览器
 //    （uxp.shell.openExternal，manifest 里 launchProcess 已放行 https），
-//    下完仍然要用户双击让 Creative Cloud 装上。
+//    下完仍然要用户运行对应安装包。
 
 const ST_AUTO_KEY = 'update.autoCheck';       // '1'/'0'：开不开「打开面板时自动检查」
 const ST_LAST_KEY = 'update.lastChecked';     // 上次检查的时间戳，节流用
 const ST_SEEN_KEY = 'update.seenVersion';     // 已经知道的那个新版本号，用来决定红点亮不亮
 
 const stEl = (id) => document.getElementById(id);
+const stLocal = isLocalEdition(manifest.id);
+const stInstallSteps = stLocal
+  ? '完整解压 Setup 包，双击“一键安装.exe”，保存并退出 Photoshop 后完成安装，再重新打开 Photoshop。'
+  : '双击 .ccx 通过 Creative Cloud 安装，然后重启 Photoshop。';
 let stInfo = null;            // 最近一次查到的 parseRelease 结果
 let stBusy = false;           // 正在查：按钮置灰，避免连点打接口
 let stFallback = false;       // 上一次检查失败了：下载按钮退化成「前往下载页」
@@ -4547,7 +4551,7 @@ async function stCheck(silent) {
     // 换个名字调用会被当成「非法调用」直接抛（浏览器里就是 Illegal invocation）
     const call = typeof fetch === 'function' ? (u, o) => fetch(u, o) : null;
     const json = await fetchLatestRelease(call);
-    const info = parseRelease(json, manifest.version);
+    const info = parseRelease(json, manifest.version, manifest.id);
     if (!info.ok) throw new Error(info.reason);
     prefSet(ST_LAST_KEY, String(Date.now()));
     // 记下「查到的版本」而不是「有没有更新」：下次本地升级到这个版本后，
@@ -4584,6 +4588,8 @@ async function stCheck(silent) {
 function stOpen() {
   const cur = stEl('stCurVer');
   if (cur) cur.textContent = 'v' + manifest.version;
+  const hint = stEl('stInstallHint');
+  if (hint) hint.textContent = (stLocal ? '本地一键安装版下载 Setup ZIP。' : 'Creative Cloud 版下载 .ccx。') + stInstallSteps;
   stRenderCheckedAt();
   if (stInfo) stRenderResult(stInfo);
   else {
@@ -4612,9 +4618,10 @@ stEl('stDownloadBtn').addEventListener('click', async () => {
   try {
     const { shell } = require('uxp');
     await shell.openExternal(url);
-    stSetMsg(/\.ccx$/i.test(url)
-      ? '已在浏览器中开始下载，下载完双击 .ccx 安装，然后重启 Photoshop。'
-      : '已在浏览器中打开发布页，下载 .ccx 后双击安装，然后重启 Photoshop。', 'good');
+    const direct = !stFallback && !!stInfo?.asset;
+    stSetMsg((direct
+      ? '已在浏览器中开始下载。'
+      : `已在浏览器中打开发布页，请选择 ${stLocal ? 'Sliceman_Setup_v*.zip' : 'Sliceman_v*.ccx'}。`) + stInstallSteps, 'good');
   } catch (e) {
     // 打不开就把地址显示出来，用户还能自己复制
     stSetMsg(`打不开浏览器（${String(e && e.message || e)}），请手动访问：${url}`, 'err');

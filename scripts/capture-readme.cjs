@@ -34,7 +34,7 @@ async (page) => {
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.goto('http://127.0.0.1:8765/dist/plugin/index.html');
-  await page.waitForFunction(() => document.getElementById('version').textContent === 'v1.4.6');
+  await page.waitForFunction(() => document.getElementById('version').textContent === 'v1.4.7');
   const shot = async name => {
     await page.evaluate(() => document.activeElement?.blur());
     await page.screenshot({ path: 'D:/Sliceman/docs/screenshots/' + name + '.png', animations: 'disabled' });

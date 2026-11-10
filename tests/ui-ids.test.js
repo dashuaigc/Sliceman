@@ -502,7 +502,7 @@ describe('设置 / 检查更新 的契约', () => {
 
   it('检查更新读的是 manifest.version，不是写死的版本号', () => {
     // 写死一个版本号，发版时忘了同步就会「永远提示有更新」或「永远不提示」
-    expect(js).toContain("parseRelease(json, manifest.version)");
+    expect(js).toContain("parseRelease(json, manifest.version, manifest.id)");
     expect(js).toContain("isNewer(seen, manifest.version)");
   });
 
