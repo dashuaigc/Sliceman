@@ -120,7 +120,7 @@ export function guidesOf(cells, existing = { vertical: [], horizontal: [] }) {
 /**
  * 参数校验（§28）。通过返回 null，不通过返回 {field, message}，
  * field 用来在界面上标红对应的输入框。
- * @param {{width:*, height:*, count:*, color:*}} p
+ * @param {{width:*, height:*, count:*, color:*, gap?:*}} p
  * @param {{hasDoc?:boolean}} [env]
  */
 export function validateGridCfg(p, env = {}) {
@@ -130,6 +130,10 @@ export function validateGridCfg(p, env = {}) {
   if (!isPosInt(p.count)) return { field: 'count', message: '数量：请输入大于 0 的整数' };
   if (Number(p.count) > MAX_COUNT) {
     return { field: 'count', message: `数量最多 ${MAX_COUNT} 个（再多 Photoshop 会很卡）` };
+  }
+  const gap = String(p.gap ?? '').trim();
+  if (gap !== '' && (!/^\d+$/.test(gap) || !Number.isSafeInteger(Number(gap)))) {
+    return { field: 'gap', message: '对象间距：请输入 0 或正整数（px），留空使用默认间距' };
   }
   if (!/^#?[0-9a-f]{6}$/i.test(String(p.color || '').trim())) {
     return { field: 'color', message: '颜色：请填 #rrggbb 形式的色值' };
@@ -160,7 +164,7 @@ export function previewRows(count, cols, limit = 60) {
 
 /**
  * 一次算完整份方案。
- * @param {{width:number, height:number, count:number}} p 已校验过的参数
+ * @param {{width:number, height:number, count:number, gap?:number|string}} p 已校验过的参数；gap 留空用默认公式
  * @param {{width:number, height:number}} canvas 当前画布
  * @param {{expandCanvas?:boolean}} [opts] expandCanvas=false 则画布保持原样（格子可能落到画布外）
  * @returns {{gap:number, cols:number, rows:number, block:{w:number,h:number},
@@ -172,7 +176,7 @@ export function buildGrid(p, canvas, opts = {}) {
   const width = Math.round(num(p.width));
   const height = Math.round(num(p.height));
   const count = Math.round(num(p.count));
-  const gap = gapOf(width, height);
+  const gap = String(p.gap ?? '').trim() === '' ? gapOf(width, height) : num(p.gap);
   const { cols, rows } = gridOf(count, width, height, gap);
   const block = { w: blockWidth(cols, width, gap), h: blockHeight(rows, height, gap) };
 

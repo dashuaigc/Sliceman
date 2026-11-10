@@ -17,7 +17,7 @@
             </g>
           </svg></span>
           <span class="brand-name">Sliceman</span>
-          <span class="version" id="version">v1.4.5</span>
+          <span class="version" id="version">v1.4.6</span>
         </div>
           <div class="rail-foot" id="settingsBtn" title="设置" role="button" tabindex="0" aria-label="设置">
             <svg class="ic-btn" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="settings">
@@ -216,7 +216,7 @@
 
 
 
-      <!-- 批量处理页：两个功能同页并列，说明文案改为悬停各自主按钮时浮出 -->
+      <!-- 批量处理页：独立转换/建组，以及可展开的智能对象内部处理。 -->
       <div id="batchPage" style="display:none;">
 
         <div class="btn-wrap">
@@ -249,6 +249,28 @@
             <span class="btn-label">批量新建独立组</span>
           </div>
         </div>
+
+        <section class="sp-card" id="smartPasteCard">
+          <div class="feature-title">批量向智能对象内部添加图层</div>
+          <p class="hint sp-intro">先在 PS 中复制图层，再选择目标智能对象。</p>
+          <div class="sp-option">
+            <span class="sp-label">添加层级</span>
+            <div class="sp-choices">
+              <div id="spPositionTop" class="sp-choice active" role="button" tabindex="0" aria-pressed="true">最上方</div>
+              <div id="spPositionBottom" class="sp-choice" role="button" tabindex="0" aria-pressed="false">最下方</div>
+            </div>
+          </div>
+          <div class="sp-option">
+            <span class="sp-label">放置位置</span>
+            <div class="sp-choices">
+              <div id="spPlacementOriginal" class="sp-choice active" role="button" tabindex="0" aria-pressed="true">原位</div>
+              <div id="spPlacementCenter" class="sp-choice" role="button" tabindex="0" aria-pressed="false">居中</div>
+            </div>
+          </div>
+          <div id="spApply" class="primary-btn sp-apply" role="button" tabindex="0">粘贴到智能对象内部</div>
+          <div id="spDetails" class="sp-details" role="button" tabindex="0" aria-expanded="false" aria-controls="spResults" style="display:none;">查看详情</div>
+          <div id="spResults" class="sp-results" style="display:none;"></div>
+        </section>
 
       </div>
 
@@ -533,9 +555,7 @@
         </div>
       </section>
 
-      <!-- 创建定位格页：填宽高数量颜色 → 一批矩形形状图层 + 配套参考线。
-           间距与行列不给用户填，由宽高数量推导（(宽+高)÷16、9 个以内固定排列），
-           所以这一页只有四个输入框，下面两行灰字是推导结果的实时预览 -->
+      <!-- 创建定位格：对象间距可选，留空沿用 (宽+高)÷16；行列仍自动排列。 -->
       <section class="card" id="gridPage" style="display:none;">
         <div class="feature-head page-heading">
           <span class="feature-title">创建定位格</span>
@@ -566,7 +586,15 @@
           </div>
         </div>
 
-        <!-- 实时预览（需求 §26 §27）：间距与行列是算出来的，创建前先摆在眼前 -->
+        <div class="setting-row">
+          <div class="cell cell-wide cell-gap">
+            <label class="row-label" for="dgGap">对象间距</label>
+            <div class="num-box"><input type="text" id="dgGap" placeholder="留空自动" aria-label="对象间距，留空使用默认间距"></div>
+            <span class="unit">px</span>
+          </div>
+        </div>
+
+        <!-- 实时预览：显示实际采用的间距与排列。 -->
         <div class="dg-calc">
           <span id="dgGapInfo">间距：—</span>
           <span id="dgGridInfo">排列：—</span>
@@ -1171,7 +1199,7 @@
 
       <!-- 底部栏（视觉入口） -->
       <footer class="bottombar">
-        <p id="status" class="status"></p>
+        <p id="status" class="status" aria-live="polite"></p>
       </footer>
     </div>
 

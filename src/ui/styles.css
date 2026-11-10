@@ -155,6 +155,26 @@ body {
 .hint { margin: 0; font-size: 11px; line-height: 1.65; color: #a4aab5; }
 .hint b { font-weight: 600; }
 
+/* Clipboard paste controls fit the 300px host minimum without wrapping labels. */
+.sp-card { margin-top: 20px; padding-top: 14px; border-top: 1px solid #353940; }
+.sp-intro { margin-top: 6px; margin-bottom: 12px; }
+.sp-option { display: flex; align-items: center; margin: 9px 0; }
+.sp-label { flex: 0 0 auto; margin-right: 10px; font-size: 11px; color: #a4aab5; }
+.sp-choices { display: flex; flex: 1 1 0; min-width: 0; }
+.sp-choice { display: flex; flex: 1 1 0; align-items: center; justify-content: center; padding: 5px 7px;
+  min-height: 28px; font-size: 11px; color: #c4c8d0; background: #30333a; border: 1px solid #42464e;
+  border-radius: 4px; cursor: pointer; }
+.sp-choice + .sp-choice { margin-left: 6px; }
+.sp-choice:hover { border-color: #6082c6; }
+.sp-choice.active { color: #c2d3ff; background: #2e3c58; border-color: #6082c6; }
+.sp-apply { margin-top: 14px; }
+#spApply.sp-stopping { background: #bc4c58; color: #fff; }
+#spApply.sp-stopping:hover { background: #cf5b67; }
+.sp-details { margin-top: 7px; font-size: 11px; color: #9ab8ff; cursor: pointer; }
+.sp-results { margin-top: 6px; max-height: 140px; overflow-y: auto; white-space: pre-wrap;
+  word-wrap: break-word; font-size: 11px; line-height: 1.7; color: #c4c8d0; }
+#smartPasteCard [aria-disabled="true"] { opacity: 0.4; cursor: default; }
+
 .tag-red { color: #e88b91; }
 .tag-blue { color: #4aa3ff; }
 .link { display: inline-block; margin-top: 8px; font-size: 12px; color: #6b96f8; cursor: pointer; }
@@ -523,6 +543,8 @@ input[type="text"]::placeholder { color: #8b919c; }
 #gridPage .cell .unit { flex: 0 0 auto; margin-left: 6px; font-size: 12px; color: #a4aab5; }
 
 #gridPage .cell .num-box.hex-box { width: 76px; }
+#gridPage .cell-gap .row-label { flex-basis: 62px; }
+#gridPage .cell-gap .num-box { width: 84px; }
 
 .dg-calc {
   display: flex;

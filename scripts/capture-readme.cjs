@@ -34,7 +34,7 @@ async (page) => {
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.goto('http://127.0.0.1:8765/dist/plugin/index.html');
-  await page.waitForFunction(() => document.getElementById('version').textContent === 'v1.4.5');
+  await page.waitForFunction(() => document.getElementById('version').textContent === 'v1.4.6');
   const shot = async name => {
     await page.evaluate(() => document.activeElement?.blur());
     await page.screenshot({ path: 'D:/Sliceman/docs/screenshots/' + name + '.png', animations: 'disabled' });
@@ -79,5 +79,36 @@ async (page) => {
   await shot('14-resize-done');
   await page.locator('#settingsBtn').click();
   await shot('17-settings');
-  return { screenshots: 17, errors };
+  await page.locator('#stCloseBtn').click();
+  await go('grid');
+  await page.locator('#dgGap').fill('24');
+  await page.locator('#dgGap').press('Tab');
+  await shot('20-grid-gap');
+  await go('batch');
+  // Hold a mock modal so the actual UI enters its busy state; no Photoshop IO.
+  await page.evaluate(() => {
+    const ps = window.require('photoshop');
+    let first = true;
+    ps.core.executeAsModal = async fn => {
+      if (first) {
+        first = false;
+        await new Promise(resolve => { window.resumeScreenshotBatch = resolve; });
+      }
+      return fn();
+    };
+  });
+  await page.locator('#spApply').click();
+  await page.waitForFunction(() => document.getElementById('spApply').textContent === '停止');
+  await page.evaluate(() => {
+    document.getElementById('status').textContent = '处理中 2 / 6 · Icon_Gem';
+  });
+  await shot('18-batch-running');
+  await page.evaluate(() => window.resumeScreenshotBatch());
+  await page.waitForFunction(() => document.getElementById('spApply').textContent === '粘贴到智能对象内部');
+  await page.evaluate(() => {
+    document.getElementById('spDetails').style.display = 'none';
+    document.getElementById('status').textContent = '成功 6 个，跳过 0 个，失败 0 个';
+  });
+  await shot('19-batch-done');
+  return { screenshots: 20, errors };
 }

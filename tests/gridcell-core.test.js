@@ -4,6 +4,48 @@ import {
   guidesOf, validateGridCfg, previewRows, buildGrid, MAX_COUNT,
 } from '../src/lib/gridcell-core.js';
 
+describe('可选对象间距', () => {
+  const p = { width: 1000, height: 600, count: 6, color: '#999999' };
+
+  it('自定义值统一用于横纵间距和新画布四周留白', () => {
+    const r = buildGrid({ ...p, gap: '40' }, { width: 0, height: 0 });
+    expect(r.gap).toBe(40);
+    expect(r.canvas).toEqual({ width: 3160, height: 1320, expanded: true });
+    expect(r.cells[0]).toMatchObject({ left: 40, top: 40 });
+    expect(r.cells[1].left - r.cells[0].right).toBe(40);
+    expect(r.cells[3].top - r.cells[0].bottom).toBe(40);
+    expect(r.canvas.width - r.cells[2].right).toBe(40);
+    expect(r.canvas.height - r.cells[5].bottom).toBe(40);
+  });
+
+  it('0 是有效间距，格子紧贴而非回退默认值', () => {
+    const r = buildGrid({ ...p, gap: 0 }, { width: 0, height: 0 });
+    expect(r.gap).toBe(0);
+    expect(r.canvas).toMatchObject({ width: 3000, height: 1200 });
+    expect(r.cells[1].left).toBe(r.cells[0].right);
+    expect(r.cells[3].top).toBe(r.cells[0].bottom);
+  });
+
+  it.each([undefined, null, '', '   '])('间距 %j 与旧版完整结果一致', (gap) => {
+    expect(buildGrid({ ...p, gap }, { width: 4000, height: 4000 }))
+      .toEqual(buildGrid(p, { width: 4000, height: 4000 }));
+    expect(validateGridCfg({ ...p, gap })).toBeNull();
+  });
+
+  it('自定义间距保持当前大画布尺寸和整体居中', () => {
+    const r = buildGrid({ ...p, gap: 40 }, { width: 4000, height: 3000 });
+    expect(r.canvas).toEqual({ width: 4000, height: 3000, expanded: false });
+    expect(r.origin).toEqual({ left: 460, top: 880 });
+    const clipped = buildGrid({ ...p, gap: 40 }, { width: 100, height: 100 }, { expandCanvas: false });
+    expect(clipped.canvas).toEqual({ width: 100, height: 100, expanded: false });
+    expect(clipped.fits).toBe(false);
+  });
+
+  it.each(['-1', '1.5', 'abc', 'Infinity', '1e3', '9007199254740992'])('非法间距 %s 定位到输入框', (gap) => {
+    expect(validateGridCfg({ ...p, gap })).toMatchObject({ field: 'gap' });
+  });
+});
+
 describe('间距（§5 §6）', () => {
   it('= (宽 + 高) ÷ 16', () => {
     expect(gapOf(1000, 600)).toBe(100);

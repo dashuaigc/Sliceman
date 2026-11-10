@@ -49,6 +49,7 @@ import {
 } from '../lib/update-core.js';
 import manifest from '../manifest.json';
 import { bindCustomButton, setButtonDisabled } from '../lib/custom-button.js';
+import { initSmartPastePanel } from './smart-paste-panel.js';
 
 // Install disabled guards before any feature-specific click handlers.
 document.querySelectorAll('[role="button"]').forEach(bindCustomButton);
@@ -58,6 +59,7 @@ const uxpFs = require('uxp').storage.localFileSystem;
 
 const statusEl = document.getElementById('status');
 function setStatus(msg) { statusEl.textContent = msg; }
+let smartPastePanel = null;
 
 // ---- 输入框的通用行为（面板里每个 input[type=text] 都走这一套）----
 // 1) 聚焦时给【外层那个画边框的 div】加 .focused：边框高亮，退出即还原。
@@ -150,7 +152,8 @@ function bindTextField(el) {
     if (fieldPrev.has(el)) return;                 // focus 与 focusin 都会来，只认第一次
     const cur = String(el.value ?? '');
     fieldPrev.set(el, cur);
-    el.value = '';
+    // 可选间距需要可直接清空；聚焦保留文本，失焦也不恢复旧值。
+    if (el.id !== 'dgGap') el.value = '';
     el.placeholder = '';
     el.setAttribute('placeholder', '');
     renderFieldHint(el);
@@ -160,7 +163,7 @@ function bindTextField(el) {
     if (!fieldPrev.has(el)) return;
     const prev = fieldPrev.get(el);
     fieldPrev.delete(el);
-    if (String(el.value ?? '') === '') el.value = prev; // 无新输入：恢复原值
+    if (el.id !== 'dgGap' && String(el.value ?? '') === '') el.value = prev; // 无新输入：恢复原值
     restoreHolder(el);                            // 最后恢复提示，避免原生控件写值时刷新掉提示
   };
   // focus/blur 不冒泡，为保险连会冒泡的 focusin/focusout 一起听；重复触发也幂等
@@ -188,7 +191,7 @@ const TEXT_FIELDS = [
   'projectName', 'moveX', 'moveY', 'layoutGap', 'layoutMargin',
   'tblW', 'tblH', 'tblRows', 'tblCols', 'tblRowGap', 'tblColGap',
   'tblLineW', 'tblRadius', 'tblLineColor', 'tblFillColor',
-  'dgW', 'dgH', 'dgCount', 'dgColor',
+  'dgW', 'dgH', 'dgCount', 'dgColor', 'dgGap',
   'rzW', 'rzH', 'rzEdge', 'rzPercent', 'rzTimes', 'rzMaxW', 'rzMaxH',
   'rzQuality', 'rzSuffix', 'rzTpl',
   'findText', 'templateText', 'startNum', 'stepNum',
@@ -309,6 +312,7 @@ tblNumField('tblRadius', { min: 0, decimals: 1 });
 dgNumField('dgW', { min: 1 });
 dgNumField('dgH', { min: 1 });
 dgNumField('dgCount', { min: 1 });
+dgNumField('dgGap', { min: 0 });
 
 // 批量改尺寸
 rzNumField('rzW', { min: 1 });
@@ -976,7 +980,7 @@ const TIP_MASKED_FIELD_IDS = [
   'findText', 'templateText', 'startNum', 'stepNum',  // 批量重命名
   'tblRows', 'tblCols', 'tblW', 'tblH', 'tblRowGap', 'tblColGap',   // 快速绘制表格
   'tblLineW', 'tblLineColor', 'tblFillColor', 'tblRadius',
-  'dgW', 'dgH', 'dgCount', 'dgColor',                                // 创建定位格
+  'dgW', 'dgH', 'dgCount', 'dgColor', 'dgGap',                       // 创建定位格
   'rzW', 'rzH', 'rzEdge', 'rzPercent', 'rzTimes', 'rzMaxW', 'rzMaxH',   // 批量改尺寸
   'rzQuality', 'rzSuffix', 'rzTpl',
 ];
@@ -1517,18 +1521,18 @@ loadTableCfg();
 refreshTableUi();
 
 // ---- 创建定位格：按宽高与数量生成一批矩形形状图层 + 配套参考线 ----
-// 间距和行列【不让用户填】：间距 = (宽 + 高) ÷ 16，9 个以内按固定表排列、10 个以上
+// 间距可选，留空用 (宽 + 高) ÷ 16；9 个以内按固定表排列、10 个以上
 // 自动挑最方正的行列。全部几何在 lib/gridcell-core.js（有单测），这里只做
 // 「读界面 → 调几何 → 交给 PS」，外加把推导结果实时摆出来给用户过目。
 const dgBtn = document.getElementById('dgBtn');
 const dgNewDocEl = document.getElementById('dgNewDoc');
 const dgExpandEl = document.getElementById('dgExpand');
 const dgGuidesEl = document.getElementById('dgGuides');
-const DG_FIELDS = ['dgW', 'dgH', 'dgCount', 'dgColor'];
+const DG_FIELDS = ['dgW', 'dgH', 'dgCount', 'dgColor', 'dgGap'];
 const dgEl = {};
 for (const id of DG_FIELDS) dgEl[id] = document.getElementById(id);
 // 校验结果里的 field → 该标红哪个框
-const DG_FIELD_BOX = { width: 'dgW', height: 'dgH', count: 'dgCount', color: 'dgColor' };
+const DG_FIELD_BOX = { width: 'dgW', height: 'dgH', count: 'dgCount', color: 'dgColor', gap: 'dgGap' };
 let gridBusy = false;
 
 // 与表格页一致：实际值显示在输入框，state 用于编辑时回退和配置保存。
@@ -1536,6 +1540,7 @@ const dgState = {};
 
 const dgVal = (id) => {
   const v = String(dgEl[id].value ?? '').trim();
+  if (id === 'dgGap') return v;                    // 空值有意义：恢复默认，不回退到上次自定义值
   return v !== '' ? v : (dgState[id] ?? '');
 };
 
@@ -1545,7 +1550,7 @@ function setDgValue(id, v) {
   dgState[id] = s;
   const el = dgEl[id];
   fieldSet(el, s);
-  setFieldPlaceholder(el, '');
+  setFieldPlaceholder(el, id === 'dgGap' ? '留空自动' : '');
 }
 
 function readGridCfg() {
@@ -1554,6 +1559,7 @@ function readGridCfg() {
     height: dgVal('dgH'),
     count: dgVal('dgCount'),
     color: dgVal('dgColor'),
+    gap: dgVal('dgGap'),
   };
 }
 
@@ -1563,6 +1569,7 @@ function saveGridCfg() {
   prefSet('grid.h', c.height);
   prefSet('grid.count', c.count);
   prefSet('grid.color', c.color);
+  prefSet('grid.gap', c.gap);
   prefSet('grid.newDoc', dgNewDocEl.checked ? '1' : '0');
   prefSet('grid.expand', dgExpandEl.checked ? '1' : '0');
   prefSet('grid.guides', dgGuidesEl.checked ? '1' : '0');
@@ -1610,7 +1617,7 @@ function refreshGridPreview() {
   // ⚠️ 新建那版【不】带「画布：」前缀 —— 标题行就这么点宽度，多三个字就会把功能名挤成两行
   canvasEl.textContent = newDoc ? '新建画布' : (doc ? `画布：${cw}×${ch}` : '未打开文档');
 
-  // 颜色填错不妨碍几何预览，其余三项填错就没得算
+  // 颜色填错不妨碍几何预览，其余几何参数填错就没得算
   if (err && err.field !== 'color') {
     gapEl.textContent = '间距：—';
     gridEl.textContent = '排列：—';
@@ -1625,7 +1632,7 @@ function refreshGridPreview() {
   // 建新文档：从「零画布」起算，planCanvas 给出的就是这套定位格需要的画布
   //（外框 + 四周各一个间距），与当前开着什么文档无关
   const plan = buildGrid(
-    { width: Number(c.width), height: Number(c.height), count },
+    { width: Number(c.width), height: Number(c.height), count, gap: c.gap },
     newDoc ? { width: 0, height: 0 } : { width: cw, height: ch },
     { expandCanvas: newDoc || !!dgExpandEl.checked },
   );
@@ -1666,7 +1673,7 @@ async function runCreateGrid() {
   if (err) { markGridError(err.field); return setStatus(err.message); }
   markGridError(null);
 
-  const params = { width: Number(c.width), height: Number(c.height), count: Number(c.count) };
+  const params = { width: Number(c.width), height: Number(c.height), count: Number(c.count), gap: c.gap };
 
   gridBusy = true;
   setTilesDisabled(true);
@@ -1762,7 +1769,7 @@ for (const id of DG_FIELDS) {
 
   el.addEventListener('input', () => {
     const v = String(el.value ?? '').trim();
-    if (v !== '') dgState[id] = v;                 // 空串不提交：那是「清空了还没输」的中间态
+    if (id === 'dgGap' || v !== '') dgState[id] = v; // 可选间距允许清空
     refreshGridPreview();
     saveGridCfg();
   });
@@ -1770,9 +1777,9 @@ for (const id of DG_FIELDS) {
   // 失焦也提交当前输入，避免宿主漏发 input 时丢失新值。
   const restore = () => {
     const value = String(el.value ?? '').trim();
-    if (value !== '') dgState[id] = value;
+    if (id === 'dgGap' || value !== '') dgState[id] = value;
     fieldSet(el, dgState[id] ?? '');
-    setFieldPlaceholder(el, '');
+    setFieldPlaceholder(el, id === 'dgGap' ? '留空自动' : '');
     refreshGridPreview();
     saveGridCfg();
   };
@@ -1783,7 +1790,7 @@ for (const id of DG_FIELDS) {
     if (e.key !== 'Enter') return;
     if (e.preventDefault) e.preventDefault();      // 别让回车顺带触发别的默认行为
     const v = String(el.value ?? '').trim();
-    if (v !== '') dgState[id] = v;                 // input 一般已经提交过，这里兜底
+    if (id === 'dgGap' || v !== '') dgState[id] = v; // input 一般已经提交过，这里兜底
     restore();                                     // 确认并显示实际值
     saveGridCfg();
     try { el.blur(); } catch { /* 不支持就算了：restore 已经把状态摆正 */ }
@@ -1795,6 +1802,7 @@ setDgValue('dgW', prefGet('grid.w', '1000'));
 setDgValue('dgH', prefGet('grid.h', '1000'));
 setDgValue('dgCount', prefGet('grid.count', '6'));
 setDgValue('dgColor', prefGet('grid.color', '#999999'));
+setDgValue('dgGap', prefGet('grid.gap', ''));
 setupSwitch('dgNewDoc', prefGet('grid.newDoc', '1') === '1', () => { refreshGridPreview(); saveGridCfg(); });
 setupSwitch('dgExpand', prefGet('grid.expand', '1') === '1', () => { refreshGridPreview(); saveGridCfg(); });
 setupSwitch('dgGuides', prefGet('grid.guides', '1') === '1', saveGridCfg);
@@ -2560,8 +2568,18 @@ setupSwitch('gsMerged', false);                  // 参考线分割：默认只�
 
 // ---- 功能页切换：四张磁贴各对应一个功能页 ----
 const tiles = Array.from(document.querySelectorAll('.tile'));
+smartPastePanel = initSmartPastePanel({
+  setStatus,
+  bindButtons: false, // Static custom buttons were bound before feature listeners at startup.
+  setBusy: (on) => {
+    setTilesDisabled(on);
+    setButtonDisabled(smartObjBtn, on);
+    setButtonDisabled(groupBtn, on);
+  },
+});
 function setTilesDisabled(on) {
   tiles.forEach(t => { t.style.pointerEvents = on ? 'none' : 'auto'; t.style.opacity = on ? '0.5' : '1'; });
+  if (smartPastePanel) smartPastePanel.setExternalBusy(on);
 }
 function show(id, on) { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; }
 function switchPage(name) {
@@ -2652,7 +2670,7 @@ bindTip(document.getElementById('tableInfo'), document.getElementById('tableTip'
   '设置行列、尺寸和样式，在<b>当前视图中心</b>生成矢量表格。<br>行距、列距为 0 时格子相连；大于 0 时分开。<b>独立单元格</b>模式每格生成一个图层。<br>点击色块选色，生成后仍可编辑。');
 
 bindTip(document.getElementById('gridInfo'), document.getElementById('gridTip'),
-  '按宽高和数量生成<b>同尺寸的矩形定位格</b>，自动排列并计算间距。<br>可在新 PSD 或当前文档中创建，也可添加边缘和中心参考线。<br>每次创建新的一批，已有定位格保留；可配合 <b>Symbols 切图</b>使用。');
+  '按宽高和数量生成<b>同尺寸的矩形定位格</b>并自动排列。<br><b>对象间距</b>统一控制横向与纵向间隔，支持 0；留空按（宽＋高）÷16 取整，至少 1px。<br>新建 PSD 四周各留一个间距；当前文档保持居中，可自动扩画布并添加边缘和中心参考线。<br>每次创建新的一批；可配合 <b>Symbols 切图</b>使用。');
 
 bindTip(document.getElementById('renameInfo'), document.getElementById('renameTip'),
   '批量修改<b>选中的图层或组</b>名称，支持替换、重新命名、添加前缀或后缀。可用<b>按名称查找</b>批量选择对象。<br>开启编号后，模板中的<b>独立 n</b>替换为数字，如 Icon_n；Button 中的 n 不受影响。<br>先看预览再应用；背景图层改名后会转为普通图层。');

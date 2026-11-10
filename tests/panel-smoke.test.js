@@ -698,6 +698,92 @@ describe('创建定位格：在新 PSD 中创建', () => {
   });
 });
 
+describe('创建定位格：对象间距', () => {
+  const el = (document, id) => document.getElementById(id);
+  const prefs = { 'grid.newDoc': '1', 'grid.w': '1000', 'grid.h': '600', 'grid.count': '6' };
+
+  it('自定义间距的预览、新文档和形状坐标、参考线一致', async () => {
+    const state = gridState();
+    const h = await loadPanel({ doc: null, prefs, onPlay: onGridPlay(state) });
+    state.app = h.photoshop.app;
+    h.goPage('grid');
+    const gap = el(h.document, 'dgGap');
+    gap.value = '40';
+    fire(gap, 'input');
+    expect(el(h.document, 'dgGapInfo').textContent).toBe('间距：40 px');
+    expect(el(h.document, 'dgCanvas').textContent).toBe('新建 3160×1320');
+    fire(el(h.document, 'dgBtn'), 'click');
+    await flush();
+    expect(state.made).toMatchObject({ w: 3160, h: 1320 });
+    expect(cellsOf(state)).toEqual([
+      ['定位格 01', 40, 40], ['定位格 02', 1080, 40], ['定位格 03', 2120, 40],
+      ['定位格 04', 40, 680], ['定位格 05', 1080, 680], ['定位格 06', 2120, 680],
+    ]);
+    expect(guidesFrom(h.played).vertical).toEqual([40, 540, 1040, 1080, 1580, 2080, 2120, 2620, 3120]);
+  });
+
+  it('清空自定义值立即恢复默认，重复失焦和重载后仍为空', async () => {
+    const h = await loadPanel({ doc: null, prefs: { ...prefs, 'grid.gap': '40' } });
+    h.goPage('grid');
+    const gap = el(h.document, 'dgGap');
+    expect(gap.value).toBe('40');
+    fire(gap, 'focus');
+    expect(gap.value).toBe('40');
+    gap.value = '';
+    fire(gap, 'input');
+    expect(el(h.document, 'dgGapInfo').textContent).toBe('间距：100 px');
+    fire(gap, 'blur');
+    fire(gap, 'focusout');
+    expect(gap.value).toBe('');
+    expect(h.localStorage.getItem('grid.gap')).toBe('');
+    const next = await loadPanel({ doc: null, prefs: Object.fromEntries(h.localStorage._map) });
+    next.goPage('grid');
+    expect(el(next.document, 'dgGap').value).toBe('');
+    expect(el(next.document, 'dgGapInfo').textContent).toBe('间距：100 px');
+  });
+
+  it('宿主漏发 input 时，清空后失焦仍保存默认状态', async () => {
+    const h = await loadPanel({ doc: null, prefs: { ...prefs, 'grid.gap': '40' } });
+    h.goPage('grid');
+    const gap = el(h.document, 'dgGap');
+    fire(gap, 'focus');
+    gap.value = '';
+    fire(gap, 'blur');
+    expect(gap.value).toBe('');
+    expect(h.localStorage.getItem('grid.gap')).toBe('');
+    expect(el(h.document, 'dgGapInfo').textContent).toBe('间距：100 px');
+  });
+
+  it('0 持久化并用于当前文档中的实际形状坐标', async () => {
+    const state = gridState();
+    const h = await loadPanel({ doc: fakeDoc(4000, 3000), prefs: { ...prefs, 'grid.newDoc': '0' }, onPlay: onGridPlay(state) });
+    state.app = h.photoshop.app;
+    h.goPage('grid');
+    const gap = el(h.document, 'dgGap');
+    gap.value = '0';
+    fire(gap, 'blur');
+    expect(h.localStorage.getItem('grid.gap')).toBe('0');
+    expect(el(h.document, 'dgGapInfo').textContent).toBe('间距：0 px');
+    fire(el(h.document, 'dgBtn'), 'click');
+    await flush();
+    expect(cellsOf(state).slice(0, 2)).toEqual([['定位格 01', 500, 900], ['定位格 02', 1500, 900]]);
+    expect(state.made).toBeNull();
+  });
+
+  it('非法间距标红并拦截创建', async () => {
+    const h = await loadPanel({ doc: null, prefs });
+    h.goPage('grid');
+    const gap = el(h.document, 'dgGap');
+    gap.value = 'abc';
+    fire(gap, 'input');
+    fire(el(h.document, 'dgBtn'), 'click');
+    await flush();
+    expect(gap.parentNode.classList.contains('field-err')).toBe(true);
+    expect(el(h.document, 'status').textContent).toContain('对象间距');
+    expect(h.played.some(d => d._obj === 'make')).toBe(false);
+  });
+});
+
 describe('创建定位格：输入框里按回车', () => {
   it('只是确认当前值并退出输入框，绝不直接开建', async () => {
     const state = gridState();
