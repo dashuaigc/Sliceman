@@ -12,6 +12,40 @@
 
 const { app, action, core } = require('photoshop');
 
+// 空数组表示明确的空选区，null 表示宿主未能提供完整的选区。
+export async function readRenameSelectionIds(doc) {
+  const documentRef = { _ref: 'document', _id: doc.id };
+  async function getList(property) {
+    try {
+      const [result] = await action.batchPlay([{
+        _obj: 'get', _target: [{ _property: property }, documentRef],
+        _options: { dialogOptions: 'dontDisplay' },
+      }], {});
+      return result?.[property];
+    } catch { return null; }
+  }
+  const refs = await getList('targetLayersIDs');
+  if (Array.isArray(refs)) {
+    const ids = refs.map(ref => typeof ref === 'number' ? ref : (ref?._id ?? ref?._value));
+    if (ids.every(Number.isInteger)) return ids;
+  }
+
+  const indexed = await getList('targetLayers');
+  if (!Array.isArray(indexed) || !indexed.every(ref => Number.isInteger(ref?._index))) return null;
+  if (!indexed.length) return [];
+  try {
+    // targetLayers 从 0 开始计数。按索引查询图层时，有背景层从 0 开始，无背景层从 1 开始。
+    const offset = doc.backgroundLayer ? 0 : 1;
+    const results = await action.batchPlay(indexed.map(ref => ({
+      _obj: 'get',
+      _target: [{ _property: 'layerID' }, { _ref: 'layer', _index: ref._index + offset }, documentRef],
+      _options: { dialogOptions: 'dontDisplay' },
+    })), {});
+    const ids = results.map(result => result?.layerID);
+    return ids.length === indexed.length && ids.every(Number.isInteger) ? ids : null;
+  } catch { return null; }
+}
+
 /**
  * 一次 batchPlay 读回一批图层的 itemIndex（面板顺序依据）。
  * Action Manager 约定：itemIndex 自面板底部向上递增（底层=1），

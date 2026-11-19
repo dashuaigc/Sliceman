@@ -272,7 +272,7 @@ async function runSplitPipeline(opts) {
           const copied = await pasted.duplicate(srcDoc);
           if (copied) {
             if (srcLayer) { try { await copied.moveAbove(srcLayer); } catch { /* 定位失败也保留（在顶层） */ } }
-            try { copied.name = String(i); } catch { /* 命名失败不影响 */ }   // 从 0 开始依次编号
+            copied.name = `图层 ${created + 1}`;
             made.push({ layer: copied, expect: items[i].expect });
             created++;
           }

@@ -1431,6 +1431,71 @@ describe('重命名：按名称查找弹窗（查找 → 加入列表 → 确认
     expect(document.getElementById('status').textContent).toMatch(/已重命名 1 个图层\/组/);
   });
 
+  it.each([
+    ['只选父组和子组', [20, 22]],
+    ['组选中并加选组外层', [20, 26]],
+    ['组选中并加选多个组内层和组外层', [20, 21, 23, 26]],
+  ])('%s：预览和写回只给点亮的项连续编号', async (_, ids) => {
+    const d = fakeLayerDoc([
+      fakeGroup(20, '商品', [fakeLayer(21, '主图'), fakeGroup(22, '细节', [
+        fakeLayer(23, '高光'), fakeLayer(24, '阴影'),
+      ])]),
+      fakeLayer(26, '标题'),
+    ]);
+    d.activeLayers = [20, 21, 22, 23, 24, ...(ids.includes(26) ? [26] : [])]
+      .map(id => findFakeLayer(d.layers, id));
+    d.targetIds = [...ids].reverse();
+    const { document, played } = await loadPanel({ doc: d, onPlay: onLayerPlay(d) });
+    clickPill(document, 'renameModePills', 'data-mode', 'new');
+    type(document, 'templateText', 'item_n');
+    click(document, 'counterSwitch');
+    await settle();
+    const html = document.getElementById('previewList').innerHTML;
+    expect([...html.matchAll(/class="pv-from">([^<]+)</g)].map(m => m[1]))
+      .toEqual(ids.map(id => findFakeLayer(d.layers, id).name));
+    const names = ids.map((_, i) => 'item_' + (i + 1));
+    expect([...html.matchAll(/class="pv-to"><b>([^<]+)</g)].map(m => m[1])).toEqual(names);
+    click(document, 'renameBtn');
+    await settle();
+    expect(renamesFrom(played)).toEqual(ids.map((id, i) => [id, names[i]]));
+  });
+
+  it.each([false, true])('只能读取选中项索引时仍保留点亮的组内层（背景层：%s）', async hasBackground => {
+    const d = doc([10, 11, 12, 13], [10, 12, 13]);
+    d.backgroundLayer = hasBackground ? d.layers[2] : null;
+    // 面板自底向上：Title、bg_btn、组结束标记、BTN_hover、Btn_normal、UI 组。
+    const idsByIndex = [14, 13, null, 12, 11, 10];
+    const layerPlay = onLayerPlay(d);
+    const onPlay = desc => {
+      const prop = desc._target?.[0]?._property;
+      if (prop === 'targetLayersIDs') return { _obj: 'error' };
+      if (prop === 'targetLayers') return { targetLayers: [1, 3, 5].map(_index => ({ _ref: 'layer', _index })) };
+      if (prop === 'layerID') return { layerID: idsByIndex[desc._target[1]._index - (hasBackground ? 0 : 1)] };
+      return layerPlay(desc);
+    };
+    const { document, played } = await loadPanel({ doc: d, onPlay });
+    clickPill(document, 'renameModePills', 'data-mode', 'prefix');
+    type(document, 'templateText', 'X_');
+    await settle();
+    expect(document.getElementById('renameSelection').textContent).toBe('已选择 3 个图层 / 组');
+    click(document, 'renameBtn');
+    await settle();
+    expect(renamesFrom(played)).toEqual([[10, 'X_UI'], [12, 'X_BTN_hover'], [13, 'X_bg_btn']]);
+  });
+
+  it('两种选区描述都读不到时，提示无法确认的父子选区并跳过整批', async () => {
+    const d = doc([10, 11, 12, 13]);
+    const { document, played } = await loadPanel({ doc: d });
+    clickPill(document, 'renameModePills', 'data-mode', 'prefix');
+    type(document, 'templateText', 'X_');
+    await settle();
+    expect(document.getElementById('previewList').innerHTML).toContain('无法确认');
+    click(document, 'renameBtn');
+    await settle();
+    expect(renamesFrom(played)).toEqual([]);
+    expect(document.getElementById('status').textContent).toContain('无法确认');
+  });
+
   it('预览每行行首带类型图标：组是文件夹、图层是图片框', async () => {
     const d = doc([10, 11, 13], [10, 11, 13]);                         // UI 组 + 组内的层 + 组外的层
     const { document } = await loadPanel({ doc: d, onPlay: onLayerPlay(d) });
@@ -2662,7 +2727,7 @@ describe('参考线分割：执行段（选区 / 编号 / 落位校正 / 不建�
     // 选区 = 内容外框，不是 0..50 / 50..100 那两个格子
     expect(rectsFrom(played)).toEqual(content);
     expect(played.filter((d) => d._obj === 'copyEvent')).toHaveLength(2);
-    expect(env.copies.map((c) => c.name)).toEqual(['0', '1']);
+    expect(env.copies.map((c) => c.name)).toEqual(['图层 1', '图层 2']);
     // Native UXP can retain pointer-events:none when reset with an empty string.
     for (const tile of document.querySelectorAll('.tile')) {
       expect(tile.style.pointerEvents).toBe('auto');
@@ -2718,6 +2783,7 @@ describe('参考线分割：执行段（选区 / 编号 / 落位校正 / 不建�
 
     expect(played.filter((d) => d._obj === 'copyEvent')).toHaveLength(1);
     expect(env.copies[0].movedAbove).toBeUndefined();        // 没有原图层可依附，落在顶层
+    expect(env.copies[0].name).toBe('图层 1');
     const grp = played.find((d) => d._obj === 'make' && d._target?.[0]?._ref === 'layerSection');
     expect(grp).toBeUndefined();
   });
@@ -2838,7 +2904,7 @@ describe('参考线分割：执行段（选区 / 编号 / 落位校正 / 不建�
     expect(document.getElementById('splitPage').style.display).toBe('none');
     expect(document.getElementById('tablePage').style.display).not.toBe('none');
     expect(document.getElementById('splitBtn').style.pointerEvents).toBe('auto');
-    expect(env.copies.map((c) => c.name)).toEqual(['0', '1']);
+    expect(env.copies.map((c) => c.name)).toEqual(['图层 1', '图层 2']);
   });
 
   it('PS 不认 addTo 时退回整框，整批不失败', async () => {

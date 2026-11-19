@@ -9,7 +9,7 @@ import { readDocumentTree } from '../ps/layer-tree.js';
 import { exportTask, exportSymbol, beginExport, endExport } from '../ps/exporter.js';
 import { buildRenameRows } from '../lib/rename-core.js';
 import { matchLayers, describePath } from '../lib/search-core.js';
-import { readItemIndexes, applyRename } from '../ps/renamer.js';
+import { readRenameSelectionIds, readItemIndexes, applyRename } from '../ps/renamer.js';
 import { readAllLayers, selectLayersById } from '../ps/layer-finder.js';
 import { smartSplitLayer, splitByGuides } from '../ps/smart-split.js';
 import {
@@ -350,31 +350,28 @@ function collectDescendantIds(group, out) {
 //    targetLayersIDs 没这个毛病 —— 真机实测（PS 27.7.0）只选组 G 报 1 项、
 //    「G + G 内部的层」报 2 项、「G + 嵌套组里的孙子层」也是 2 项，从不把没点亮的
 //    子层算进来。重命名要的正是这份「用户到底点了谁」。
-// 旧版 PS 没有这个属性时退回 selectedLayers()，也就是「选中组只改组名」。
+const RENAME_SELECTION_ERROR = '无法确认选中的图层和组，请在图层面板重新选择后再试。';
 async function trueSelectedLayers() {
   const doc = app.activeDocument;
   if (!doc) return [];
-  let list;
-  try {
-    const [res] = await action.batchPlay([{
-      _obj: 'get',
-      _target: [{ _property: 'targetLayersIDs' }, { _ref: 'document', _enum: 'ordinal', _value: 'targetEnum' }],
-      _options: { dialogOptions: 'dontDisplay' },
-    }], {});
-    list = res?.targetLayersIDs;
-  } catch { /* 读不到，按下面的兜底走 */ }
-  if (!Array.isArray(list)) return selectedLayers();
-  // 列表项是图层引用，序列化形态各版本不一（{_ref,_id} / {_id} / 裸数字），三种都收
-  const byId = new Map();
-  (function walk(cont) {
-    for (const l of cont.layers || []) { byId.set(l.id, l); walk(l); }
-  })(doc);
-  const out = [];
-  for (const item of list) {
-    const id = typeof item === 'number' ? item : (item?._id ?? item?._value);
-    const l = byId.get(id);
-    if (l) out.push(l);
+  const ids = await readRenameSelectionIds(doc);
+  if (ids === null) {
+    const active = Array.from(doc.activeLayers || []);
+    if (outermostLayers(active).length !== active.length) throw new Error(RENAME_SELECTION_ERROR);
+    return active;
   }
+  // 找齐就停止读取图层树。组选中时只收组本身，显式选中的后代各自按 ID 匹配。
+  const remaining = new Set(ids);
+  const out = [];
+  function walk(container) {
+    for (const layer of container.layers || []) {
+      if (remaining.delete(layer.id)) out.push(layer);
+      if (remaining.size && layer.kind === 'group') walk(layer);
+      if (!remaining.size) return;
+    }
+  }
+  if (remaining.size) walk(doc);
+  if (remaining.size) throw new Error(RENAME_SELECTION_ERROR);
   return out;
 }
 
@@ -384,8 +381,10 @@ async function trueSelectedLayers() {
 // 重命名不走这条（它要区分「点没点亮组内的层」），见 trueSelectedLayers。
 function selectedLayers() {
   const doc = app.activeDocument;
-  if (!doc) return [];
-  const sel = Array.from(doc.activeLayers || []);
+  return doc ? outermostLayers(Array.from(doc.activeLayers || [])) : [];
+}
+
+function outermostLayers(sel) {
   if (sel.length <= 1) return sel;
   // 汇总所有"被选中的组"的后代 id
   const descendantIds = new Set();
@@ -1947,7 +1946,15 @@ let renderSeq = 0;   // 连续输入时只保留最后一次异步渲染的结�
 async function renderRenamePreview(force) {
   const seq = ++renderSeq;
   updateRenameFields();
-  const layers = await sortedByPanelOrder(await trueSelectedLayers());
+  let layers;
+  try {
+    layers = await sortedByPanelOrder(await trueSelectedLayers());
+  } catch {
+    if (seq !== renderSeq) return;
+    document.getElementById('renameSelection').textContent = '选区读取失败';
+    previewList.innerHTML = `<div class="pv-empty">${RENAME_SELECTION_ERROR}</div>`;
+    return;
+  }
   if (seq !== renderSeq) return;                     // 已被更新的渲染取代
   refreshRenameStatus(layers.length, force);
   document.getElementById('renameSelection').textContent = layers.length
@@ -2654,9 +2661,9 @@ Array.from(document.querySelectorAll('#sliceModePills .pill')).forEach((p) => {
 
 // 智能分割 / 批量处理：说明挂在各自标题后的问号图标上
 bindTip(document.getElementById('splitInfo'), document.getElementById('splitTip'),
-  '选中<b>一个像素图层</b>，将分离的内容拆成独立图层，按从上到下、从左到右编号。<br><b>保持元素完整</b>：尝试合并同一元素的断开部分；关闭后按相连像素拆分。<br>原图层保留，可撤销。');
+  '选中<b>一个像素图层</b>，将分离的内容拆成独立图层。按从上到下、每行从左到右的顺序命名为「图层 1」「图层 2」等。<br><b>保持元素完整</b>：尝试合并同一元素的断开部分；关闭后按相连像素拆分。<br>原图层保留，可撤销。');
 bindTip(document.getElementById('gsInfo'), document.getElementById('gsTip'),
-  '按当前文档的<b>参考线和画布边缘</b>分格，将有内容的格子生成像素图层，放入新组。<br>默认分割选中的一个图层或组；开启<b>合并可见内容</b>后分割整张可见画面。<br>空格自动跳过，原对象保留。');
+  '按当前文档的<b>参考线和画布边缘</b>分格，将有内容的格子依次生成为「图层 1」「图层 2」等像素图层。空白格不占号。<br>默认分割选中的一个图层或组；开启<b>合并可见内容</b>后分割整张可见画面。<br>原对象保留。');
 bindTip(document.getElementById('smartObjInfo'), document.getElementById('smartObjTip'),
   '将选中的图层<b>分别转为独立智能对象</b>，保留名称、位置和层级。<br>已有智能对象自动跳过，整批可一次撤销。');
 bindTip(document.getElementById('groupInfo'), document.getElementById('groupTip'),
@@ -2673,7 +2680,7 @@ bindTip(document.getElementById('gridInfo'), document.getElementById('gridTip'),
   '按宽高和数量生成<b>同尺寸的矩形定位格</b>并自动排列。<br><b>对象间距</b>统一控制横向与纵向间隔，支持 0；留空按（宽＋高）÷16 取整，至少 1px。<br>新建 PSD 四周各留一个间距；当前文档保持居中，可自动扩画布并添加边缘和中心参考线。<br>每次创建新的一批；可配合 <b>Symbols 切图</b>使用。');
 
 bindTip(document.getElementById('renameInfo'), document.getElementById('renameTip'),
-  '批量修改<b>选中的图层或组</b>名称，支持替换、重新命名、添加前缀或后缀。可用<b>按名称查找</b>批量选择对象。<br>开启编号后，模板中的<b>独立 n</b>替换为数字，如 Icon_n；Button 中的 n 不受影响。<br>先看预览再应用；背景图层改名后会转为普通图层。');
+  '批量修改<b>选中的图层或组</b>名称，支持替换、重新命名、添加前缀或后缀。只选组时只改组名，同时选中的子组和图层也会各自改名。可用<b>按名称查找</b>批量选择对象。<br>开启编号后，模板中的<b>独立 n</b>替换为数字，如 Icon_n；Button 中的 n 不受影响。<br>先看预览再应用；背景图层改名后会转为普通图层。');
 
 tiles.forEach((t) => t.addEventListener('click', () => {
   if (slicing || splitting || converting || grouping || laying || moving || drawing || gridBusy || gdBusy) return;  // 任务进行中不切页

@@ -409,16 +409,12 @@ describe('输入框：聚焦高亮 + 点进去清空，一个框都不能漏', (
 });
 
 describe('重命名页：改名对象 = 图层面板里真正点亮的那些', () => {
-  it('走 targetLayersIDs 而不是 activeLayers，预览与执行用的是同一个来源', () => {
-    // 真机实测：选中一个组，PS 会把组里的层也算进 activeLayers，「只选了组」和
-    // 「组与组内层都点亮了」在那个列表里长得一样；targetLayersIDs 只报真正点亮的。
-    const body = /async function trueSelectedLayers\(\) \{([\s\S]*?)\n\}/.exec(js);
-    expect(body).toBeTruthy();
-    expect(body[1]).toContain('targetLayersIDs');
-    expect(body[1]).toContain("_value: 'targetEnum'");
-    expect(body[1]).toContain('selectedLayers()');            // 旧版 PS 读不到时的兜底
-    // 定义 1 处 + 预览 / 执行 2 处；漏一处就是「预览里写着要改的、实际改的不是同一批」
-    expect((js.match(/trueSelectedLayers\(\)/g) || []).length).toBeGreaterThanOrEqual(3);
+  it('预览与执行共用同一套选区读取与排序', () => {
+    for (const name of ['renderRenamePreview', 'runRename']) {
+      const start = js.indexOf('async function ' + name + '(');
+      const body = js.slice(start, js.indexOf('\n}', start));
+      expect(body).toContain('sortedByPanelOrder(await trueSelectedLayers())');
+    }
   });
 
   it('「按名称查找」就在大标题那一行，靠 margin-left:auto 贴右', () => {
