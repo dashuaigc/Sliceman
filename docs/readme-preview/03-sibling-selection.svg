@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="410" viewBox="0 0 1120 410" role="img" aria-labelledby="title desc"><title id="title">同级反选前后对照</title><desc id="desc">商品卡内，选中项从标题和按钮组切换为价格和装饰组。</desc><rect width="1120" height="410" rx="20" fill="#f5f8fc"/><g font-family="Microsoft YaHei, PingFang SC, sans-serif">
+<text x="32" y="51" font-size="30" fill="#213650" font-weight="700">反选前</text>
+<rect x="32" y="78" width="474" height="300" rx="14" fill="#ffffff" stroke="#d9e2ec"/>
+<text x="54" y="121" font-size="24" fill="#213650" font-weight="700">商品卡</text>
+<rect x="58" y="140" width="420" height="46" rx="8" fill="#e3edff" stroke="none"/>
+<rect x="78" y="152" width="19" height="22" rx="2" fill="none" stroke="#59718e"/>
+<text x="114" y="171" font-size="22" fill="#213650" font-weight="400">标题</text>
+<text x="366" y="170" font-size="18" fill="#2358b2" font-weight="600">已选中</text>
+<rect x="58" y="195" width="420" height="46" rx="8" fill="#f4f6f9" stroke="none"/>
+<rect x="78" y="207" width="19" height="22" rx="2" fill="none" stroke="#59718e"/>
+<text x="114" y="226" font-size="22" fill="#213650" font-weight="400">价格</text>
+<rect x="58" y="250" width="420" height="46" rx="8" fill="#e3edff" stroke="none"/>
+<path d="M76 266v-4h10l4 4h12v17h-26z" fill="none" stroke="#59718e" stroke-width="2"/>
+<text x="114" y="281" font-size="22" fill="#213650" font-weight="400">按钮组</text>
+<text x="366" y="280" font-size="18" fill="#2358b2" font-weight="600">已选中</text>
+<rect x="58" y="305" width="420" height="46" rx="8" fill="#f4f6f9" stroke="none"/>
+<path d="M76 321v-4h10l4 4h12v17h-26z" fill="none" stroke="#59718e" stroke-width="2"/>
+<text x="114" y="336" font-size="22" fill="#213650" font-weight="400">装饰组</text>
+<text x="614" y="51" font-size="30" fill="#213650" font-weight="700">反选后</text>
+<rect x="614" y="78" width="474" height="300" rx="14" fill="#ffffff" stroke="#d9e2ec"/>
+<text x="636" y="121" font-size="24" fill="#213650" font-weight="700">商品卡</text>
+<rect x="640" y="140" width="420" height="46" rx="8" fill="#f4f6f9" stroke="none"/>
+<rect x="660" y="152" width="19" height="22" rx="2" fill="none" stroke="#59718e"/>
+<text x="696" y="171" font-size="22" fill="#213650" font-weight="400">标题</text>
+<rect x="640" y="195" width="420" height="46" rx="8" fill="#e3edff" stroke="none"/>
+<rect x="660" y="207" width="19" height="22" rx="2" fill="none" stroke="#59718e"/>
+<text x="696" y="226" font-size="22" fill="#213650" font-weight="400">价格</text>
+<text x="948" y="225" font-size="18" fill="#2358b2" font-weight="600">已选中</text>
+<rect x="640" y="250" width="420" height="46" rx="8" fill="#f4f6f9" stroke="none"/>
+<path d="M658 266v-4h10l4 4h12v17h-26z" fill="none" stroke="#59718e" stroke-width="2"/>
+<text x="696" y="281" font-size="22" fill="#213650" font-weight="400">按钮组</text>
+<rect x="640" y="305" width="420" height="46" rx="8" fill="#e3edff" stroke="none"/>
+<path d="M658 321v-4h10l4 4h12v17h-26z" fill="none" stroke="#59718e" stroke-width="2"/>
+<text x="696" y="336" font-size="22" fill="#213650" font-weight="400">装饰组</text>
+<text x="948" y="335" font-size="18" fill="#2358b2" font-weight="600">已选中</text>
+<path d="M529 222h57m-14-14 14 14-14 14" fill="none" stroke="#4479ed" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></g></svg>

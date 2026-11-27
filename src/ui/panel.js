@@ -10,7 +10,7 @@ import { exportTask, exportSymbol, beginExport, endExport } from '../ps/exporter
 import { buildRenameRows } from '../lib/rename-core.js';
 import { matchLayers, describePath } from '../lib/search-core.js';
 import { readRenameSelectionIds, readItemIndexes, applyRename } from '../ps/renamer.js';
-import { readAllLayers, selectLayersById } from '../ps/layer-finder.js';
+import { readAllLayers, selectLayersById, selectLayersInModal } from '../ps/layer-finder.js';
 import { smartSplitLayer, splitByGuides } from '../ps/smart-split.js';
 import {
   planResize, normalizeResizeCfg, fieldsOfMode, buildOutName, formatScale,
@@ -884,11 +884,6 @@ let grouping = false;
 async function runCreateGroups() {
   if (grouping) return;
   if (!app.activeDocument) return setStatus('请先打开一个 PSD 文档');
-  const layers = await sortedByPanelOrder(selectedLayers(), false);
-  if (!layers.length) return setStatus('请先选择至少一个图层或图层组');
-  // 名称在执行前一次读好：建组过程中图层顺序会变，事后再读会错位
-  const pairs = layers.map((l) => ({ id: l.id, name: l.name }));
-
   grouping = true;
   setTilesDisabled(true);
   const lbl = groupBtn.querySelector('.btn-label');
@@ -898,6 +893,9 @@ async function runCreateGroups() {
   groupBtn.style.opacity = '0.6';
   setStatus('正在新建独立组…');
   try {
+    const layers = await sortedByPanelOrder(selectedLayers(), false);
+    if (!layers.length) return setStatus('请先选择至少一个图层或图层组');
+    const pairs = layers.map((l) => ({ id: l.id, name: l.name }));
     const r = await createGroups(pairs, {
       selectAfter: true,                             // 执行后恒选中新建的组，便于接着做下一步批量操作
       onProgress: (done, total) => setStatus(`建组中… ${done}/${total} 个`),
@@ -917,6 +915,48 @@ async function runCreateGroups() {
 }
 
 groupBtn.addEventListener('click', () => { runCreateGroups(); });
+
+const invertSiblingsBtn = document.getElementById('invertSiblingsBtn');
+async function invertSiblingSelection() {
+  const doc = app.activeDocument;
+  if (!doc) return '请先打开一个 PSD 文档';
+  const selected = await trueSelectedLayers();
+  if (!selected.length) return '请先选择一个图层或组';
+
+  const originalIds = selected.map(layer => layer.id);
+  const selectedIds = new Set(originalIds);
+  const parent = selected[0].parent || doc;
+  const siblings = new Set(Array.from(parent.layers, layer => layer.id));
+  if (originalIds.some(id => !siblings.has(id))) return '请选择同一父组下的图层或组';
+  const targets = Array.from(siblings).filter(id => !selectedIds.has(id));
+  if (!targets.length) return '同级没有其他可选项';
+
+  try {
+    await selectLayersInModal(targets);
+  } catch (error) {
+    try {
+      await selectLayersInModal(originalIds);
+    } catch (restoreError) {
+      throw new Error(errMsg(error) + '。恢复原选择失败：' + errMsg(restoreError));
+    }
+    throw error;
+  }
+  return `已选中其余 ${targets.length} 个同级图层或组`;
+}
+
+invertSiblingsBtn.addEventListener('click', async () => {
+  if (invertSiblingsBtn.getAttribute('aria-disabled') === 'true') return;
+  setTilesDisabled(true);
+  try {
+    await core.executeAsModal(async () => {
+      setStatus(await invertSiblingSelection());
+    }, { commandName: '同级反选' });
+  } catch (error) {
+    setStatus('同级反选失败：' + errMsg(error));
+  } finally {
+    setTilesDisabled(false);
+  }
+});
 
 // ---- 一键排版：按对象在画布中的实际空间位置重排选中的图层/组 ----
 // 排序不看图层面板顺序，看 Bounds；锚点（排序后第一个对象）保持原位，其余依次贴过去。
@@ -2578,13 +2618,10 @@ const tiles = Array.from(document.querySelectorAll('.tile'));
 smartPastePanel = initSmartPastePanel({
   setStatus,
   bindButtons: false, // Static custom buttons were bound before feature listeners at startup.
-  setBusy: (on) => {
-    setTilesDisabled(on);
-    setButtonDisabled(smartObjBtn, on);
-    setButtonDisabled(groupBtn, on);
-  },
+  setBusy: setTilesDisabled,
 });
 function setTilesDisabled(on) {
+  for (const button of [smartObjBtn, groupBtn, invertSiblingsBtn]) setButtonDisabled(button, on);
   tiles.forEach(t => { t.style.pointerEvents = on ? 'none' : 'auto'; t.style.opacity = on ? '0.5' : '1'; });
   if (smartPastePanel) smartPastePanel.setExternalBusy(on);
 }
@@ -2668,6 +2705,8 @@ bindTip(document.getElementById('smartObjInfo'), document.getElementById('smartO
   '将选中的图层<b>分别转为独立智能对象</b>，保留名称、位置和层级。<br>已有智能对象自动跳过，整批可一次撤销。');
 bindTip(document.getElementById('groupInfo'), document.getElementById('groupTip'),
   '为每个选中的图层或组<b>单独建立同名父组</b>，保留原有顺序和位置。<br>无法处理的对象会跳过，整批可一次撤销。');
+bindTip(document.getElementById('invertSiblingsInfo'), document.getElementById('invertSiblingsTip'),
+  '选中同一父组下原本未选中的图层和组，并取消原来的选择。在文档顶层使用时，范围为所有顶层图层和组。');
 bindTip(document.getElementById('layoutInfo'), document.getElementById('layoutTip'),
   '选中<b>至少 2 个对象</b>，按画布中的位置顺序横向或竖向排列。<br><b>间距</b>指对象边缘之间的距离；第一个对象保持原位，其余依次排列。<br>可自动扩展画布并留边距；选中锁定图层时需先解锁。');
 bindTip(document.getElementById('moveInfo'), document.getElementById('moveTip'),

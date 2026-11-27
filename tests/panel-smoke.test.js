@@ -399,6 +399,65 @@ const type = (document, id, value) => {
 };
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
+describe('批处理 · 同级反选', () => {
+  async function setup(targetIds, onSelect) {
+    const group = fakeGroup(11, '按钮组', [fakeLayer(12, '图标')]);
+    const title = fakeLayer(13, '标题');
+    const price = fakeLayer(14, '价格', { visible: false, locked: true });
+    const decor = fakeGroup(15, '装饰组', []);
+    const card = fakeGroup(10, '商品卡', [group, title, price, decor]);
+    const other = fakeLayer(21, '背景');
+    const doc = fakeLayerDoc([card, other]);
+    for (const child of card.layers) child.parent = card;
+    group.layers[0].parent = group;
+    doc.targetIds = targetIds;
+    doc.activeLayers = targetIds.map(id => findFakeLayer(doc.layers, id));
+    if (targetIds.includes(group.id)) doc.activeLayers.push(...group.layers);
+    const play = onLayerPlay(doc);
+    const panel = await loadPanel({ doc, onPlay: d => onSelect?.(d) || play(d) });
+    panel.goPage('batch');
+    async function invert() {
+      fire(panel.document.getElementById('invertSiblingsBtn'), 'click');
+      await settle();
+      return panel.document.getElementById('status').textContent;
+    }
+    return { doc, invert, played: panel.played };
+  }
+
+  it('混选组和图层可往返两次，只选直接成员且保留隐藏、锁定状态', async () => {
+    const { doc, played, invert } = await setup([11, 13]);
+    expect(await invert()).toContain('2');
+    expect(doc.targetIds).toEqual([14, 15]);
+    expect(selectDescs(played).every(d => d.makeVisible === false)).toBe(true);
+    expect(findFakeLayer(doc.layers, 14)).toMatchObject({ visible: false, locked: true });
+    await invert();
+    expect(doc.targetIds).toEqual([11, 13]);
+  });
+  it('顶层组按文档根目录反选', async () => {
+    const { doc, invert } = await setup([10]);
+    await invert();
+    expect(doc.targetIds).toEqual([21]);
+  });
+  it.each([
+    [[11, 12], '请选择同一父组下的图层或组'],
+    [[14, 21], '请选择同一父组下的图层或组'],
+    [[12], '同级没有其他可选项'],
+    [[11, 13, 14, 15], '同级没有其他可选项'],
+    [[], '请先选择一个图层或组'],
+  ])('选中 %j 时保留原选择并说明原因', async (ids, message) => {
+    const { doc, played, invert } = await setup(ids);
+    expect(await invert()).toContain(message);
+    expect(selectsFrom(played)).toEqual([]);
+    expect(doc.targetIds).toEqual(ids);
+  });
+  it('Photoshop 拒绝追加选择时恢复原选择并提示失败', async () => {
+    const { doc, invert } = await setup([11, 13], d =>
+      d._obj === 'select' && d._target[0]._id === 15 && { _obj: 'error', message: '选择失败' });
+    expect(await invert()).toContain('选择失败');
+    expect(doc.targetIds).toEqual([11, 13]);
+  });
+});
+
 /** 造一个假的参考线集合（类数组，元素有 direction / coordinate / delete） */
 function fakeGuides(list = []) {
   const g = {

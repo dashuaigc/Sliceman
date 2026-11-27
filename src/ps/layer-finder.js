@@ -66,6 +66,18 @@ const addToSel = (id) => ({
   _options: dontDisplay,
 });
 
+// 调用方持有 modal，确保读取同级范围、替换选择和必要时恢复都针对同一份文档。
+export async function selectLayersInModal(ids) {
+  const chunkSize = 200;
+  for (let start = 0; start < ids.length; start += chunkSize) {
+    const commands = ids.slice(start, start + chunkSize).map((id, i) =>
+      start === 0 && i === 0 ? selectOne(id) : addToSel(id));
+    const results = await action.batchPlay(commands, {});
+    const error = results.find(result => result?._obj === 'error');
+    if (error) throw new Error(error.message || 'Photoshop 无法选中指定图层');
+  }
+}
+
 /**
  * 把给定 id 的图层设为图层面板的当前选中（第一个替换选区，其余追加）。
  * 只改选中状态，不改文档内容，因此不进历史记录。
@@ -76,13 +88,6 @@ export async function selectLayersById(ids) {
   if (!app.activeDocument) throw new Error('请先打开一个 PSD 文档');
   const list = Array.from(new Set(ids || []));
   if (!list.length) return 0;
-  const descs = list.map((id, i) => (i === 0 ? selectOne(id) : addToSel(id)));
-  await core.executeAsModal(async () => {
-    // 一次塞几百条描述符在大文档上容易卡，分块播；块与块之间选区继续累加
-    const CHUNK = 200;
-    for (let i = 0; i < descs.length; i += CHUNK) {
-      await action.batchPlay(descs.slice(i, i + CHUNK), {});
-    }
-  }, { commandName: '选中查找到的图层' });
+  await core.executeAsModal(() => selectLayersInModal(list), { commandName: '选中查找到的图层' });
   return list.length;
 }
